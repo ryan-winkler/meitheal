@@ -31,7 +31,7 @@ import { isClosedStatus } from "./status-config"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
 import { taskBackgroundUrl } from "./task-page-url"
-import { householdDayFromToday, householdToday, parseQuickTask, quickAddPayload } from "./quick-add"
+import { fetchQuickAddUsers, householdDayFromToday, householdToday, parseQuickTask, quickAddPayload } from "./quick-add"
 import {
   saveFilterState,
   loadFilterState,
@@ -41,6 +41,7 @@ import { initPageShellNavigation } from "./page-shell-controller"
 import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
 import type { TodayTaskCounts } from "./task-queries"
 import { TODAY_SECTIONS } from "./today-registry"
+import { bindCardPreferencesSync } from "./card-view-sync"
 import { compareTodayRows, matchesTodayFilters, lockTodayTaskStatus, syncTodayTaskStatus, type TodayFilters } from "./today-list"
 import { setupUnscheduledSection } from "./controllers/today-unscheduled"
 
@@ -93,15 +94,18 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   // Restore the batch selection before restoring filters rewrites history state.
   const addBatchCheckboxes = setupBatchUI(container, lm)
 
-  initPageShellNavigation({
-    barId: "today-bar",
-    shellId: "page-shell",
-    sectionSelector: "[data-today-section]",
-    sectionIds: TODAY_SECTIONS.map((section) => section.id),
-    defaultSectionId: "today-overview",
-    flashClass: "page-shell__section--flash",
-    sectionLinkSelectors: ["[data-today-section-link]"],
-  })
+  if (document.getElementById("today-bar") && document.getElementById("page-shell")) {
+    initPageShellNavigation({
+      barId: "today-bar",
+      shellId: "page-shell",
+      sectionSelector: "[data-today-section]",
+      sectionIds: TODAY_SECTIONS.map((section) => section.id),
+      defaultSectionId: "today-overview",
+      flashClass: "page-shell__section--flash",
+      sectionLinkSelectors: ["[data-today-section-link]"],
+    })
+  }
+  bindCardPreferencesSync(document.getElementById("page-shell") ?? container, lm.signal)
 
   setupQuickAdd(container)
   setupKeyboardNav(container)
@@ -226,6 +230,8 @@ function setupEventDelegation(container: HTMLElement, refreshReopened: (id: stri
         el.title = label
         el.setAttribute("aria-label", label)
         el.setAttribute("aria-pressed", String(promoted))
+        const row = el.closest<HTMLElement>(".tli")
+        if (row) row.dataset.promoted = String(promoted)
       }
       renderPromoted(nextPromoted)
 
@@ -560,7 +566,8 @@ function setupQuickAdd(container: HTMLElement) {
     const text = quickInput.value.trim()
     if (!text) return
 
-    const { payload } = quickAddPayload(text, householdToday())
+    const users = await fetchQuickAddUsers(lm.signal)
+    const { payload } = quickAddPayload(text, householdToday(), { users })
 
     try {
       const result = await taskApi.createTask(payload)

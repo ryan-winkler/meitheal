@@ -11,7 +11,7 @@ import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
 import Icon from "../ui/Icon.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
-import "../../styles/boards.css"
+import BoardsStyles from "./BoardsStyles.astro"
 import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSection } from "@lib/board-workspace"
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
@@ -89,6 +89,7 @@ const boardCustomFields = policy ? await readBoardCustomFieldDefs(getPersistence
   : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} {workScope} />
   : selection.areaId ? <AreaWorkspace workspaceAreaId={selection.areaId} {boardId} {workScope} />
   : <Layout title={label("board")} scopeGuard={false}>
+  <BoardsStyles />
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
     {!view || !boardId || !user ? (
@@ -126,8 +127,8 @@ const boardCustomFields = policy ? await readBoardCustomFieldDefs(getPersistence
             )}
           </div>
           {canCreate && (!scope?.project || scope.project.status === "active") && (
-            <button type="button" class="btn btn-primary" data-board-new-task>
-              <Icon name="plus" size={16} sprite />
+            <button type="button" class="btn btn-primary btn-sm board-new-task-btn" data-board-new-task>
+              <Icon name="plus" size={15} sprite />
               <span>{newLabel("task")}</span>
             </button>
           )}

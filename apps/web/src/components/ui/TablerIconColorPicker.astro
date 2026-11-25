@@ -1,0 +1,341 @@
+---
+/**
+ * TablerIconColorPicker.astro — Reusable Tabler icon & color swatch picker
+ *
+ * Replaces raw text icon inputs and unstyled native color pickers across
+ * Areas, Pillars, and workspace forms with a unified, accessible Tabler control.
+ *
+ * Bounded context: ui (shared design system)
+ */
+import Icon from "./Icon.astro"
+import type { CanonicalIconName } from "../../generated/icon-registry"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
+
+interface Props {
+  iconValue?: string
+  colorValue?: string
+  iconName?: string
+  colorName?: string
+  showColor?: boolean
+  idPrefix?: string
+}
+
+const {
+  iconValue = "folder",
+  colorValue = "#69E3B2",
+  iconName = "icon",
+  colorName = "color",
+  showColor = true,
+  idPrefix = "tabler-picker",
+} = Astro.props
+
+const PICKER_ICONS: readonly { name: CanonicalIconName; label: string }[] = [
+  { name: "folder", label: "Folder" },
+  { name: "home", label: "Home" },
+  { name: "sparkles", label: "Sparkles" },
+  { name: "star", label: "Star" },
+  { name: "bolt", label: "Energy" },
+  { name: "target", label: "Target" },
+  { name: "heart", label: "Health" },
+  { name: "calendar", label: "Calendar" },
+  { name: "shopping-cart", label: "Shopping" },
+  { name: "clipboard-list", label: "Checklist" },
+  { name: "book", label: "Learning" },
+  { name: "users", label: "Family" },
+  { name: "coffee", label: "Lifestyle" },
+  { name: "rocket", label: "Projects" },
+  { name: "trophy", label: "Goals" },
+  { name: "world", label: "Outdoors" },
+]
+
+const PICKER_COLORS: readonly { hex: string; label: string }[] = [
+  { hex: "#059669", label: "Emerald" },
+  { hex: "#0284c7", label: "Ocean" },
+  { hex: "#ae3ec9", label: "Violet" },
+  { hex: "#db2777", label: "Rose" },
+  { hex: "#ea580c", label: "Tangerine" },
+  { hex: "#ca8a04", label: "Amber" },
+  { hex: "#0d9488", label: "Teal" },
+  { hex: "#4f46e5", label: "Indigo" },
+]
+
+const mappedInitial = mapEntityEmojiToTabler(iconValue) ?? "folder"
+const selectedIcon = PICKER_ICONS.some((item) => item.name === mappedInitial)
+  ? mappedInitial
+  : "folder"
+const selectedColor = /^#[0-9a-f]{6}$/i.test(colorValue) ? colorValue : "#059669"
+---
+
+<div class="tabler-picker" data-tabler-picker>
+  <div class="tabler-picker__group">
+    <span class="tabler-picker__label" id={`${idPrefix}-icon-label`}>Icon</span>
+    <input type="hidden" name={iconName} value={selectedIcon} data-tabler-picker-icon-input />
+    <div
+      class="tabler-picker__icons"
+      role="radiogroup"
+      aria-labelledby={`${idPrefix}-icon-label`}
+    >
+      {PICKER_ICONS.map((item) => {
+        const isSelected = item.name === selectedIcon
+        return (
+          <button
+            type="button"
+            class={`tabler-picker__icon-btn${isSelected ? " is-selected" : ""}`}
+            role="radio"
+            aria-checked={isSelected ? "true" : "false"}
+            aria-label={item.label}
+            title={item.label}
+            data-picker-icon={item.name}
+          >
+            <Icon name={item.name} size={16} sprite={true} />
+          </button>
+        )
+      })}
+    </div>
+  </div>
+
+  {showColor && (
+    <div class="tabler-picker__group">
+      <span class="tabler-picker__label" id={`${idPrefix}-color-label`}>Color</span>
+      <input type="hidden" name={colorName} value={selectedColor} data-tabler-picker-color-input />
+      <div
+        class="tabler-picker__colors"
+        role="radiogroup"
+        aria-labelledby={`${idPrefix}-color-label`}
+      >
+        {PICKER_COLORS.map((swatch) => {
+          const isSelected = swatch.hex.toLowerCase() === selectedColor.toLowerCase()
+          return (
+            <button
+              type="button"
+              class={`tabler-picker__swatch${isSelected ? " is-selected" : ""}`}
+              role="radio"
+              aria-checked={isSelected ? "true" : "false"}
+              aria-label={swatch.label}
+              title={swatch.label}
+              style={`--swatch-color:${swatch.hex}`}
+              data-picker-color={swatch.hex}
+            >
+              <Icon name="check" size={12} sprite={true} class="tabler-picker__swatch-check" />
+            </button>
+          )
+        })}
+        <label class="tabler-picker__custom-color" title="Custom color">
+          <span class="sr-only">Custom color</span>
+          <input
+            type="color"
+            value={selectedColor}
+            class="tabler-picker__color-native"
+            data-picker-color-native
+            aria-label="Custom color"
+          />
+          <Icon name="palette" size={14} sprite={true} />
+        </label>
+      </div>
+    </div>
+  )}
+</div>
+
+<style is:inline>
+  .tabler-picker {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .tabler-picker__group {
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .tabler-picker__label {
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: var(--text-primary);
+  }
+
+  .tabler-picker__icons {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  @media (max-width: 440px) {
+    .tabler-picker__icons {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .tabler-picker__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition:
+      border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .tabler-picker__icon-btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .tabler-picker__icon-btn:active {
+    transform: scale(0.95);
+  }
+
+  .tabler-picker__icon-btn.is-selected {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+    color: var(--accent-text, var(--accent));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+
+  .tabler-picker__colors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tabler-picker__swatch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background: var(--swatch-color);
+    color: #ffffff;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 140ms ease;
+  }
+
+  .tabler-picker__swatch:hover {
+    transform: scale(1.08);
+  }
+
+  .tabler-picker__swatch:active {
+    transform: scale(0.94);
+  }
+
+  .tabler-picker__swatch-check {
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .tabler-picker__swatch.is-selected {
+    box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--swatch-color);
+  }
+
+  .tabler-picker__swatch.is-selected .tabler-picker__swatch-check {
+    opacity: 1;
+  }
+
+  .tabler-picker__custom-color {
+    position: relative;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    border: 1px dashed var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .tabler-picker__custom-color:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .tabler-picker__color-native {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0;
+    padding: 0 !important;
+    border: 0 !important;
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tabler-picker__icon-btn,
+    .tabler-picker__swatch {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad((signal) => {
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target) return
+
+      const iconBtn = target.closest<HTMLButtonElement>("[data-picker-icon]")
+      if (iconBtn) {
+        const picker = iconBtn.closest<HTMLElement>("[data-tabler-picker]")
+        const input = picker?.querySelector<HTMLInputElement>("[data-tabler-picker-icon-input]")
+        if (!picker || !input) return
+        const nextIcon = iconBtn.dataset.pickerIcon ?? "folder"
+        input.value = nextIcon
+        picker.querySelectorAll<HTMLButtonElement>("[data-picker-icon]").forEach((btn) => {
+          const active = btn === iconBtn
+          btn.classList.toggle("is-selected", active)
+          btn.setAttribute("aria-checked", String(active))
+        })
+        return
+      }
+
+      const swatchBtn = target.closest<HTMLButtonElement>("[data-picker-color]")
+      if (swatchBtn) {
+        const picker = swatchBtn.closest<HTMLElement>("[data-tabler-picker]")
+        const input = picker?.querySelector<HTMLInputElement>("[data-tabler-picker-color-input]")
+        const native = picker?.querySelector<HTMLInputElement>("[data-picker-color-native]")
+        if (!picker || !input) return
+        const nextColor = swatchBtn.dataset.pickerColor ?? "#059669"
+        input.value = nextColor
+        if (native) native.value = nextColor
+        picker.querySelectorAll<HTMLButtonElement>("[data-picker-color]").forEach((btn) => {
+          const active = btn === swatchBtn
+          btn.classList.toggle("is-selected", active)
+          btn.setAttribute("aria-checked", String(active))
+        })
+      }
+    }, { signal })
+
+    document.addEventListener("input", (event) => {
+      const target = event.target instanceof HTMLInputElement ? event.target : null
+      if (!target?.matches("[data-picker-color-native]")) return
+      const picker = target.closest<HTMLElement>("[data-tabler-picker]")
+      const input = picker?.querySelector<HTMLInputElement>("[data-tabler-picker-color-input]")
+      if (!picker || !input) return
+      input.value = target.value
+      picker.querySelectorAll<HTMLButtonElement>("[data-picker-color]").forEach((btn) => {
+        const active = btn.dataset.pickerColor?.toLowerCase() === target.value.toLowerCase()
+        btn.classList.toggle("is-selected", active)
+        btn.setAttribute("aria-checked", String(active))
+      })
+    }, { signal })
+  })
+</script>

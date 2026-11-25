@@ -46,8 +46,8 @@ const { personalForm } = Astro.props
       data-error-network={t("pillars.error_network")}
     >
       <!-- Name -->
-      <div class="form-group">
-        <label for="pillar-name" class="form-label">
+      <div class="form-group" data-entity-field="name">
+        <label for="pillar-name" class="form-label" data-entity-field-label>
           {t("pillars.name_label")} <span class="text-accent">{t("pillars.required")}</span>
         </label>
         <input
@@ -76,10 +76,10 @@ const { personalForm } = Astro.props
       )}
 
       <!-- Manifesto (WHY) -->
-      <div class="form-group">
-        <label for="pillar-manifesto" class="form-label">{t("pillars.manifesto_label")}</label>
+      <div class="form-group" data-entity-field="manifesto">
+        <label for="pillar-manifesto" class="form-label" data-entity-field-label>{t("pillars.manifesto_label")}</label>
         <textarea
-          class="form-input bg-bg-input resize-y min-h-[100px]"
+          class="form-input bg-bg-input resize-y min-h-[120px]"
           id="pillar-manifesto"
           placeholder={t("pillars.manifesto_placeholder")}
           rows="4"
@@ -87,10 +87,10 @@ const { personalForm } = Astro.props
         <p class="pillar-form__hint">{t("pillars.manifesto_hint")}</p>
       </div>
 
-      <div class="pillar-form__row">
+      <div class="pillar-form__row" data-entity-field="appearance">
         <!-- Icon (shared picker) -->
         <div class="form-group pillar-form__icon-group">
-          <label class="form-label">{t("picker.icon_label")}</label>
+          <label class="form-label" data-entity-field-label>{t("picker.icon_label")}</label>
           <input type="hidden" id="pillar-icon" value="" />
           <IconPicker id="pillar-icon-picker" />
         </div>
@@ -104,8 +104,8 @@ const { personalForm } = Astro.props
       </div>
 
       <!-- Weight -->
-      <div class="form-group">
-        <label for="pillar-weight" class="form-label">
+      <div class="form-group" data-entity-field="weight">
+        <label for="pillar-weight" class="form-label" data-entity-field-label>
           {t("pillars.weight_label")} <span class="pillar-form__weight-value" id="pillar-weight-display">5</span>
         </label>
         <input
@@ -140,7 +140,7 @@ const { personalForm } = Astro.props
   </div>
 </div>
 
-<style>
+<style is:inline>
 .pillar-form__hint {
   margin: 0.25rem 0 0;
   font-size: 0.75rem;
@@ -345,6 +345,19 @@ const { personalForm } = Astro.props
       if (weightDisplay) weightDisplay.textContent = weightSlider.value
     }, { signal })
 
+    const manifestoField = document.getElementById("pillar-manifesto") as HTMLTextAreaElement | null
+    let manifestoEditor: { syncFromTextarea: () => void; flushToTextarea: () => void } | null = null
+    if (manifestoField) {
+      import("@lib/task-description-editor").then(({ enhanceDescriptionEditor }) => {
+        if (!signal.aborted) {
+          manifestoEditor = enhanceDescriptionEditor(manifestoField, { signal })
+        }
+      }).catch(() => { /* fallback to plain textarea */ })
+    }
+    import("@lib/task-detail-layout-controller").then(({ initEntityFormLayout }) => {
+      if (!signal.aborted && form) initEntityFormLayout(form, "pillar_form", signal)
+    }).catch(() => { /* ignore layout helper error */ })
+
     // --- Open/Close ---
     function openPillarModal(editData?: Record<string, unknown>, source?: HTMLElement) {
       if (submitBtn?.disabled) return
@@ -395,6 +408,7 @@ const { personalForm } = Astro.props
         if (weightDisplay) weightDisplay.textContent = "5"
       }
 
+      manifestoEditor?.syncFromTextarea()
       overlay?.classList.add("active")
       document.body.style.overflow = "hidden"
       document.getElementById("pillar-name")?.focus()
@@ -406,6 +420,7 @@ const { personalForm } = Astro.props
       overlay.classList.remove("active")
       document.body.style.overflow = ""
       form?.reset()
+      manifestoEditor?.syncFromTextarea()
       opener?.focus()
       opener = null
     }
@@ -436,6 +451,7 @@ const { personalForm } = Astro.props
     // --- Form submission ---
     form.addEventListener("submit", async (e) => {
       e.preventDefault()
+      manifestoEditor?.flushToTextarea()
       const nameInput = document.getElementById("pillar-name") as HTMLInputElement
       const name = nameInput.value.trim()
       if (!name) {

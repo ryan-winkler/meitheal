@@ -1,0 +1,399 @@
+---
+/**
+ * CustomRecurrenceModal.astro — Tabler modal for Google Calendar-style custom recurrence rules.
+ *
+ * Shared across New Task, Task Detail, and Routine forms.
+ * Driven by `@lib/recurrence-picker.ts`.
+ *
+ * @domain tasks
+ * @kcs Reusable RFC 5545 custom recurrence picker modal
+ */
+import Icon from "./Icon.astro"
+---
+<div
+  id="custom-recurrence-overlay"
+  class="custom-recurrence-overlay"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="custom-recurrence-title"
+  hidden
+>
+  <div class="modal-dialog modal-dialog-centered custom-recurrence-dialog">
+    <div class="modal-content custom-recurrence-content">
+      <div class="modal-header custom-recurrence-header">
+        <h3 id="custom-recurrence-title" class="modal-title flex items-center gap-2">
+          <Icon name="repeat" size={18} sprite={true} />
+          <span>Custom recurrence</span>
+        </h3>
+        <button
+          type="button"
+          id="cr-close-btn"
+          class="btn-icon"
+          aria-label="Close custom recurrence"
+        >
+          <Icon name="x" size={18} sprite={true} />
+        </button>
+      </div>
+
+      <div class="modal-body custom-recurrence-body">
+        <div class="cr-row cr-row--inline">
+          <label for="cr-interval" class="cr-label">Repeat every</label>
+          <div class="cr-interval-group">
+            <input
+              id="cr-interval"
+              type="number"
+              min="1"
+              max="999"
+              step="1"
+              value="1"
+              class="form-control cr-interval-input"
+              aria-label="Repeat interval"
+            />
+            <select id="cr-freq" class="form-select cr-freq-select" aria-label="Repeat frequency">
+              <option value="DAILY">day</option>
+              <option value="WEEKLY" selected>week</option>
+              <option value="MONTHLY">month</option>
+              <option value="YEARLY">year</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="cr-weekly-section" class="cr-section">
+          <span class="cr-label">Repeat on</span>
+          <div class="cr-weekday-grid" role="group" aria-label="Days of week">
+            <button type="button" class="cr-day-btn" data-day="SU" aria-label="Sunday" aria-pressed="false">S</button>
+            <button type="button" class="cr-day-btn" data-day="MO" aria-label="Monday" aria-pressed="true">M</button>
+            <button type="button" class="cr-day-btn" data-day="TU" aria-label="Tuesday" aria-pressed="false">T</button>
+            <button type="button" class="cr-day-btn" data-day="WE" aria-label="Wednesday" aria-pressed="false">W</button>
+            <button type="button" class="cr-day-btn" data-day="TH" aria-label="Thursday" aria-pressed="false">T</button>
+            <button type="button" class="cr-day-btn" data-day="FR" aria-label="Friday" aria-pressed="false">F</button>
+            <button type="button" class="cr-day-btn" data-day="SA" aria-label="Saturday" aria-pressed="false">S</button>
+          </div>
+        </div>
+
+        <div id="cr-monthly-section" class="cr-section" hidden>
+          <label for="cr-monthly-mode" class="cr-label">Monthly pattern</label>
+          <select id="cr-monthly-mode" class="form-select">
+            <option value="day">Monthly on day 1</option>
+            <option value="ordinal">Monthly on the first Monday</option>
+          </select>
+        </div>
+
+        <div class="cr-row cr-row--inline">
+          <label for="cr-time" class="cr-label">Time (optional)</label>
+          <div class="cr-time-group">
+            <input
+              type="time"
+              id="cr-time"
+              class="form-control cr-time-input"
+              aria-label="Recurrence time of day"
+            />
+            <button
+              type="button"
+              id="cr-time-clear"
+              class="btn btn-ghost btn-sm cr-time-clear"
+              aria-label="Clear time"
+              hidden
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <fieldset class="cr-section cr-ends-fieldset">
+          <legend class="cr-label">Ends</legend>
+
+          <label class="cr-end-option">
+            <span class="cr-radio-wrap">
+              <input type="radio" name="cr-ends" value="never" id="cr-ends-never" class="form-check-input" checked />
+              <span>Never</span>
+            </span>
+          </label>
+
+          <div class="cr-end-option">
+            <label class="cr-radio-wrap" for="cr-ends-on">
+              <input type="radio" name="cr-ends" value="on" id="cr-ends-on" class="form-check-input" />
+              <span>On</span>
+            </label>
+            <input
+              type="date"
+              id="cr-until-date"
+              class="form-control cr-end-input"
+              aria-label="End date"
+              disabled
+            />
+          </div>
+
+          <div class="cr-end-option">
+            <label class="cr-radio-wrap" for="cr-ends-after">
+              <input type="radio" name="cr-ends" value="after" id="cr-ends-after" class="form-check-input" />
+              <span>After</span>
+            </label>
+            <div class="cr-after-group">
+              <input
+                type="number"
+                id="cr-count"
+                min="1"
+                max="999"
+                step="1"
+                value="13"
+                class="form-control cr-count-input"
+                aria-label="Number of occurrences"
+                disabled
+              />
+              <span class="cr-after-suffix">occurrences</span>
+            </div>
+          </div>
+        </fieldset>
+
+        <p id="cr-preview" class="cr-preview" aria-live="polite"></p>
+      </div>
+
+      <div class="modal-footer custom-recurrence-footer">
+        <button type="button" id="cr-cancel-btn" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="cr-done-btn" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style is:inline is:global>
+  .custom-recurrence-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10180;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(8, 10, 14, 0.64);
+    animation: crFadeIn 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .custom-recurrence-overlay[hidden] {
+    display: none;
+  }
+  .custom-recurrence-dialog {
+    width: 100%;
+    max-width: 400px;
+    margin: 0;
+  }
+  .custom-recurrence-content {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 14px);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    width: 100%;
+    max-width: 400px;
+    opacity: 1;
+    transform: none;
+  }
+  .custom-recurrence-overlay:not([hidden]) .custom-recurrence-content {
+    animation: modalFadeIn 180ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+  .custom-recurrence-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .custom-recurrence-header .modal-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .custom-recurrence-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+  }
+  .cr-row--inline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .cr-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 0.375rem;
+  }
+  .cr-row--inline .cr-label {
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
+  .cr-interval-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .custom-recurrence-body .form-control,
+  .custom-recurrence-body .form-select {
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    padding: 0.4rem 0.65rem;
+    font-size: 0.875rem;
+    min-height: 2.25rem;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .custom-recurrence-body .form-control:focus,
+  .custom-recurrence-body .form-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .custom-recurrence-body .form-control:disabled,
+  .custom-recurrence-body .form-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .cr-interval-input {
+    width: 4.75rem;
+    text-align: center;
+  }
+  .cr-freq-select {
+    width: 8rem;
+  }
+  .cr-time-group {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    justify-content: flex-end;
+    flex: 1;
+  }
+  .cr-time-input {
+    width: 8.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .cr-time-clear {
+    padding: 0.25rem 0.55rem;
+    min-height: 2rem;
+    font-size: 0.78rem;
+  }
+  .cr-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .cr-section[hidden] {
+    display: none;
+  }
+  .cr-weekday-grid {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  .cr-day-btn {
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .cr-day-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+  .cr-day-btn:active {
+    transform: scale(0.95);
+  }
+  .cr-day-btn[aria-pressed="true"],
+  .cr-day-btn[aria-pressed="true"]:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast, #ffffff);
+  }
+  .cr-ends-fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    gap: 0.6rem;
+  }
+  .cr-ends-fieldset legend {
+    margin-bottom: 0.5rem;
+  }
+  .cr-end-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2.25rem;
+  }
+  .cr-radio-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    min-width: 4.5rem;
+  }
+  .cr-end-input {
+    max-width: 11.5rem;
+  }
+  .cr-after-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 11.5rem;
+  }
+  .cr-count-input {
+    width: 4.75rem;
+    text-align: center;
+  }
+  .cr-after-suffix {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .cr-preview {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-surface, var(--bg-input));
+    border: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .custom-recurrence-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+  @keyframes crFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .custom-recurrence-overlay,
+    .cr-day-btn {
+      animation: none;
+      transition: none;
+    }
+  }
+</style>

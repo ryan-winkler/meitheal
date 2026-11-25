@@ -57,10 +57,12 @@ pageLifecycle.onPageLoad(signal => {
   document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target : null
     if (!target || mobileMenu.contains(target) || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    if (sidebar.classList.contains("open") && !sidebar.contains(target)) {
+      closeDrawer(true)
+      return
+    }
     const link = target.closest(".nav-link:not(.nav-link--external), .task-creation__settings")
-    // The mobile drawer backdrop is rendered by body::before.
-    if (target === document.body) closeDrawer(true)
-    else if (link && sidebar.contains(target) && !sidebar.hasAttribute("data-sidebar-editing")) closeDrawer(false, !link.matches(".task-creation__settings"))
+    if (link && sidebar.contains(target) && !sidebar.hasAttribute("data-sidebar-editing")) closeDrawer(false, !link.matches(".task-creation__settings"))
   }, { signal })
   document.addEventListener("keydown", event => {
     if (!sidebar.classList.contains("open") || event.defaultPrevented || hasPriorityOverlay()

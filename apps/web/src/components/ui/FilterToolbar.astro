@@ -248,16 +248,16 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {/* Group-by selector */}
   {showGroupBy && (
     <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-group-by-dropdown`} aria-label="Group tasks by">
-      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-group-by-label`}>
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger filter-dropdown__trigger" id={`${prefix}-group-by-label`}>
         <span class="filter-dropdown__value">{groupOptions?.[0]?.label || "Group by"}</span>
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="filter-dropdown__chevron" aria-hidden="true"><Icon name="chevron-down" size={13} sprite={true} /></span>
       </summary>
       <div class="timeline-zoom-panel mt-1 w-max font-normal">
         <div class="timeline-zoom-panel-title">Group by</div>
         {groupOptions.map((opt, i) => (
           <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-group-by`} data-value={opt.value}>
-            <span class="truncate pr-4">{opt.label}</span>
-            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="truncate pr-2">{opt.label}</span>
+            <Icon name="check" size={13} sprite={true} />
           </button>
         ))}
       </div>
@@ -268,9 +268,9 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {/* Sub-group-by selector — only for table view with groupBy active */}
   {showGroupBy && view === "table" && (
     <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sub-group-by-dropdown`} aria-label="Sub-group tasks by" hidden={!tableState.groupBy}>
-      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sub-group-by-label`}>
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger filter-dropdown__trigger" id={`${prefix}-sub-group-by-label`}>
         <span class="filter-dropdown__value">No sub-group</span>
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="filter-dropdown__chevron" aria-hidden="true"><Icon name="chevron-down" size={13} sprite={true} /></span>
       </summary>
       <div class="timeline-zoom-panel mt-1 w-max font-normal">
         <div class="timeline-zoom-panel-title">Then group by</div>
@@ -286,8 +286,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           { value: "rice", label: "Then by RICE" }
         ].map((opt, i) => (
           <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sub-group-by`} data-value={opt.value}>
-            <span class="truncate pr-4">{opt.label}</span>
-            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="truncate pr-2">{opt.label}</span>
+            <Icon name="check" size={13} sprite={true} />
           </button>
         ))}
       </div>
@@ -298,9 +298,9 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {/* Sort-by selector */}
   {showSortBy && (
     <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sort-by-dropdown`} aria-label="Sort tasks by">
-      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sort-by-label`}>
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger filter-dropdown__trigger" id={`${prefix}-sort-by-label`}>
         <span class="filter-dropdown__value">Default Sort</span>
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="filter-dropdown__chevron" aria-hidden="true"><Icon name="chevron-down" size={13} sprite={true} /></span>
       </summary>
       <div class="timeline-zoom-panel mt-1 w-max font-normal">
         <div class="timeline-zoom-panel-title">Sort by</div>
@@ -313,8 +313,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           { value: "rice_desc", label: "RICE Score (High to Low)" }
         ].map((opt, i) => (
           <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sort-by`} data-value={opt.value}>
-            <span class="truncate pr-4">{opt.label}</span>
-            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="truncate pr-2">{opt.label}</span>
+            <Icon name="check" size={13} sprite={true} />
           </button>
         ))}
       </div>
@@ -403,7 +403,6 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     {t("tasks.clear_filters", locale)}
   </button>
 
-  {view !== "timeline" && <>
   {/* Unified Filter Builder Toggle */}
   <button
     type="button"
@@ -418,7 +417,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   </button>
 
   {/* Unified Filter Builder Dropdown (Hidden by default) */}
-  <div class="filter-toolbar__advanced-panel hidden absolute left-0 top-full mt-2 z-50 w-[calc(100vw-32px)] sm:w-full max-w-[800px] rounded-lg border border-border bg-bg-card shadow-2xl" id={`${prefix}-advanced-panel`} role="region" aria-label="Custom Filter Builder">
+  <div class="filter-toolbar__advanced-panel hidden absolute left-0 top-full mt-2 z-[260] w-[calc(100vw-32px)] sm:w-full max-w-[800px] rounded-lg border border-border bg-bg-card shadow-2xl" id={`${prefix}-advanced-panel`} role="region" aria-label="Custom Filter Builder">
     <div class="advanced-panel__header px-4 py-3 border-b border-border flex justify-between items-center bg-bg-secondary rounded-t-lg">
       <h4 class="text-sm font-semibold text-text-primary flex items-center gap-1.5">
         <Icon name="adjustments-horizontal" size={14} class="text-text-muted" />
@@ -457,11 +456,10 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </div>
   </div>
 
-  {/* Label filter bar — separate row below main toolbar */}
-  <div class:list={[view === "table" && "w-full", view === "kanban" && "hidden"]} id={`${prefix}-label-filter-container`}>
+  {/* Label filter bar — inline with peer filter controls on table/timeline/calendar */}
+  <div class:list={[view === "kanban" && "hidden"]} id={`${prefix}-label-filter-container`}>
     <LabelFilterBar id={`${prefix}-label-filter`} view={view} activeLabels={calendarState.labels ?? []} />
   </div>
-  </>}
 </div>
 
 <script>
@@ -528,9 +526,9 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     if (prefix === "kanban" && !params.has("groupBy")) initial.groupBy = storedKanbanGroup()
     if (prefix === "timeline" && initial.groupBy === "assigned") initial.groupBy = "assignee"
     // Internal state for advanced filters
-    let advancedFilterState = prefix === "timeline" ? null : initial.advancedFilter ?? null
+    let advancedFilterState = initial.advancedFilter ?? null
     let { status = "", priority = "" } = initial
-    let { rice = "", user = "", labels = [], task_type = "" } = prefix === "timeline" ? {} : initial
+    let { rice = "", user = "", labels = [], task_type = "" } = prefix === "timeline" ? { labels: initial.labels ?? [] } : initial
     let area = prefix === "table" ? initial.area ?? getRememberedAreaId() : prefix === "calendar" ? initial.area ?? "" : ""
     const summary = toolbar.querySelector<HTMLElement>("[data-filter-summary]")
     const unassigned = toolbar.querySelector<HTMLInputElement>("[data-table-unassigned]")
@@ -1045,12 +1043,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       }
     }
 
-    // Close dropdowns when clicking outside
+    // Close dropdowns (including workflow & created-date popovers) when clicking outside
     document.addEventListener("click", (e) => {
       const target = e.target as Node
       dropdowns.forEach(d => {
         if (!d.contains(target)) d.removeAttribute("open")
       })
+      if (workflow?.open && !workflow.contains(target)) workflow.open = false
+      if (createdDate?.open && !createdDate.contains(target)) createdDate.open = false
     }, { signal })
 
     // Type toggle listeners
@@ -1205,6 +1205,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         timelineArea = (event as CustomEvent<{ areaId: string }>).detail.areaId
         updateClearVisibility()
       }, { signal })
+      document.addEventListener("meitheal:label-filter", event => {
+        const detail = (event as CustomEvent<{ view: string; labels: string[] }>).detail
+        if (detail?.view !== "timeline") return
+        labels = detail.labels ?? []
+        updateClearVisibility()
+      }, { signal })
     }
     if (prefix === "table" || prefix === "calendar") {
       document.addEventListener("meitheal:label-filter", event => {
@@ -1306,7 +1312,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 </script>
 
 
-<style>
+<style is:inline>
   .filter-toolbar__disclosure { display: none; }
   @media (max-width: 640px) {
     .filter-toolbar__disclosure:not([hidden]) {
@@ -1318,7 +1324,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     .filter-toolbar__disclosure[aria-expanded="true"] {
       margin-block-end: 8px;
     }
-    .filter-toolbar__disclosure[aria-expanded="true"] :global(.filter-toolbar__disclosure-chevron) {
+    .filter-toolbar__disclosure[aria-expanded="true"] .filter-toolbar__disclosure-chevron {
       transform: rotate(180deg);
     }
     .filter-toolbar__disclosure[aria-expanded="false"]:not([hidden]) + .filter-toolbar {
@@ -1329,7 +1335,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       font-size: 0.75rem;
       font-weight: 600;
     }
-    :is(.filter-toolbar--calendar, .filter-toolbar--timeline) :global(:is(button, select, input, summary)) {
+    :is(.filter-toolbar--calendar, .filter-toolbar--timeline) :is(button, select, input, summary) {
       min-height: 44px;
     }
   }
@@ -1341,37 +1347,115 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     outline-offset: 2px;
   }
   @media (pointer: coarse) {
-    .filter-toolbar--calendar :global(:is(button, select, input, summary)) { min-height: 44px; }
-    .filter-toolbar--calendar :global(.advanced-filter-row button) { min-inline-size: 44px; }
+    .filter-toolbar--calendar :is(button, select, input, summary) { min-height: 44px; }
+    .filter-toolbar--calendar .advanced-filter-row button { min-inline-size: 44px; }
   }
-  .table-workflow-filter { min-inline-size: 0; max-inline-size: 100%; }
-  .table-workflow-filter > summary, .table-unassigned-filter { min-block-size: 44px; height: auto; }
-  .table-workflow-filter__options {
-    border: 0;
+  .table-workflow-filter {
+    position: relative;
     min-inline-size: 0;
-    margin: 0.25rem 0 0;
-    padding: 0;
-    max-block-size: 15rem;
+    max-inline-size: 100%;
+  }
+  .table-workflow-filter > summary {
+    list-style: none;
+    min-block-size: 32px;
+    height: auto;
+  }
+  .table-workflow-filter > summary::-webkit-details-marker {
+    display: none;
+  }
+  .table-unassigned-filter {
+    min-block-size: 32px;
+    height: auto;
+  }
+  .table-workflow-filter__options {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 260;
+    min-inline-size: 224px;
+    max-inline-size: min(300px, calc(100vw - 24px));
+    max-block-size: 16rem;
     overflow: auto;
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35));
+    transform-origin: top left;
+    animation: filterPopoverIn 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .table-workflow-filter__options label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    min-block-size: 44px;
+    min-block-size: 34px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
     overflow-wrap: anywhere;
+    transition: background 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .table-workflow-filter__options label:hover {
+    background: var(--bg-hover);
   }
   .table-workflow-filter__options input { flex-shrink: 0; }
   .table-created-range {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 260;
     display: grid;
-    gap: 0.5rem;
-    inline-size: min(13rem, 100%);
-    margin-block-start: 0.25rem;
+    gap: 0.625rem;
+    inline-size: min(16rem, calc(100vw - 24px));
+    margin: 0;
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35));
+    transform-origin: top left;
+    animation: filterPopoverIn 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
-  .table-created-range label { display: grid; gap: 0.25rem; min-inline-size: 0; }
+  .table-created-range label {
+    display: grid;
+    gap: 0.25rem;
+    min-inline-size: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
   .table-created-range input { min-inline-size: 0; inline-size: 100%; }
-  .table-created-range :is(input, button) { min-block-size: 44px; }
-  .table-created-range [role="alert"] { color: var(--text-danger, var(--text-primary)); }
-  [data-table-created-summary] { flex-wrap: wrap; }
-  [data-table-created-active] { inline-size: 100%; font-variant-numeric: tabular-nums; }
+  .table-created-range :is(input, button) { min-block-size: 36px; }
+  .table-created-range [role="alert"] {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--danger-text, var(--danger, var(--text-primary)));
+  }
+  [data-table-created-summary] { flex-wrap: nowrap; }
+  [data-table-created-active] {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.75rem;
+    opacity: 0.9;
+  }
+  @keyframes filterPopoverIn {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @media (max-width: 640px), (pointer: coarse) {
+    .table-workflow-filter > summary,
+    .table-unassigned-filter,
+    .table-workflow-filter__options label,
+    .table-created-range :is(input, button) {
+      min-block-size: 44px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .table-workflow-filter__options,
+    .table-created-range {
+      animation: none;
+    }
+  }
 </style>

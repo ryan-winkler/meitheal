@@ -56,7 +56,7 @@ A concurrent change asks you to refresh rather than overwriting another person's
 
 Offline editing uses the existing actor/installation/Board queue. Work pages, APIs and capture receipts require current network verification. The static offline screen contains no personal tasks. A missing capture acknowledgement remains unconfirmed: check the original attempt when connected before creating another task.
 
-Use Home Assistant cold App backups for the complete instance; backups include `/data/meitheal-board-grants.json` and exclude only transient logs, temporary files, and `meitheal-board-grants-pending`. Never reconstruct authority from restored database rows. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for backup verification, stopped-App recovery, and offline checkpoint procedures.
+Use Home Assistant App backups for the complete instance. The separately retained current grant journal is excluded from those archives. Never reconstruct authority from restored rows or an old matching database/marker pair. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for current custody, stopped-App verification and recovery.
 
 Retiring an Area, Project or Goal preserves historical associations in storage. Public task responses omit unavailable planning references; they do not expose a private or retired destination as an active selection. A successful retirement acknowledges its own committed change while stale readers must refresh.
 

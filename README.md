@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Install</a> · <a href="#a-look-around">Screenshots</a> · <a href="#themes">Themes</a> · <a href="#features">Features</a> · <a href="#home-assistant-automations-and-assist">Automations</a> · <a href="#documentation">Docs</a> · <a href="SUPPORT.md">Support</a>
+  <a href="#installation">Install</a> · <a href="#a-look-around">Screenshots</a> · <a href="#themes">Themes</a> · <a href="#features">Features</a> · <a href="#home-assistant-automations-and-assist">Automations</a> · <a href="#documentation">Docs</a> · <a href="#sponsors">Sponsors</a> · <a href="SUPPORT.md">Support</a>
 </p>
 
 <p align="center">
@@ -113,7 +113,7 @@ Home Assistant already knows when a door is left open, when a filter hits 180 da
 
 ## Themes
 
-Choose from built-in themes (**Emerald Isle**, **Knight Rider**, **Light**, and **Auto (System)**), pick a personal accent swatch or custom hex color, upload custom CSS, or enable **Match Home Assistant theme** so Meitheal follows your Home Assistant dashboard automatically.
+Choose from 12 built-in presets (**Auto**, **Paper Emerald**, **Zen Paper**, **Catppuccin Latte**, **Nordic Frost**, **Solarized Dawn**, **Emerald Isle**, **Knight Rider**, **Plainspace**, **Velvet**, **Liquid Glass**, and **Rainbow**), pick a personal accent swatch or custom hex color, upload custom CSS ([custom theme guide](docs/kcs/custom-themes.md)), or enable **Match Home Assistant theme** so Meitheal follows your Home Assistant dashboard automatically.
 
 <table>
   <tr>
@@ -226,13 +226,19 @@ Meitheal splits application source from Store manifests so low-memory Home Assis
 
 Meitheal combines human Product Management direction with structured AI-assisted engineering workflows, led by review-loop skills in the [Elephant-Goldfish Model (EGM)](https://github.com/google/elephant-goldfish-model) (including [`egm-review-loop`](https://github.com/google/elephant-goldfish-model/tree/main/skills/egm-review-loop)), [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done), and [gstack](https://github.com/garrytan/gstack), paired with automated Playwright and Home Assistant pytest suites and continuous security scanning. Per-run agent logs stay outside Git, while durable architectural choices live in [ADRs](docs/decisions/index.md).
 
-Meitheal is independent and community-driven. You can support ongoing testing and hardware qualification via:
+## Sponsors
+
+Meitheal is independent, local-first, and community-driven — with no cloud subscriptions or tracking. Sponsorships fund ongoing Home Assistant hardware qualification (Home Assistant Green, Raspberry Pi), multi-arch builds, and long-term maintenance.
+
+**Sponsor and feature your logo**: Organizations and community backers who sponsor Meitheal can have their **logo and link featured directly on Meitheal's in-app About page** (**Settings → About, App & Companion**) as well as here in the repository README.
 
 <p>
   <a href="https://github.com/sponsors/ryan-winkler"><img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white" alt="GitHub Sponsors"></a>
   <a href="https://ko-fi.com/ryanw_eu"><img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
   <a href="https://revolut.me/ryanwi"><img src="https://img.shields.io/badge/Support-Revolut-191c1f?logo=revolut&logoColor=white" alt="Revolut"></a>
 </p>
+
+> Interested in a sponsor logo placement or commercial support? Reach out via [GitHub Sponsors](https://github.com/sponsors/ryan-winkler) or see [COMMERCIAL.md](COMMERCIAL.md).
 
 ## License
 

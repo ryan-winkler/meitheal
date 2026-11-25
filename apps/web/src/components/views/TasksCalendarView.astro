@@ -171,12 +171,22 @@ const viewModes: Array<{ id: CalendarViewMode; label: string; key: string }> = [
 ]
 const dayViewData = tasksByDay[cal.anchorDate]
 const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? householdDayRanges(cal.anchorDate, tz) : undefined
+const anchorDateObj = new Date(`${cal.anchorDate}T00:00:00Z`)
+const anchorDayNum = anchorDateObj.getUTCDate()
+const anchorWeekdayShort = anchorDateObj.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })
+const todayDayNum = Number(todayStr.slice(8, 10)) || new Date().getDate()
+const hourlySlots = Array.from({ length: 17 }, (_, i) => {
+  const hour = i + 6 // 6 AM to 10 PM
+  const suffix = hour >= 12 ? "PM" : "AM"
+  const h12 = hour % 12 === 0 ? 12 : hour % 12
+  return { hour, label: `${h12} ${suffix}` }
+})
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
 
   <div id="calendar-shell" class="page-shell" data-timezone={tz}>
-    <div class="card calendar-filter-island">
+    <div id="cal-filter-island" class="card calendar-filter-island">
       <FilterToolbar view="calendar" showSearch showGroupBy={false} showSortBy={false} />
     </div>
     <div class="calendar-refresh-status" data-calendar-status role="status" hidden={calendarAvailable}>
@@ -201,7 +211,23 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
       <section class="card calendar-card" aria-labelledby="calendar-month-heading">
         <div class="card-header calendar-controls">
           <div class="calendar-heading-group">
-            <h2 class="card-title" id="calendar-month-heading">{cal.heading}</h2>
+            <h2 class="card-title" id="calendar-month-heading">
+              <span class="cal-heading__full">{cal.heading}</span>
+              <span class="cal-heading__short">{cal.shortHeading}</span>
+            </h2>
+            {cal.view === "month" && (
+              <button
+                type="button"
+                id="cal-mobile-month-toggle"
+                class="cal-mobile-month-toggle"
+                aria-expanded="true"
+                aria-controls="cal-month-grid"
+                title="Show or hide month grid"
+              >
+                <span>{cal.heading}</span>
+                <Icon name="chevron-down" size={16} />
+              </button>
+            )}
           </div>
           <div class="calendar-toolbar-actions">
             <nav class="btn-group cal-view-switcher" aria-label="Calendar view range">
@@ -220,7 +246,30 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
               ))}
             </nav>
             <div class="btn-list calendar-navigation" aria-label={`Change ${periodLabel}`}>
-              <a href={calendarHref({ view: cal.view })} class="btn cal-today-btn" data-calendar-nav="today" title="Jump to today (T)">Today</a>
+              <button
+                type="button"
+                id="cal-mobile-filter-toggle"
+                class="btn cal-nav-btn cal-mobile-filter-toggle"
+                aria-expanded="false"
+                aria-controls="cal-filter-island"
+                aria-label="Toggle calendar filters"
+                title="Filters"
+              >
+                <Icon name="adjustments-horizontal" size={16} />
+              </button>
+              <button
+                type="button"
+                class="btn cal-nav-btn cal-share-btn"
+                data-calendar-share-day
+                aria-label="Share calendar view"
+                title="Share calendar view"
+              >
+                <Icon name="external-link" size={15} />
+              </button>
+              <a href={calendarHref({ view: cal.view })} class="btn cal-today-btn" data-calendar-nav="today" title="Jump to today (T)">
+                <span class="cal-today-btn__desktop">Today</span>
+                <span class="cal-today-btn__mobile" aria-hidden="true">{todayDayNum}</span>
+              </a>
               <div class="btn-group">
                 <a href={calendarHref(cal.prev)} class="btn cal-nav-btn" data-calendar-nav="previous" aria-label={`Previous ${periodLabel}`}>
                   <Icon name="chevron-down" class="cal-prev-icon" size={16} />
@@ -259,6 +308,33 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
                   <Icon name="plus" size={15} />
                   <span>Add Task</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Google Calendar-inspired Hourly Day Timeline */}
+            <div class="cal-hourly-shell" data-cal-hourly={cal.anchorDate} data-is-today={String(cal.anchorDate === todayStr)}>
+              <div class="cal-hourly-header">
+                <div class={`cal-hourly-date-badge${cal.anchorDate === todayStr ? " is-today" : ""}`}>
+                  <span class="cal-hourly-date-badge__num">{anchorDayNum}</span>
+                  <span class="cal-hourly-date-badge__dow">{anchorWeekdayShort}</span>
+                </div>
+                <div id="cal-day-allday-strip" class="cal-hourly-allday" aria-label="All-day tasks and events"></div>
+              </div>
+              <div class="cal-hourly-grid-wrap">
+                <div class="cal-hourly-gutter" aria-hidden="true">
+                  {hourlySlots.map(slot => (
+                    <div class="cal-hourly-gutter__label">{slot.label}</div>
+                  ))}
+                </div>
+                <div class="cal-hourly-track" id="cal-day-hourly-track">
+                  {hourlySlots.map(slot => (
+                    <div class="cal-hourly-slot" data-hour={slot.hour}></div>
+                  ))}
+                  <div id="cal-day-hourly-blocks" class="cal-hourly-blocks"></div>
+                  <div id="cal-day-now-line" class="cal-now-line" hidden>
+                    <span class="cal-now-line__dot" aria-hidden="true"></span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -357,18 +433,21 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
 
         {/* ───────── MONTH VIEW ───────── */}
         {cal.view === "month" && (
-          <div class="calendar-grid">
+          <>
+          <div id="cal-month-grid" class="calendar-grid">
             {cal.weekLabels.map((d, i) => (
               <div class={`cal-header ${isColumnWeekend(i, normalizedWeekStart) ? "cal-header-weekend" : ""}`}>
-                {d}
+                <span class="cal-header__full">{d}</span>
+                <span class="cal-header__short" aria-hidden="true">{d.slice(0, 1)}</span>
               </div>
             ))}
             {monthGrid.flat().map((cell) => {
               const ranges = cell.isCurrentMonth && filter.showConnectedEvents ? householdDayRanges(cell.dateStr, tz) : undefined
+              const isSelected = cell.isCurrentMonth && cell.dateStr === cal.anchorDate
               return (
                 <div
                   id={cell.isCurrentMonth ? `calendar-day-${cell.dateStr}` : undefined}
-                  class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
+                  class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${isSelected ? "cal-selected" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
                   data-date={cell.dateStr}
                   data-day-ranges={ranges?.length === 1 ? undefined : JSON.stringify(ranges)}
                   role={cell.isCurrentMonth ? "button" : undefined}
@@ -376,7 +455,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
                   aria-current={cell.isToday ? "date" : undefined}
                 >
                   {cell.isCurrentMonth && (
-                    <div>
+                    <div class="cal-cell__inner">
                       <span class={`cal-day-num ${cell.isToday ? "cal-day-today" : ""}`}>
                         {cell.day}<span class="sr-only">{` ${cal.heading}`}</span>
                       </span>
@@ -395,9 +474,14 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
                           )}
                           {cell.colors.length > 0 && (
                             <div class="cal-color-dots">
-                              {cell.colors.map((c) => (
+                              {cell.colors.slice(0, 3).map((c) => (
                                 <span class="cal-color-dot" style={`background: ${sanitizeCssColor(c)};`} />
                               ))}
+                            </div>
+                          )}
+                          {cell.colors.length === 0 && (
+                            <div class="cal-color-dots cal-color-dots--fallback">
+                              <span class="cal-color-dot" style="background: var(--accent);" />
                             </div>
                           )}
                         </div>
@@ -409,6 +493,27 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
               )
             })}
           </div>
+
+          {/* Mobile Google Calendar-style Split Agenda below compact mini-month */}
+          <section
+            id="cal-mobile-agenda"
+            class="cal-mobile-agenda"
+            data-mobile-agenda-date={cal.anchorDate}
+            data-today-str={todayStr}
+            aria-label="Selected day agenda"
+          >
+            <div class="cal-mobile-agenda__head">
+              <div class={`cal-mobile-agenda__date-col${cal.anchorDate === todayStr ? " is-today" : ""}`} id="cal-mobile-agenda-gutter">
+                <span class="cal-mobile-agenda__daynum" id="cal-mobile-agenda-daynum">{anchorDayNum}</span>
+                <span class="cal-mobile-agenda__dow" id="cal-mobile-agenda-dow">{anchorWeekdayShort}</span>
+              </div>
+              <div class="cal-mobile-agenda__stream" id="cal-mobile-agenda-items">
+                <div class="cal-skeleton-row" aria-hidden="true"></div>
+                <div class="cal-skeleton-row cal-skeleton-row--short" aria-hidden="true"></div>
+              </div>
+            </div>
+          </section>
+          </>
         )}
 
         {/* ───────── YEAR VIEW ───────── */}
@@ -503,10 +608,22 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
         </div>
       </div>
     </div>
+
+    {/* Floating + FAB for quick mobile event/task creation */}
+    <button
+      type="button"
+      id="cal-mobile-fab"
+      class="cal-mobile-fab"
+      data-fab-date={cal.anchorDate}
+      aria-label="Add task or event"
+      title="Add task or event"
+    >
+      <Icon name="plus" size={24} />
+    </button>
   </div>
 </div>
 
-<style>
+<style is:inline>
   #calendar-shell, .calendar-month {
     display: grid;
     gap: 12px;
@@ -567,6 +684,9 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     font-size: 16px;
     margin: 0;
   }
+  .cal-heading__short {
+    display: none;
+  }
   .calendar-toolbar-actions {
     display: flex;
     align-items: center;
@@ -622,8 +742,8 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
   .calendar-navigation .btn-group > .btn:last-child { border-start-start-radius: 0; border-end-start-radius: 0; }
   .calendar-navigation .btn-group > .btn + .btn { margin-inline-start: -1px; }
   .cal-nav-btn { min-width: 36px; }
-  .cal-nav-btn > :global(.cal-prev-icon) { transform: rotate(90deg); }
-  .cal-nav-btn > :global(.cal-next-icon) { transform: rotate(-90deg); }
+  .cal-nav-btn > .cal-prev-icon { transform: rotate(90deg); }
+  .cal-nav-btn > .cal-next-icon { transform: rotate(-90deg); }
   .calendar-agenda-note {
     margin: 0;
     padding: 9px 16px;
@@ -632,7 +752,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
   }
 
   /* ── Shimmer skeleton rows (Nielsen Visibility of System Status) ── */
-  :global(.cal-skeleton-row) {
+  .cal-skeleton-row {
     height: 46px;
     border-radius: 8px;
     background: linear-gradient(
@@ -644,7 +764,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     background-size: 200% 100%;
     animation: shimmer 1.2s ease-in-out infinite;
   }
-  :global(.cal-skeleton-row--short) {
+  .cal-skeleton-row--short {
     width: 72%;
   }
 
@@ -710,7 +830,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     border: 1px solid var(--border);
     min-height: 220px;
   }
-  :global(.cal-empty-state) {
+  .cal-empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -723,7 +843,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     color: var(--text-secondary);
     font-size: 13px;
   }
-  :global(.cal-empty-state__title) {
+  .cal-empty-state__title {
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -1033,7 +1153,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     flex-direction: column;
     gap: 1px;
   }
-  :global(.cal-inline-event) {
+  .cal-inline-event {
     font-size: 11px;
     color: var(--text-secondary);
     white-space: nowrap;
@@ -1044,11 +1164,11 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     background: var(--accent-bg, rgba(99, 102, 241, 0.08));
     line-height: 1.3;
   }
-  :global(.cal-inline-event.cal-inline-ha) {
+  .cal-inline-event.cal-inline-ha {
     background: var(--accent-bg);
     color: var(--accent-text);
   }
-  :global(.cal-inline-more) {
+  .cal-inline-more {
     font-size: 9px;
     color: var(--text-muted);
     padding: 0 3px;
@@ -1134,7 +1254,7 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     flex-direction: column;
     gap: 6px;
   }
-  :global(.day-drawer-item) {
+  .day-drawer-item {
     padding: 8px 12px;
     background: var(--bg-secondary);
     border-radius: 8px;
@@ -1145,27 +1265,27 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     border: 1px solid transparent;
     text-align: start;
   }
-  :global(button.day-drawer-item) { cursor: pointer; min-block-size: 44px; }
-  :global(.day-drawer-item:hover) {
+  button.day-drawer-item { cursor: pointer; min-block-size: 44px; }
+  .day-drawer-item:hover {
     background: var(--bg-hover);
   }
-  :global(.day-drawer-item-icon) {
+  .day-drawer-item-icon {
     font-size: 16px;
     flex-shrink: 0;
   }
-  :global(.day-drawer-item-content) {
+  .day-drawer-item-content {
     display: grid;
     gap: 2px;
     flex: 1;
     min-width: 0;
   }
-  :global(.day-drawer-item-title) {
+  .day-drawer-item-title {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
     overflow-wrap: anywhere;
   }
-  :global(.day-drawer-item-meta) {
+  .day-drawer-item-meta {
     font-size: 11px;
     color: var(--text-muted);
   }
@@ -1191,8 +1311,482 @@ const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? househo
     font-size: 12px;
   }
 
+  .cal-header__short,
+  .cal-mobile-month-toggle,
+  .cal-mobile-filter-toggle,
+  .cal-today-btn__mobile,
+  .cal-mobile-agenda,
+  .cal-mobile-fab,
+  .cal-color-dots--fallback {
+    display: none;
+  }
+
+  /* ── Google Calendar-inspired Hourly Day Timeline ── */
+  .cal-hourly-shell {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .cal-hourly-header {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .cal-hourly-date-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+    color: var(--text-primary);
+  }
+  .cal-hourly-date-badge.is-today {
+    color: var(--accent-text, var(--accent));
+  }
+  .cal-hourly-date-badge__num {
+    font-size: 24px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-hourly-date-badge__dow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.85;
+  }
+  .cal-hourly-allday {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 28px;
+    justify-content: center;
+  }
+  .cal-hourly-grid-wrap {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    max-height: 520px;
+    overflow-y: auto;
+    position: relative;
+  }
+  .cal-hourly-gutter {
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 40%, var(--bg-card));
+  }
+  .cal-hourly-gutter__label {
+    height: 48px;
+    padding: 4px 8px 0 0;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-hourly-track {
+    position: relative;
+    min-width: 0;
+  }
+  .cal-hourly-slot {
+    height: 48px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  .cal-hourly-blocks {
+    position: absolute;
+    inset: 0 8px 0 8px;
+    pointer-events: none;
+  }
+  .cal-gcal-event {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--cal-ev-bg, var(--accent));
+    color: var(--cal-ev-fg, #ffffff);
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+    transition: filter 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .cal-gcal-event:hover {
+    filter: brightness(1.06);
+  }
+  .cal-gcal-event:active {
+    transform: scale(0.985);
+  }
+  .cal-gcal-event--timed {
+    position: absolute;
+    left: 0;
+    right: 0;
+    pointer-events: auto;
+    overflow: hidden;
+  }
+  .cal-gcal-event__title {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cal-gcal-event__meta {
+    font-size: 11px;
+    opacity: 0.88;
+    line-height: 1.2;
+  }
+  .cal-now-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent, #3b82f6);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .cal-now-line__dot {
+    position: absolute;
+    left: -5px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent, #3b82f6);
+  }
+  .cal-mobile-now-divider {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin: 4px 0;
+  }
+  .cal-mobile-now-divider::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent, #3b82f6);
+    flex: none;
+  }
+  .cal-mobile-now-divider::after {
+    content: "";
+    flex: 1;
+    height: 2px;
+    background: var(--accent, #3b82f6);
+  }
+
+  /* ── Google Calendar Mobile Experience (<= 768px) ── */
+  @media (max-width: 768px) {
+    #calendar-shell {
+      gap: 6px;
+    }
+    .calendar-month {
+      gap: 0;
+    }
+    .calendar-month > .signal-bar,
+    #calendar-signal-summary {
+      display: none;
+    }
+    .calendar-filter-island {
+      display: none;
+      margin-block-start: 4px;
+      padding: 8px 10px;
+    }
+    .calendar-filter-island.is-mobile-open {
+      display: block;
+    }
+    .cal-mobile-filter-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cal-mobile-filter-toggle[aria-expanded="true"] {
+      background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      color: var(--accent-text, var(--accent));
+    }
+    .calendar-controls {
+      padding: 8px 12px;
+      gap: 8px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+    }
+    .calendar-heading-group {
+      grid-column: 1;
+      grid-row: 1;
+      min-width: 0;
+    }
+    .calendar-toolbar-actions {
+      display: contents;
+    }
+    .calendar-navigation {
+      grid-column: 2;
+      grid-row: 1;
+      gap: 4px;
+    }
+    .cal-view-switcher {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      width: 100%;
+    }
+    .cal-view-switcher > .btn {
+      flex: 1;
+      justify-content: center;
+      padding: 4px 6px;
+      font-size: 12px;
+      min-height: 32px;
+    }
+    .calendar-month[data-calendar-mode="month"] #calendar-month-heading {
+      display: none;
+    }
+    #calendar-month-heading {
+      font-size: 16px;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cal-heading__full {
+      display: none;
+    }
+    .cal-heading__short {
+      display: inline;
+    }
+    .cal-mobile-month-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-primary);
+      font-size: 16.5px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .cal-mobile-month-toggle[aria-expanded="false"] svg {
+      transform: rotate(-90deg);
+    }
+    .cal-today-btn__desktop {
+      display: none;
+    }
+    .cal-today-btn__mobile {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border: 1.5px solid currentColor;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .cal-today-btn {
+      padding: 4px 6px;
+      min-width: 34px;
+      min-height: 34px;
+    }
+    .cal-nav-btn {
+      min-width: 32px;
+      min-height: 34px;
+      padding: 4px 6px;
+    }
+    .cal-header__full {
+      display: none;
+    }
+    .cal-header__short {
+      display: inline;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .calendar-grid {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 0;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      overflow-x: hidden;
+    }
+    .calendar-grid.is-collapsed {
+      display: none;
+    }
+    .cal-header,
+    .cal-header-weekend {
+      background: var(--bg-card);
+      padding: 4px 0 2px;
+      border: none;
+    }
+    .cal-cell,
+    .cal-weekend,
+    .cal-other,
+    .cal-today {
+      min-height: 36px;
+      padding: 2px 1px;
+      background: var(--bg-card) !important;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .cal-cell__inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .cal-day-num {
+      width: 26px;
+      height: 26px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+    .cal-cell.cal-selected .cal-day-num {
+      background: var(--personal-accent, var(--accent));
+      color: var(--personal-accent-foreground, #ffffff);
+      font-weight: 700;
+    }
+    .cal-cell .cal-task-badge,
+    .cal-cell .cal-event-badge,
+    .cal-cell .cal-inline-events {
+      display: none;
+    }
+    .cal-cell .cal-task-indicator {
+      margin-top: 0;
+      justify-content: center;
+    }
+    .cal-cell .cal-color-dots,
+    .cal-cell .cal-color-dots--fallback {
+      display: flex;
+      gap: 2px;
+      margin-top: 0;
+    }
+    .cal-cell .cal-color-dot {
+      width: 5px;
+      height: 5px;
+      box-shadow: none;
+    }
+    .cal-mobile-agenda {
+      display: block;
+      padding: 12px 12px 24px;
+      background: var(--bg-card);
+      min-height: 180px;
+    }
+    .cal-mobile-agenda__head {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+    .cal-mobile-agenda__date-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.15;
+      color: var(--text-primary);
+    }
+    .cal-mobile-agenda__date-col.is-today {
+      color: var(--accent-text, var(--accent));
+    }
+    .cal-mobile-agenda__daynum {
+      font-size: 21px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .cal-mobile-agenda__dow {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .cal-mobile-agenda__stream {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .cal-mobile-agenda__empty {
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px dashed var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .cal-mobile-agenda {
+      touch-action: pan-y;
+      will-change: transform;
+    }
+    .calendar-month[data-calendar-mode="day"] .calendar-card {
+      border-inline: 0;
+      border-radius: 0;
+      margin-inline: -12px;
+      width: calc(100% + 24px);
+      max-width: none;
+      box-shadow: none;
+    }
+    .cal-day-view {
+      padding: 0;
+      gap: 0;
+      border-block: 0;
+    }
+    .cal-day-view__bar,
+    .cal-day-view__actions,
+    .cal-day-view__columns {
+      display: none;
+    }
+    .cal-hourly-shell {
+      border: 0;
+      border-radius: 0;
+      touch-action: pan-y;
+      will-change: transform;
+    }
+    .cal-hourly-header {
+      padding: 8px 12px;
+      background: var(--bg-card);
+    }
+    .cal-hourly-grid-wrap {
+      max-height: calc(100dvh - 196px);
+      min-height: 440px;
+    }
+    .cal-mobile-fab {
+      position: fixed;
+      right: 18px;
+      bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+      z-index: 60;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: none;
+      background: var(--personal-accent, var(--accent));
+      color: var(--personal-accent-foreground, #ffffff);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+      cursor: pointer;
+      transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 140ms ease;
+    }
+    .cal-mobile-fab:active {
+      transform: scale(0.94);
+    }
+    .calendar-agenda-note {
+      display: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .day-drawer-backdrop, .day-drawer-panel, .calendar-month[aria-busy="true"] .calendar-card::before, :global(.cal-skeleton-row) {
+    .day-drawer-backdrop, .day-drawer-panel, .calendar-month[aria-busy="true"] .calendar-card::before, .cal-skeleton-row, .cal-gcal-event, .cal-mobile-fab {
       transition: none;
       animation: none;
     }

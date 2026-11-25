@@ -1,6 +1,6 @@
 export interface TaskApiContext { boardId: string, session: string, actorKey?: string, boardName?: string }
 
-const workRoute = /^\/api\/(?:calendar\/agenda(?:\/|$)|agent-tokens(?:\/|$)|custom-fields(?:\/|$)|todo(?:\/|$)|saved-filters(?:\/|$)|search(?:\/|$)|users(?:\/|$)|lanes(?:\/|$)|gamification(?:\/|$)|tasks(?:\/|$)|areas(?:\/|$)|projects(?:\/|$)|goals(?:\/|$)|templates(?:\/|$)|habits(?:\/|$)|labels(?:\/|$)|pillars(?:\/|$)|task-drafts(?:\/|$)|task-pins(?:\/|$)|task-inactivity(?:\/|$)|reminders(?:\/|$)|mention-inbox(?:\/|$)|pomodoro(?:\/|$)|review(?:\/|$)|export\/tasks\.)/
+const workRoute = /^\/api\/(?:calendar\/agenda(?:\/|$)|integrations\/calendar\/push(?:\/|$)|agent-tokens(?:\/|$)|custom-fields(?:\/|$)|todo(?:\/|$)|saved-filters(?:\/|$)|search(?:\/|$)|users(?:\/|$)|lanes(?:\/|$)|gamification(?:\/|$)|tasks(?:\/|$)|areas(?:\/|$)|projects(?:\/|$)|goals(?:\/|$)|templates(?:\/|$)|habits(?:\/|$)|routines(?:\/|$)|labels(?:\/|$)|pillars(?:\/|$)|task-drafts(?:\/|$)|task-pins(?:\/|$)|task-inactivity(?:\/|$)|reminders(?:\/|$)|mention-inbox(?:\/|$)|pomodoro(?:\/|$)|review(?:\/|$)|export\/tasks\.)/
 
 /** One explicit context adapter for existing rich task controls and all views. */
 export function taskApiHeaders(context: TaskApiContext, existing?: HeadersInit): Headers {

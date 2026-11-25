@@ -1,0 +1,15 @@
+---
+/**
+ * BoardsStyles.astro — Deduplicated inline stylesheet for board & workspace pages.
+ *
+ * Mirrors the ?raw inline CSS pattern used by TasksTableView, TasksTimelineView,
+ * and Sidebar so board-specific styles stay off the shared _astro client bundle
+ * and are emitted at most once per SSR request.
+ */
+import boardsCss from "../../styles/boards.css?raw"
+
+const locals = Astro.locals as unknown as Record<string, unknown>
+const shouldEmit = !locals.__boardsCssEmitted
+if (shouldEmit) locals.__boardsCssEmitted = true
+---
+{shouldEmit && <style is:inline set:html={boardsCss} />}

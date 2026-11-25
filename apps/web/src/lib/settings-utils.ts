@@ -4,7 +4,6 @@
  * Extracted from the monolithic settings-controller.ts to provide
  * reusable save/load and CSS sanitization helpers.
  */
-import { byId, domEl } from "@lib/dom-helpers"
 import { createClientLogger } from "@lib/client-logger"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
@@ -59,12 +58,24 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
 
 
 
-export { byId, domEl }
+export const byId = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+  document.getElementById(id) as T | null
+
+export function domEl<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
 
 /** Trigger a client-side file download from text/JSON content. */
 export function downloadBlob(content: BlobPart, mimeType: string, filename: string, appendToBody = false): void {
   const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
-  const link = domEl("a")
+  const link = document.createElement("a")
   link.href = url
   link.download = filename
   if (appendToBody) document.body.append(link)

@@ -81,13 +81,23 @@ class MeithealTodoListEntity(MeithealBoardEntity, TodoListEntity):
         self._attr_device_info = device_info(entry)
         # Predictable entity ID so voice commands can target "Meitheal tasks"
         self._attr_suggested_object_id = "meitheal_tasks"
+        self._cached_todo_data: Any = None
+        self._cached_todo_items: list[TodoItem] | None = None
 
     @property
     def todo_items(self) -> list[TodoItem] | None:
-        """Return todo items from coordinator data."""
-        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
+        """Return todo items from coordinator data, cached per coordinator snapshot."""
+        data = self.coordinator.data
+        if not data or not self.coordinator.shared_entity_delivery:
+            self._cached_todo_data = None
+            self._cached_todo_items = None
             return None
-        return [self._task_to_item(t) for t in self.coordinator.data.todo_tasks]
+        if self._cached_todo_data is data and self._cached_todo_items is not None:
+            return self._cached_todo_items
+        items = [self._task_to_item(t) for t in data.todo_tasks]
+        self._cached_todo_data = data
+        self._cached_todo_items = items
+        return items
 
     @staticmethod
     def _task_to_item(task: MeithealTask) -> TodoItem:
@@ -137,10 +147,13 @@ class MeithealTodoListEntity(MeithealBoardEntity, TodoListEntity):
                 await self.coordinator.async_update_task(item.uid, updates)
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
-        """Delete tasks by UID."""
+        """Delete tasks by UID with a single coordinator refresh after the batch."""
+        if not uids:
+            return
         async with human_request_scope(self.coordinator.hass, self.coordinator.api, self._context):
             for uid in uids:
-                await self.coordinator.async_delete_task(uid)
+                await self.coordinator.async_delete_task(uid, refresh=False)
+            await self.coordinator.async_request_refresh()
 
     async def async_move_todo_item(
         self, uid: str, previous_uid: str | None = None

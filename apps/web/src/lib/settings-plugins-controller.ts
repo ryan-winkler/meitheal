@@ -6,10 +6,8 @@
  */
 import { copyToClipboard } from "@lib/clipboard"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { safeFetch } from "@lib/safe-fetch"
 import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
-import { setAttr } from "@lib/dom-helpers"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
 
@@ -74,15 +72,8 @@ const SVG_ATTRS = new Set([
 ])
 const JSON_HDR = { "Content-Type": "application/json" }
 
-const PLUGIN_API_PATH_RE = /^\/api\/plugins(?:\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9](?:\/(?:secrets|connector))?(?:\?key=[A-Za-z0-9._%-]+)?)?$/
-const apiReq = (url: string, method: string, body?: unknown) => {
-  if (!PLUGIN_API_PATH_RE.test(url)) return Promise.reject(new Error("Invalid plugin API path"))
-  return safeFetch(url, {
-    timeoutMs: 30_000,
-    method,
-    ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}),
-  })
-}
+const apiReq = (url: string, method: string, body?: unknown) =>
+  fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
 
 async function copyText(text: string, okMsg: string): Promise<void> {
   const ok = await copyToClipboard(text)
@@ -93,7 +84,7 @@ function makeBadge(tone: Tone, label: string): HTMLElement {
   const b = el("span", "plg-badge")
   b.dataset.tone = tone
   const d = el("span", "plg-dot")
-  setAttr(d, "aria-hidden", "true")
+  d.setAttribute("aria-hidden", "true")
   b.append(d, el("span", "", label))
   return b
 }
@@ -129,7 +120,7 @@ function parseAiBundle(raw: string): { ok: true; bundle: Record<string, unknown>
 
 function renderSvg(svgText: string | null): HTMLElement {
   const wrap = el("span", "plg-card__icon")
-  setAttr(wrap, "aria-hidden", "true")
+  wrap.setAttribute("aria-hidden", "true")
   if (svgText?.trim().startsWith("<svg")) {
     const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement
     if (svg.tagName.toLowerCase() === "svg" && !svg.querySelector("parsererror")) {
@@ -212,7 +203,7 @@ export function initPluginsSettings(): void {
       const lbl = el("span", "plg-metric__lbl")
       const dot = el("span", "plg-dot")
       dot.style.color = color
-      setAttr(dot, "aria-hidden", "true")
+      dot.setAttribute("aria-hidden", "true")
       lbl.append(dot, document.createTextNode(label))
       box.append(lbl, el("strong", "plg-metric__val", String(val)))
       healthSummaryEl.append(box)
@@ -282,9 +273,9 @@ export function initPluginsSettings(): void {
     tog.type = "checkbox"
     tog.checked = p.enabled
     tog.disabled = p.needsReconsent
-    setAttr(tog, "aria-label", `Enable ${p.manifest.name}`)
+    tog.setAttribute("aria-label", `Enable ${p.manifest.name}`)
     const sl = el("span", "toggle-slider")
-    setAttr(sl, "aria-hidden", "true")
+    sl.setAttribute("aria-hidden", "true")
     sw.append(tog, sl)
     tog.addEventListener("change", async () => {
       tog.disabled = true
@@ -543,7 +534,7 @@ export function initPluginsSettings(): void {
       const form = new FormData()
       form.append("file", file)
       try {
-        const res = await safeFetch("/api/plugins", { timeoutMs: 30_000, method: "POST", body: form })
+        const res = await fetch("/api/plugins", { method: "POST", body: form })
         const d = (await res.json().catch(() => ({}))) as { plugin?: PluginView; detail?: string }
         if (!res.ok) { setFeedback(d.detail || "Plugin upload failed.", true); showToast(d.detail || "Plugin upload rejected.", "error") }
         else { setFeedback(`Installed ${d.plugin?.manifest.name ?? "plugin"}. Review permissions and toggle to enable.`); showToast(`Installed ${d.plugin?.manifest.name ?? "plugin"}.`, "success"); await loadCatalog(false) }

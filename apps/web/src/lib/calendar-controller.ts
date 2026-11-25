@@ -11,6 +11,7 @@ import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } f
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { getStatusDef } from "@lib/status-config"
+import { showToast } from "@lib/toast"
 
 interface CalendarEventRecord {
   summary: string
@@ -139,20 +140,111 @@ export function initCalendarPage(signal: AbortSignal): void {
     let liveEvents: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
     let persistedEvents: LinkedCalendarEvent[] | null | undefined
 
+    const renderHourlyDayTimeline = (
+      taskRows: HTMLElement[],
+      connected: Array<{ start: string; title: string; id?: string }>,
+    ) => {
+      const allDayEl = dayHost.querySelector<HTMLElement>("#cal-day-allday-strip")
+      const blocksEl = dayHost.querySelector<HTMLElement>("#cal-day-hourly-blocks")
+      const nowLineEl = dayHost.querySelector<HTMLElement>("#cal-day-now-line")
+      if (!allDayEl || !blocksEl) return
+
+      const palette = ["#0284c7", "#16a34a", "#ae3ec9", "#ea580c", "#0d9488"]
+      let colorIdx = 0
+      const pickColor = () => palette[colorIdx++ % palette.length]!
+
+      const allDayCards: HTMLElement[] = []
+      const timedBlocks: HTMLElement[] = []
+
+      const placeBlock = (title: string, timeText: string, taskId?: string, startIso?: string) => {
+        let hourFloat: number | null = null
+        if (startIso && startIso.includes("T")) {
+          const parsed = new Date(startIso)
+          if (!Number.isNaN(parsed.getTime())) {
+            hourFloat = parsed.getHours() + parsed.getMinutes() / 60
+          }
+        }
+        const btn = document.createElement(taskId ? "button" : "div")
+        btn.className = hourFloat !== null ? "cal-gcal-event cal-gcal-event--timed" : "cal-gcal-event"
+        if (btn instanceof HTMLButtonElement) btn.type = "button"
+        if (taskId) btn.dataset.taskId = taskId
+        btn.style.setProperty("--cal-ev-bg", pickColor())
+        const tEl = document.createElement("span")
+        tEl.className = "cal-gcal-event__title"
+        tEl.textContent = title
+        btn.append(tEl)
+        if (timeText) {
+          const mEl = document.createElement("span")
+          mEl.className = "cal-gcal-event__meta"
+          mEl.textContent = timeText
+          btn.append(mEl)
+        }
+        if (hourFloat !== null && hourFloat >= 6 && hourFloat <= 22.5) {
+          const topPx = Math.max(0, Math.round((hourFloat - 6) * 48))
+          btn.style.top = `${topPx}px`
+          btn.style.minHeight = "42px"
+          timedBlocks.push(btn)
+        } else {
+          allDayCards.push(btn)
+        }
+      }
+
+      for (const row of taskRows) {
+        const title = row.querySelector(".day-drawer-item-title")?.textContent?.trim() || "Task"
+        const meta = row.querySelector(".day-drawer-item-meta")?.textContent?.trim() || ""
+        const tid = row.dataset.taskId
+        const dueIso = row.dataset.dueDate
+        placeBlock(title, meta, tid, dueIso)
+      }
+      for (const ev of connected) {
+        placeBlock(ev.title, formatCalendarEventTime(ev.start, timezone) || "All day", ev.id, ev.start)
+      }
+
+      if (allDayCards.length) {
+        allDayEl.replaceChildren(...allDayCards)
+      } else {
+        const hint = document.createElement("span")
+        hint.style.cssText = "font-size:12px;color:var(--text-muted);"
+        hint.textContent = timedBlocks.length ? `${timedBlocks.length} scheduled` : "No all-day items"
+        allDayEl.replaceChildren(hint)
+      }
+      blocksEl.replaceChildren(...timedBlocks)
+
+      if (nowLineEl) {
+        const isTodayHost = dayHost.querySelector<HTMLElement>("[data-cal-hourly]")?.dataset.isToday === "true"
+        const now = new Date()
+        const curH = now.getHours() + now.getMinutes() / 60
+        if (isTodayHost && curH >= 6 && curH <= 22.5) {
+          nowLineEl.style.top = `${Math.round((curH - 6) * 48)}px`
+          nowLineEl.hidden = false
+        } else {
+          nowLineEl.hidden = true
+        }
+      }
+    }
+
+    let latestTaskRows: HTMLElement[] = []
+    let latestConnected: Array<{ start: string; title: string; id?: string }> = []
+
     const renderDayEvents = () => {
       if (!showEvents || !eventsEl || !eventStatusEl) return
       if (liveEvents === undefined && persistedEvents === undefined) return
-      const rows: Array<{ start: string; row: HTMLElement }> = (persistedEvents ?? []).map(event => ({
+      const rows: Array<{ start: string; row: HTMLElement; title: string; id?: string }> = (persistedEvents ?? []).map(event => ({
         start: event.start,
+        title: event.title,
+        id: event.id,
         row: agendaItem("calendar-event", event.title, formatCalendarEventTime(event.start, timezone) || "All day", event.id),
       }))
       for (const event of distinctLiveCalendarEvents(liveEvents?.events ?? [], persistedEvents ?? [], timezone)) {
         rows.push({
           start: event.start,
+          title: event.summary,
           row: agendaItem("calendar-event", event.summary, formatCalendarEventTime(event.start, timezone) || "All day"),
         })
       }
       rows.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
+      latestConnected = rows.map(r => ({ start: r.start, title: r.title, id: r.id }))
+      renderHourlyDayTimeline(latestTaskRows, latestConnected)
       eventsEl.removeAttribute("aria-busy")
       if (rows.length) {
         eventsEl.replaceChildren(...rows.map(item => item.row))
@@ -182,7 +274,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     void loadDrawerTasks({ date, filters, offset: 0, limit: 100 }, timezone, linked, context).then(({ rows, linkedEvents }) => {
       if (dayViewRequest !== req || linked.aborted) return
       persistedEvents = linkedEvents ?? []
+      latestTaskRows = rows ?? []
       renderDayEvents()
+      renderHourlyDayTimeline(latestTaskRows, latestConnected)
       tasksEl.removeAttribute("aria-busy")
       if (rows?.length) {
         tasksEl.replaceChildren(...rows)
@@ -199,9 +293,113 @@ export function initCalendarPage(signal: AbortSignal): void {
     })
   }
 
+  let mobileAgendaRequest: AbortController | undefined
+  function hydrateMobileAgenda(selectedDate?: string) {
+    const agendaHost = month.querySelector<HTMLElement>("#cal-mobile-agenda")
+    if (!agendaHost) return
+    const date = selectedDate || agendaHost.dataset.mobileAgendaDate || month.dataset.calendarAnchor
+    if (!date) return
+    agendaHost.dataset.mobileAgendaDate = date
+    const fab = byId("cal-mobile-fab")
+    if (fab) fab.dataset.fabDate = date
+
+    // Update date gutter ("8 Wed")
+    const dt = new Date(`${date}T00:00:00Z`)
+    const dayNumEl = agendaHost.querySelector<HTMLElement>("#cal-mobile-agenda-daynum")
+    const dowEl = agendaHost.querySelector<HTMLElement>("#cal-mobile-agenda-dow")
+    const gutterEl = agendaHost.querySelector<HTMLElement>("#cal-mobile-agenda-gutter")
+    const streamEl = agendaHost.querySelector<HTMLElement>("#cal-mobile-agenda-items")
+    if (!streamEl) return
+    if (dayNumEl && !Number.isNaN(dt.getTime())) dayNumEl.textContent = String(dt.getUTCDate())
+    if (dowEl && !Number.isNaN(dt.getTime())) dowEl.textContent = dt.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })
+    const isToday = date === agendaHost.dataset.todayStr
+    gutterEl?.classList.toggle("is-today", isToday)
+
+    // Highlight selected cell in mini-month
+    month.querySelectorAll(".cal-cell.cal-selected").forEach(c => c.classList.remove("cal-selected"))
+    month.querySelector(`.cal-cell[data-date="${CSS.escape(date)}"]`)?.classList.add("cal-selected")
+
+    const context = currentTaskApiContext()
+    if (!context || !calendarContext || context.boardId !== calendarContext.boardId || context.actorKey !== calendarContext.actorKey) return
+
+    mobileAgendaRequest?.abort()
+    const req = new AbortController()
+    mobileAgendaRequest = req
+    const linked = AbortSignal.any([signal, req.signal, AbortSignal.timeout(10_000)])
+    const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
+    streamEl.replaceChildren(...createSkeletonRows(2))
+
+    void loadDrawerTasks({ date, filters, offset: 0, limit: 50 }, timezone, linked, context).then(({ rows, linkedEvents }) => {
+      if (mobileAgendaRequest !== req || linked.aborted) return
+      const palette = ["#16a34a", "#0284c7", "#ae3ec9", "#ea580c", "#0d9488"]
+      let idx = 0
+      const cards: HTMLElement[] = []
+      for (const ev of linkedEvents ?? []) {
+        const card = document.createElement("button")
+        card.type = "button"
+        card.className = "cal-gcal-event"
+        card.dataset.taskId = ev.id
+        card.style.setProperty("--cal-ev-bg", palette[idx++ % palette.length]!)
+        const t = document.createElement("span")
+        t.className = "cal-gcal-event__title"
+        t.textContent = ev.title
+        const m = document.createElement("span")
+        m.className = "cal-gcal-event__meta"
+        m.textContent = formatCalendarEventTime(ev.start, timezone) || "All day"
+        card.append(t, m)
+        cards.push(card)
+      }
+      for (const row of rows ?? []) {
+        const card = document.createElement("button")
+        card.type = "button"
+        card.className = "cal-gcal-event"
+        if (row.dataset.taskId) card.dataset.taskId = row.dataset.taskId
+        card.style.setProperty("--cal-ev-bg", palette[idx++ % palette.length]!)
+        const t = document.createElement("span")
+        t.className = "cal-gcal-event__title"
+        t.textContent = row.querySelector(".day-drawer-item-title")?.textContent?.trim() || "Task"
+        const metaText = row.querySelector(".day-drawer-item-meta")?.textContent?.trim() || ""
+        card.append(t)
+        if (metaText) {
+          const m = document.createElement("span")
+          m.className = "cal-gcal-event__meta"
+          m.textContent = metaText
+          card.append(m)
+        }
+        cards.push(card)
+      }
+      if (cards.length) {
+        if (isToday) {
+          const divider = document.createElement("div")
+          divider.className = "cal-mobile-now-divider"
+          divider.setAttribute("aria-hidden", "true")
+          cards.splice(Math.min(1, cards.length), 0, divider)
+        }
+        streamEl.replaceChildren(...cards)
+      } else {
+        const empty = document.createElement("div")
+        empty.className = "cal-mobile-agenda__empty"
+        const txt = document.createElement("span")
+        txt.textContent = "No tasks or events scheduled"
+        const addBtn = document.createElement("button")
+        addBtn.type = "button"
+        addBtn.className = "btn btn-sm btn-secondary"
+        addBtn.dataset.dayViewAdd = "task"
+        addBtn.dataset.date = date
+        addBtn.textContent = "+ Add"
+        empty.append(txt, addBtn)
+        streamEl.replaceChildren(empty)
+      }
+    }).catch(() => {
+      if (mobileAgendaRequest !== req || linked.aborted) return
+      streamEl.replaceChildren()
+    })
+  }
+
   function previewEvents() {
     previewsRequest?.abort()
     hydrateDayView()
+    hydrateMobileAgenda()
     if (month.dataset.calendarEvents !== "true") return
     previewsRequest = new AbortController()
     const lifetime = AbortSignal.any([signal, previewsRequest.signal])
@@ -523,11 +721,54 @@ export function initCalendarPage(signal: AbortSignal): void {
         else next.searchParams.set(key, value)
       }
       next.hash = destination.hash || next.hash
-      if (refreshRequest || navLink.dataset.calendarNav === "previous" || navLink.dataset.calendarNav === "next") {
+      if (refreshRequest) {
         location.assign(next.href)
       } else {
         void refresh(next)
       }
+      return
+    }
+    const filterToggle = target.closest<HTMLButtonElement>("#cal-mobile-filter-toggle")
+    if (filterToggle) {
+      const filterIsland = byId("cal-filter-island")
+      if (filterIsland) {
+        const opened = filterIsland.classList.toggle("is-mobile-open")
+        filterToggle.setAttribute("aria-expanded", String(opened))
+      }
+      return
+    }
+    const shareBtn = target.closest<HTMLButtonElement>("[data-calendar-share-day]")
+    if (shareBtn) {
+      const heading = month.querySelector<HTMLElement>("#calendar-month-heading")?.textContent?.trim() || "Meitheal Calendar"
+      const shareUrl = window.location.href
+      if (typeof navigator.share === "function") {
+        void navigator.share({ title: heading, text: `${heading} — Meitheal`, url: shareUrl }).catch(() => {
+          // User canceled share sheet
+        })
+      } else if (navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(shareUrl).then(() => {
+          showToast("Calendar link copied", "success")
+        }).catch(() => {
+          showToast("Couldn’t copy calendar link", "error")
+        })
+      }
+      return
+    }
+    const monthToggle = target.closest<HTMLButtonElement>("#cal-mobile-month-toggle")
+    if (monthToggle) {
+      const grid = month.querySelector<HTMLElement>("#cal-month-grid")
+      if (grid) {
+        const collapsed = grid.classList.toggle("is-collapsed")
+        monthToggle.setAttribute("aria-expanded", String(!collapsed))
+      }
+      return
+    }
+    const mobileFab = target.closest<HTMLButtonElement>("#cal-mobile-fab")
+    if (mobileFab) {
+      const date = mobileFab.dataset.fabDate || month.dataset.calendarAnchor
+      if (date) window.__prefillTaskDate = date
+      if (window.openNewTaskModal) window.openNewTaskModal("standard_action")
+      else byId("kanban-bar-new-task")?.click()
       return
     }
     const dayAdd = target.closest<HTMLButtonElement>("[data-day-view-add]")
@@ -539,9 +780,11 @@ export function initCalendarPage(signal: AbortSignal): void {
       else byId("kanban-bar-new-task")?.click()
       return
     }
-    const dayTaskId = target.closest<HTMLElement>("#cal-day-view-tasks [data-task-id], #cal-day-view-events [data-task-id]")?.dataset.taskId
-    if (dayTaskId) {
-      openTaskDetailHandoff(dayTaskId)
+    const gcalTaskId = target.closest<HTMLElement>(
+      "#cal-day-view-tasks [data-task-id], #cal-day-view-events [data-task-id], #cal-day-hourly-blocks [data-task-id], #cal-day-allday-strip [data-task-id], #cal-mobile-agenda-items [data-task-id]",
+    )?.dataset.taskId
+    if (gcalTaskId) {
+      openTaskDetailHandoff(gcalTaskId)
       return
     }
     if (target.closest("#day-drawer-close, #day-drawer-backdrop")) {
@@ -562,6 +805,15 @@ export function initCalendarPage(signal: AbortSignal): void {
       closeDrawer()
       openTaskDetailHandoff(taskId)
       return
+    }
+    // On mobile Month view, tapping a mini-month cell updates the inline split-agenda directly!
+    if (window.innerWidth <= 768 && month.dataset.calendarMode === "month") {
+      const cell = target.closest<HTMLElement>(dayButton)
+      const cellDate = cell?.dataset.date
+      if (cellDate) {
+        hydrateMobileAgenda(cellDate)
+        return
+      }
     }
     openCell(target)
   }, { signal })
@@ -623,9 +875,100 @@ export function initCalendarPage(signal: AbortSignal): void {
     closeDrawer(false)
   }, { once: true })
 
+  // Fluid horizontal touch swipe navigation (Google Calendar-style prev/next day)
+  let swipeStartX = 0
+  let swipeStartY = 0
+  let swipeStartTime = 0
+  let swipeAxis: "x" | "y" | null = null
+  let swipeSurface: HTMLElement | null = null
+  const reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  const resetSwipeSurface = (el: HTMLElement | null) => {
+    if (!el) return
+    el.style.transition = reducedMotion() ? "" : "transform 200ms cubic-bezier(0.23, 1, 0.32, 1)"
+    el.style.transform = ""
+    window.setTimeout(() => {
+      if (el.isConnected) el.style.transition = ""
+    }, 220)
+  }
+
+  shell.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || drawerDate) return
+    const target = e.target as Element | null
+    const surface = target?.closest<HTMLElement>("[data-cal-hourly], #cal-mobile-agenda")
+    if (!surface) return
+    const touch = e.touches[0]!
+    swipeStartX = touch.clientX
+    swipeStartY = touch.clientY
+    swipeStartTime = performance.now()
+    swipeAxis = null
+    swipeSurface = surface
+    surface.style.transition = ""
+  }, { passive: true, signal })
+
+  shell.addEventListener("touchmove", (e) => {
+    if (!swipeSurface || e.touches.length !== 1) return
+    const touch = e.touches[0]!
+    const dx = touch.clientX - swipeStartX
+    const dy = touch.clientY - swipeStartY
+    if (!swipeAxis) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return
+      swipeAxis = Math.abs(dx) > Math.abs(dy) * 1.25 ? "x" : "y"
+    }
+    if (swipeAxis === "x" && !reducedMotion()) {
+      const clamped = Math.max(-110, Math.min(110, dx * 0.42))
+      swipeSurface.style.transform = `translate3d(${clamped}px, 0, 0)`
+    }
+  }, { passive: true, signal })
+
+  const finishSwipe = (e: TouchEvent) => {
+    if (!swipeSurface) return
+    const surface = swipeSurface
+    const axis = swipeAxis
+    swipeSurface = null
+    swipeAxis = null
+    const touch = e.changedTouches[0]
+    if (axis !== "x" || !touch) {
+      resetSwipeSurface(surface)
+      return
+    }
+    const dx = touch.clientX - swipeStartX
+    const dt = Math.max(1, performance.now() - swipeStartTime)
+    const triggered = Math.abs(dx) >= 56 || (Math.abs(dx) >= 32 && dt < 240)
+    if (!triggered) {
+      resetSwipeSurface(surface)
+      return
+    }
+    const direction = dx > 0 ? "previous" : "next"
+    const navLink = month.querySelector<HTMLAnchorElement>(`[data-calendar-nav="${direction}"]`)
+    if (navLink) {
+      resetSwipeSurface(surface)
+      navLink.click()
+    } else {
+      resetSwipeSurface(surface)
+    }
+  }
+  shell.addEventListener("touchend", finishSwipe, { passive: true, signal })
+  shell.addEventListener("touchcancel", () => {
+    resetSwipeSurface(swipeSurface)
+    swipeSurface = null
+    swipeAxis = null
+  }, { passive: true, signal })
+
   const rememberedArea = readCalendarTaskFilters(desired.searchParams).area === undefined ? getRememberedAreaId() : ""
-  previewEvents()
-  if (rememberedArea) applyFilters({ area: rememberedArea })
+  const shouldDefaultMobileDay = window.innerWidth <= 768
+    && !desired.searchParams.has("calView")
+    && month.dataset.calendarMode !== "day"
+
+  if (shouldDefaultMobileDay) {
+    const mobileDayUrl = new URL(desired)
+    mobileDayUrl.searchParams.set("calView", "day")
+    if (rememberedArea) mobileDayUrl.searchParams.set("area", rememberedArea)
+    void refresh(mobileDayUrl)
+  } else {
+    previewEvents()
+    if (rememberedArea) applyFilters({ area: rememberedArea })
+  }
 }
 
 const agendaFilterKeys = new Set(["project", "project_id", "area", "area_id", "board", "search", "user", "status", "priority",

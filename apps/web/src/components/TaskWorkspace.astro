@@ -4,7 +4,7 @@ import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardSessionProof } from "@lib/named-board-request"
 import { boardWorkspaceHref } from "@lib/board-workspace"
 import TaskRefreshShell from "./tasks/TaskRefreshShell.astro"
-import "../styles/boards.css"
+import BoardsStyles from "./boards/BoardsStyles.astro"
 import BoardWorkspaceNav from "./boards/BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "../components/tasks/HomeAssistantAreaField.astro"
@@ -14,7 +14,7 @@ import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
-import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS, TASK_REFRESH_FRAGMENT_HEADER } from "../lib/task-view-route"
+import { requestedTaskView, resolveDefaultTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS, TASK_REFRESH_FRAGMENT_HEADER } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "../lib/household-project-grouping"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
@@ -37,16 +37,18 @@ import {
 } from "@domains/tasks/persistence/store";
 import { TaskInactivityRepository } from "@domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { TemplateRepository } from "@domains/tasks/persistence/template-repository";
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { isFeatureEnabled } from "../lib/feature-flags";
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import Icon from "../components/ui/Icon.astro";
-import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
-import BotBadge from "../components/ui/BotBadge.astro";
+import KanbanTaskCard from "./tasks/KanbanTaskCard.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
 import { readTableFilterParams, tableNeedsWorkflowColumns } from "../lib/filter-state"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
+import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import AreaSelector from "../components/layout/AreaSelector.astro";
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 
@@ -72,7 +74,12 @@ const canEdit = scopePermits(scope, { resource: "task", action: "edit" })
 const canCreate = scopePermits(scope, { resource: "task", action: "create" })
 const canComplete = scopePermits(scope, { resource: "task", action: "complete" })
 const canDelete = scopePermits(scope, { resource: "task", action: "delete" })
-const renderedView = requestedTaskView(Astro.url.searchParams) ?? "kanban"
+const explicitRequestedView = requestedTaskView(Astro.url.searchParams)
+const renderedView = resolveDefaultTaskView(
+  Astro.url.searchParams,
+  Astro.url.hash,
+  Astro.request.headers.get("user-agent") ?? "",
+)
 const organization = await organizationLabelsFor(Astro)
 const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
   : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
@@ -100,6 +107,9 @@ await ensureSchema();
 const db = getPersistenceClient();
 const repo = new TaskRepository(db, scope);
 const hierarchyRepo = new HierarchyRepository(db, scope);
+if (!compactRefresh && canCreate && (await isFeatureEnabled("habits").catch(() => false))) {
+  await new TemplateRepository(db, scope).ensureDueRoutineTasks(timezone || "UTC").catch(() => 0)
+}
 const { rows: [boardMetadata] } = await db.execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
 const boardName = String(boardMetadata?.name ?? "Board")
 const selectedProjectId = currentUrl.searchParams.get("project")
@@ -233,10 +243,6 @@ import {
   PRIORITY_COLORS as priorityColors,
   PRIORITY_CSS_CLASSES as priorityClasses,
 } from "../lib/priority-config";
-import type { IconName } from "../generated/icon-registry";
-
-const priorityTablerIcon = (priority: number): IconName =>
-  priority <= 1 ? "flame" : priority === 2 ? "arrow-up" : priority >= 4 ? "arrow-down" : "arrows-left-right";
 
 const priorityLabels: Record<number, string> = {
   1: t("priority.critical", locale),
@@ -306,6 +312,7 @@ if (groupByProject) {
 ---
 
 <WorkspaceShell title={`Meitheal — ${boardName} · ${heading}`} boardContext={{ boardId, session }} scopeGuard={false}>
+  <BoardsStyles />
 
   <UnifiedBar
     title={boardName}
@@ -336,6 +343,20 @@ if (groupByProject) {
     settingsHref={scopePermits(scope, { resource: "board", action: "manage" }) ? boardWorkspaceHref(boardId, { groups: true }, "settings") : undefined} />
 
 
+  {renderedView === "kanban" && !explicitRequestedView && !compactRefresh && (
+    <script is:inline>
+      (function () {
+        try {
+          if (window.innerWidth <= 768 && !new URLSearchParams(location.search).has("view") && location.hash !== "#kanban") {
+            var next = new URL(location.href);
+            next.searchParams.set("view", "table");
+            next.hash = "table";
+            window.location.replace(next.pathname + next.search + next.hash);
+          }
+        } catch {}
+      })();
+    </script>
+  )}
   {renderedView === "kanban" && <>
   <!-- Kanban controls and board are rendered only for the selected view. -->
   <div class="tasks-filter-row" id="tasks-filter-row">
@@ -397,31 +418,68 @@ if (groupByProject) {
       <CardCustomizer boardId={scope.boardId} />
     </div>
 
-      <div class="lane-mgmt hidden" id="lane-mgmt">
-        <div class="lane-mgmt-inner">
-          <div class="lane-mgmt-header">
-            <strong>{t("kanban.manage_swimlanes", locale)}</strong>
+      <div class="lane-mgmt hidden" id="lane-mgmt" role="dialog" aria-modal="true" aria-labelledby="lane-mgmt-title">
+        <div class="lane-mgmt-inner card">
+          <div class="lane-mgmt-header card-header">
+            <div class="lane-mgmt-title-group">
+              <h3 id="lane-mgmt-title" class="card-title lane-mgmt-title">{t("kanban.manage_swimlanes", locale)}</h3>
+              <button
+                type="button"
+                class="lane-mgmt-help-btn"
+                id="lane-mgmt-help-btn"
+                aria-expanded="false"
+                aria-controls="lane-mgmt-help-popover"
+                aria-label="What are swimlanes?"
+                title="Swimlanes stay synced with task Statuses. Reordering, aliasing, or adding a lane updates Kanban columns and status pickers across views."
+              >
+                <Icon name="info-circle" size={16} sprite />
+              </button>
+            </div>
             <button
               type="button"
               class="btn-icon lane-mgmt-close"
               id="lane-mgmt-close"
               aria-label="Close"
-              title="Close"><Icon name="x" size={16} /></button
+              title="Close"><Icon name="x" size={16} sprite /></button
             >
           </div>
-          <div id="lane-list"></div>
-          <div class="lane-mgmt-add-row">
-            <input
-              type="text"
-              class="form-input lane-mgmt-add-input"
-              id="new-lane-input"
-              placeholder={t("kanban.new_lane_placeholder", locale)}
-            />
-            <button
-              type="button"
-              class="btn btn-primary lane-mgmt-add-btn"
-              id="add-lane-btn">{t("kanban.add_lane", locale)}</button
-            >
+          <div class="lane-mgmt-help-popover" id="lane-mgmt-help-popover" role="note" hidden>
+            <Icon name="info-circle" size={15} sprite class="lane-mgmt-help-popover__icon" />
+            <p class="lane-mgmt-help-popover__text">
+              <strong>Swimlanes &amp; Statuses stay in sync.</strong> Drag rows to reorder Kanban columns and status lists across every view. Renaming a built-in lane creates a display alias while keeping its system status intact for filters and automations.
+            </p>
+          </div>
+          <div class="table-responsive lane-mgmt-table-wrap">
+            <table class="table table-vcenter card-table lane-mgmt-table">
+              <thead>
+                <tr>
+                  <th class="lane-col-drag" aria-label="Reorder"></th>
+                  <th>Swimlane &amp; Status</th>
+                  <th class="lane-col-color">Color</th>
+                  <th class="lane-col-wip" title="Work-in-progress limit (0 = unlimited)">WIP</th>
+                  <th class="lane-col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="lane-list"></tbody>
+            </table>
+          </div>
+          <div class="lane-mgmt-footer card-footer">
+            <div class="lane-mgmt-add-row">
+              <input
+                type="text"
+                class="form-control form-input lane-mgmt-add-input"
+                id="new-lane-input"
+                placeholder={t("kanban.new_lane_placeholder", locale)}
+              />
+              <button
+                type="button"
+                class="btn btn-primary btn-sm lane-mgmt-add-btn"
+                id="add-lane-btn"
+              >
+                <Icon name="plus" size={14} sprite />
+                <span>{t("kanban.add_lane", locale)}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -583,347 +641,32 @@ if (groupByProject) {
                         : "upcoming"
                   : null;
                 const description = taskDescriptionPreview(task.description)
-                const { style: taskColorStyle, ...surface } = taskSurface(String(task.status), task.color)
                 return (
-                  <div
-                    class={`kanban-card flat-card`}
-                    {...surface}
-                    draggable={canEdit}
-                    data-id={String(task.id)}
-                    data-version={String(task.task_version)}
-
-                    data-title={String(task.title)}
-                    data-desc={
-                      task.description
-                        ? String(task.description).slice(0, 200)
-                        : ""
-                    }
-                    data-priority={String(p)}
-                    data-promoted={String(promoted)}
-                    data-status={String(task.status)}
-                    data-deferral-version={task.task_version}
-                    data-deferral-revision={task.deferral_revision ?? ""}
-                    data-task-type={tt}
-                    data-task-kind={String(task.task_kind ?? "standard_action")}
-                    data-area={areaId}
-                    data-area-name={cardArea?.name}
-                    data-area-icon={cardArea?.icon}
-                    data-epic={epicGroup?.id}
-                    data-epic-label={epicGroup?.label}
-                    data-assigned={String(task.assigned_to ?? "")}
-                    data-assignee-key={kanbanFilters.groupBy === "assigned" ? JSON.stringify(String(task.assigned_to ?? "")) : undefined}
-                    data-labels={String(task.labels ?? "[]")}
-                    data-task-id={task.id}
-                    data-project-group={projectGroup}
-                    data-project-label={projectLabel?.title}
-                    data-project-qualifier={projectLabel?.qualifier}
-                    data-area-id={task.project_id}
-                    style={`--card-accent: ${task.color ? String(task.color) : tc.color};${taskColorStyle ?? ""}`}
-                  >
-                    <div class="kanban-card-header">
-                      <div class="kanban-card-title">
-                        <a
-                          href={taskDetailPath({ id: String(task.id), ticket_key: ticketKey }) + `?board_id=${encodeURIComponent(boardId)}`}
-                          data-task-detail-link={String(task.id)}
-                          class="card-open-btn"
-                          data-id={String(task.id)}
-                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}${promoted ? `, ${t("kanban.promoted", locale)}` : ""}`}
-                        >
-                          <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
-                          <span class="kanban-ticket-key">{ticketKey}</span>
-                        </a>
-                        <span
-                          class="kanban-title-text"
-                          dir="auto"
-                          title={String(task.title)}
-                          data-task-id={String(task.id)}
-                        >
-                          {String(task.title)}
-                        </span>
-                      </div>
-                      <div class="kanban-card-header-controls">
-                        <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden>
-                          <Icon name="heart" size={12} sprite />
-                          <span data-reaction-count-value></span>
-                        </span>
-                        <button
-                          type="button"
-                          class="card-action-btn card-more-btn"
-                          data-id={String(task.id)}
-                          title={t("kanban.more_actions", locale)}
-                          aria-label={t("kanban.more_actions_for", locale, { title: String(task.title) })}
-                          aria-expanded="false"
-                          aria-controls="kanban-card-menu"
-                        >
-                          <Icon name="dots-vertical" size={15} sprite />
-                        </button>
-                        <button
-                          type="button"
-                          class="kanban-promote-star"
-                          data-promote-toggle
-                          data-id={String(task.id)}
-                          aria-pressed={promoted ? "true" : "false"}
-                          disabled={!canEdit}
-                          title={promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}
-                          aria-label={`${promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}: ${String(task.title)}`}
-                        >
-                          <span class="kanban-promote-sash" aria-hidden="true">
-                            <Icon name="star" size={15} sprite />
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                    <span class="kanban-work-status"><StatusBadge status={String(task.status)} /></span>
-                    {/* Attachment Placeholder */}
-                    <img
-                      class="kanban-attachment hidden"
-                      data-task-id={String(task.id)}
-                      alt="Attachment"
-                      loading="lazy"
-                    />
-
-                    {description && <div class="kanban-card-desc">{description}</div>}
-                    <div data-inactivity-slot></div>
-                    <div class="kanban-card-meta">
-                      <span
-                        class={`priority-label inline-flex items-center gap-1 ${priorityClasses[p] ?? "priority-medium"}`}
-                      >
-                        <Icon name={priorityTablerIcon(p)} size={13} sprite />
-                        <span>{priorityLabels[p]}</span>
-                      </span>
-                      {task.due_date ? (
-                        <span
-                          class={`kanban-card-due ${dueStatus ? `due-${dueStatus}` : ""}`}
-                        >
-                          <Icon
-                            name={dueStatus === "overdue" ? "alert-triangle" : "calendar-event"}
-                            size={12}
-                            sprite
-                          />{" "}
-                          {formatRegionalDate(String(task.due_date), {
-                            format: dateFormat,
-                            timezone,
-                          })}
-                        </span>
-                      ) : null}
-                      {childCount > 0 && (
-                        <span
-                          class="kanban-meta-subtasks inline-flex items-center gap-1"
-                          title={`${childCount} sub-tasks`}
-                        >
-                          <Icon name="list-check" size={12} sprite />
-                          <span>{childCount}</span>
-                        </span>
-                      )}
-                      {rice !== null ? (
-                        <span class="kanban-rice-badge">RICE: {rice}</span>
-                      ) : null}
-                      {String(task.calendar_sync_state) === "confirmed" && (
-                        <span
-                          class="kanban-sync-badge"
-                          title={t("kanban.calendar_synced", locale)}
-                        >
-                          <Icon name="calendar-event" size={13} sprite />
-                        </span>
-                      )}
-                      {task.recurrence_rule && (
-                        <span
-                          class="kanban-meta-recurrence"
-                          title="Recurring task"
-                        >
-                          <Icon name="repeat" size={13} sprite />
-                        </span>
-                      )}
-                      {(() => {
-                        try {
-                          const cl = task.checklists
-                            ? typeof task.checklists === "string"
-                              ? JSON.parse(String(task.checklists))
-                              : task.checklists
-                            : [];
-                          if (Array.isArray(cl) && cl.length > 0) {
-                            const done = cl.filter(
-                              (i: { done: boolean }) => i.done,
-                            ).length;
-                            return (
-                              <span
-                                class={`kanban-meta-checklist inline-flex items-center gap-1${done === cl.length ? " checklist-complete" : ""}`}
-                                title={`Checklist: ${done}/${cl.length}`}
-                              >
-                                <Icon name="checkbox" size={12} sprite />
-                                <span>{done}/{cl.length}</span>
-                              </span>
-                            );
-                          }
-                        } catch {
-                          /* skip */
-                        }
-                        return null;
-                      })()}
-                      {(Number(task.comment_count ?? 0)) > 0 && (
-                        <span
-                          class="kanban-meta-comments"
-                          title={`${Number(task.comment_count ?? 0)} comments`}
-                        >
-                          <Icon name="message-circle" size={12} sprite /> {Number(task.comment_count ?? 0)}
-                        </span>
-                      )}
-                                      {task.assigned_to && (
-                        <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
-                          <Icon name="user" size={14} sprite />
-                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{t("tasks.assignee_loading", locale)}</span>
-                        </span>
-                      )}
-                      <BotBadge
-                        owner={String(task.owner ?? "")}
-                        handoffState={String(task.handoff_state ?? "")}
-                      />
-                    </div>
-                    {/* Progress bar */}
-                    {Number(task.progress ?? 0) > 0 && (
-                      <div class="kanban-progress">
-                        <div class="kanban-progress-track">
-                          <div
-                            class="kanban-progress-bar"
-                            style={`width: ${Number(task.progress)}%`}
-                          />
-                        </div>
-                        <span class="kanban-progress-text">
-                          {Number(task.progress)}%
-                        </span>
-                      </div>
-                    )}
-                    {/* Labels */}
-                    <LabelBadges
-                      labels={task.labels as string}
-                      compact
-                      max={3}
-                    />
-                    {/* Custom fields */}
-                    {(() => {
-                      try {
-                        const cf =
-                          typeof task.custom_fields === "string"
-                            ? JSON.parse(String(task.custom_fields ?? "{}"))
-                            : {};
-                        // For shopping lists, show a compact items summary
-                        if (String(task.task_kind) === "shopping_item" && cf.items && Array.isArray(cf.items)) {
-                          const itemNames = cf.items.map((i: { name: string }) => i.name).filter(Boolean);
-                          return (
-                            <div class="kanban-custom-fields">
-                              {cf.quantity && <span class="kanban-cf-chip" title={`qty: ${cf.quantity}`}>×{cf.quantity}</span>}
-                              {cf.category && <span class="kanban-cf-chip" title={`category: ${cf.category}`}>{String(cf.category)}</span>}
-                              {itemNames.length > 0 && <span class="kanban-cf-chip" title={itemNames.join(", ")}>{itemNames.length} items</span>}
-                            </div>
-                          );
-                        }
-                        // Generic custom fields — skip non-primitive values (arrays, objects)
-                        const displayKeys = Object.keys(cf).filter(k => formatCardCustomFieldValue(cf[k]) !== null);
-                        if (displayKeys.length > 0) {
-                          return (
-                            <div class="kanban-custom-fields">
-                              {displayKeys.slice(0, 8).map((k, idx) => (
-                                <span
-                                  class="kanban-cf-chip"
-                                  data-cf-name={k}
-                                  data-cf-default-hidden={idx >= 4 ? "true" : undefined}
-                                  hidden={idx >= 4}
-                                  title={`${k}: ${String(cf[k])}`}
-                                >
-                                  {k}: {formatCardCustomFieldValue(cf[k])}
-                                </span>
-                              ))}
-                              {displayKeys.length > 4 && (
-                                <span class="kanban-cf-chip kanban-cf-more">
-                                  +{displayKeys.length - 4} more
-                                </span>
-                              )}
-                            </div>
-                          );
-                        }
-                      } catch {
-                        /* skip */
-                      }
-                      return null;
-                    })()}
-                    <div class="kanban-card-actions">
-                      <button
-                        type="button"
-                        class="card-action-btn card-edit-btn"
-                        data-id={String(task.id)}
-                        title={!canEdit ? "View task" : t("kanban.edit_task", locale)}
-                        aria-label={`${!canEdit ? "View" : "Edit"} task: ${String(task.title ?? "").slice(0, 50)}`}
-                      >
-                        <Icon name="pencil" size={14} sprite />
-                      </button>
-                      <button
-                        type="button"
-                        class="card-action-btn card-ai-btn"
-                        data-id={String(task.id)}
-                        data-title={String(task.title)}
-                        data-desc={
-                          task.description ? String(task.description) : ""
-                        }
-                        data-status={String(task.status ?? "pending")}
-                        data-priority={String(p)}
-                        title={t("tasks.ask_ai", locale)}
-                        aria-label={`AI assist for: ${String(task.title ?? "").slice(0, 50)}`}
-                      >
-                        <Icon name="sparkles" size={14} sprite />
-                      </button>
-                      {canCreate && (
-                        <>
-                          <button
-                            type="button"
-                            class="card-action-btn card-dup-btn"
-                            data-id={String(task.id)}
-                            title={t("kanban.duplicate", locale)}
-                            aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
-                          >
-                            <Icon name="clipboard-list" size={14} sprite />
-                          </button>
-                          <button
-                            type="button"
-                            class="card-action-btn card-child-btn"
-                            data-id={String(task.id)}
-                            data-title={String(task.title ?? "")}
-                            data-status={String(task.status ?? "pending")}
-                            data-priority={String(p)}
-                            title="Add child task"
-                            aria-label={`Add subtask to: ${String(task.title ?? "").slice(0, 50)}`}
-                          >
-                            <Icon name="plus" size={14} sprite />
-                          </button>
-                        </>
-                      )}
-                      {canEdit && (
-                        <>
-                          <button
-                            type="button"
-                            class="card-action-btn card-assign-btn"
-                            data-id={String(task.id)}
-                            data-assigned={String(task.assigned_to ?? "")}
-                            title="Assign user"
-                            aria-label={`Assign user to: ${String(task.title ?? "").slice(0, 50)}`}
-                            aria-haspopup="true"
-                          >
-                            <Icon name="user" size={14} sprite />
-                          </button>
-                          <button
-                            type="button"
-                            class="card-action-btn card-color-btn"
-                            data-id={String(task.id)}
-                            data-color={String(task.color ?? "")}
-                            title="Set card color"
-                            aria-label={`Set color for: ${String(task.title ?? "").slice(0, 50)}`}
-                            aria-haspopup="true"
-                          >
-                            <Icon name="palette" size={14} sprite />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                  <KanbanTaskCard
+                    task={task as Record<string, unknown>}
+                    boardId={boardId}
+                    locale={locale}
+                    ticketKey={ticketKey}
+                    priority={p}
+                    priorityLabel={priorityLabels[p] ?? "Medium"}
+                    priorityClass={priorityClasses[p] ?? "priority-medium"}
+                    taskType={tt}
+                    typeColor={tc.color}
+                    promoted={promoted}
+                    canEdit={canEdit}
+                    canCreate={canCreate}
+                    dateFormat={dateFormat}
+                    timezone={timezone}
+                    dueStatus={dueStatus}
+                    description={description}
+                    rice={rice}
+                    childCount={childCount}
+                    area={cardArea ?? null}
+                    epicGroup={epicGroup}
+                    assigneeKey={kanbanFilters.groupBy === "assigned" ? JSON.stringify(String(task.assigned_to ?? "")) : undefined}
+                    projectGroup={projectGroup}
+                    projectLabel={projectLabel}
+                  />
                 );
               })}
               {matches === 0 && (
@@ -1099,7 +842,7 @@ if (groupByProject) {
   </script>
 </WorkspaceShell>
 
-<style>
+<style is:inline>
   @reference "../../src/styles/global.css";
 
 
@@ -1110,7 +853,7 @@ if (groupByProject) {
 
   @media (min-width: 769px) {
     /* Match the outer board inset and the filter island's inner end gutter. */
-    :global(#kanban-bar) {
+    #kanban-bar {
       padding-inline-start: 24px;
       padding-inline-end: 37px;
     }
@@ -1228,7 +971,7 @@ if (groupByProject) {
   }
 
   /* The open area picker overlays the filter row, which has its own stacking context. */
-  :global(#kanban-bar:has(#area-selector-trigger[aria-expanded="true"])) {
+  #kanban-bar:has(#area-selector-trigger[aria-expanded="true"]) {
     z-index: 35;
   }
 
@@ -1287,7 +1030,7 @@ if (groupByProject) {
     flex-wrap: wrap;
     gap: .125rem .5rem;
   }
-  :global(.kanban-inactivity-cue) {
+  .kanban-inactivity-cue {
     color: var(--text-secondary);
     font-size: var(--font-size-xs, .75rem);
     overflow-wrap: anywhere;
@@ -1339,12 +1082,34 @@ if (groupByProject) {
     box-shadow: var(--shadow-sm);
     cursor: grab;
     transition:
-      background 200ms cubic-bezier(0.4, 0, 0.2, 1),
-      color 200ms cubic-bezier(0.4, 0, 0.2, 1),
-      transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 160ms ease;
     position: relative;
     overflow: hidden;
+  }
+
+  .kanban-card[data-task-color] {
+    background: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 22%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 55%, var(--border));
+    border-inline-start: 3px solid var(--knight-task-color, var(--card-accent));
+  }
+
+  .kanban-card[data-task-color]:hover {
+    background: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 29%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 75%, var(--border));
+  }
+
+  html.light .kanban-card[data-task-color] {
+    background: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 16%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 48%, var(--border));
+  }
+
+  html.light .kanban-card[data-task-color]:hover {
+    background: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 22%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 68%, var(--border));
   }
 
   @supports (content-visibility: auto) and (contain-intrinsic-block-size: auto 10rem) {
@@ -1354,15 +1119,20 @@ if (groupByProject) {
     }
   }
 
-  :global([data-theme="knight-rider"]) .kanban-card {
+  [data-theme="knight-rider"] .kanban-card {
     border-inline-start: 1px solid var(--border);
     box-shadow: none;
   }
-  :global([data-theme="knight-rider"]) .kanban-card:hover {
+  [data-theme="knight-rider"] .kanban-card[data-task-color] {
+    background: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 22%, var(--bg-secondary));
+    border-color: color-mix(in srgb, var(--knight-task-color, var(--card-accent)) 55%, var(--border));
+    border-inline-start: 3px solid var(--knight-task-color, var(--card-accent));
+  }
+  [data-theme="knight-rider"] .kanban-card:hover {
     border-color: var(--border-focus);
     transform: none;
   }
-  :global([data-theme="knight-rider"]) .kanban-card:has(.card-open-btn:focus-visible) {
+  [data-theme="knight-rider"] .kanban-card:has(.card-open-btn:focus-visible) {
     outline-color: var(--border-focus);
     box-shadow: none;
   }
@@ -1529,67 +1299,13 @@ if (groupByProject) {
   .kanban-work-status {
     display: none;
   }
-  :global([data-theme="knight-rider"]) .kanban-card[data-work-active] .kanban-work-status {
+  [data-theme="knight-rider"] .kanban-card[data-work-active] .kanban-work-status {
     display: flex;
   }
-  :global([data-theme="knight-rider"]) .priority-label.priority-critical {
+  [data-theme="knight-rider"] .priority-label.priority-critical {
     color: var(--danger-text);
   }
-  .kanban-assignee-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-    max-width: 100%;
-    color: var(--text-secondary);
-    font-size: 11px;
-  }
-  .kanban-assignee-badge svg {
-    flex-shrink: 0;
-  }
-  .kanban-assignee-name {
-    overflow-wrap: anywhere;
-    font-size: 12px;
-  }
-  .kanban-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 2px;
-    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    padding-block-start: 6px;
-    margin-block-start: 6px;
-    background: var(--bg-card);
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .card-action-btn:active {
-    transform: scale(0.94);
-  }
-  .card-edit-btn:hover {
-    color: var(--info);
-  }
-  .card-ai-btn:hover {
-    color: var(--success);
-  }
-  .card-dup-btn:hover {
-    color: var(--warning);
-  }
-  .card-child-btn:hover {
-    color: var(--info);
-  }
-  .card-assign-btn:hover {
-    color: var(--accent);
-  }
-  .card-color-btn:hover {
-    color: var(--warning);
-  }
-  .card-action-btn svg {
-    display: block;
-  }
-
   @media (max-width: 768px), (pointer: coarse) {
-    .card-action-btn,
     .kanban-toolbar-btn {
       min-width: 44px;
       min-height: 44px;
@@ -1597,358 +1313,6 @@ if (groupByProject) {
       align-items: center;
       justify-content: center;
     }
-  }
-
-  /* Task type icon vertical alignment in card header */
-  .kanban-type-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    vertical-align: middle;
-    position: relative;
-    top: -1px;
-  }
-  .kanban-type-icon svg {
-    display: block;
-  }
-
-  /* Quick action popovers */
-  :global(.quick-action-popover) {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    min-width: 160px;
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
-    overflow: auto;
-    padding: 4px;
-    animation: popover-in 150ms ease-out;
-    transition:
-      opacity 150ms ease,
-      transform 150ms ease;
-  }
-  :global(.quick-action-popover.popover-exiting) {
-    opacity: 0;
-    transform: translateY(-4px);
-    pointer-events: none;
-  }
-  @keyframes popover-in {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  :global(.popover-title) {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 6px 8px 4px;
-  }
-  :global(.popover-item) {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    padding: 6px 8px;
-    font-size: 13px;
-    color: var(--text);
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: background 100ms;
-  }
-  :global(.popover-item:hover) {
-    background: var(--bg-hover);
-  }
-  :global(.popover-item.active) {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent-text, var(--accent));
-    font-weight: 600;
-  }
-
-  /* Color swatch grid */
-  :global(.color-swatch-grid) {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    padding: 8px;
-  }
-  :global(.color-swatch) {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition:
-      transform 100ms,
-      border-color 100ms,
-      box-shadow 100ms;
-    position: relative;
-  }
-  :global(.color-swatch:hover) {
-    transform: scale(1.15);
-    border-color: var(--text-muted);
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
-  }
-  :global(.color-swatch:focus-visible) {
-    outline: 2px solid var(--border-focus);
-    outline-offset: 2px;
-  }
-  :global(.color-swatch.swatch-active) {
-    border-color: var(--text-primary);
-    box-shadow:
-      0 0 0 2px var(--bg-card),
-      0 0 0 4px var(--text-primary);
-  }
-  :global(.color-swatch.swatch-active::after) {
-    content: "✓";
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  }
-  :global(.clear-color-btn) {
-    border-top: 1px solid var(--border);
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  :global(.popover-item:focus-visible) {
-    outline: 2px solid var(--border-focus);
-    outline-offset: -2px;
-  }
-  /* Card header & Tabler Promoted Ribbon Sash (preview.tabler.io/tasks.html) */
-  .kanban-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 6px;
-  }
-  .kanban-card[data-promoted="true"] .kanban-card-header {
-    padding-inline-end: 36px;
-  }
-  .kanban-card-header-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-  .kanban-promote-star {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-inline-size: 2rem;
-    min-block-size: 2rem;
-    padding: 0;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: color 140ms ease, background-color 140ms ease, opacity 140ms ease, transform 160ms ease;
-  }
-  .kanban-promote-sash {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    inline-size: 100%;
-    block-size: 100%;
-  }
-  .kanban-promote-star[aria-pressed="false"]:hover,
-  .kanban-promote-star[aria-pressed="false"]:focus-visible {
-    background: var(--bg-hover);
-    color: var(--warning-text, #92400e);
-  }
-  .kanban-promote-star:active {
-    transform: scale(0.94);
-  }
-  /* Promoted state: authentic Tabler yellow bookmark ribbon hanging from top-right corner */
-  .kanban-promote-star[aria-pressed="true"] {
-    position: absolute;
-    inset-block-start: -5px;
-    inset-inline-end: 10px;
-    z-index: 3;
-    min-inline-size: 28px;
-    inline-size: 28px;
-    min-block-size: 36px;
-    block-size: 36px;
-    border-radius: 0 4px 0 0;
-    background: transparent;
-    color: #ffffff;
-    opacity: 1;
-    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.24));
-    animation: kanban-ribbon-unfurl 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  /* Folded top-left ribbon ear wrapping over card's top border */
-  .kanban-promote-star[aria-pressed="true"]::before {
-    content: "";
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-start: -5px;
-    width: 5px;
-    height: 5px;
-    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 64%, #000000);
-    clip-path: polygon(100% 0, 0 100%, 100% 100%);
-    pointer-events: none;
-  }
-  .kanban-promote-star[aria-pressed="true"] .kanban-promote-sash {
-    background: var(--tblr-yellow, #f59f00);
-    border-start-end-radius: 4px;
-    padding-block-end: 5px;
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
-    transition: background-color 140ms ease, transform 140ms ease;
-  }
-  .kanban-promote-star[aria-pressed="true"] :global(svg) {
-    fill: none;
-    stroke: #1c1400;
-    stroke-width: 2;
-  }
-  .kanban-promote-star[aria-pressed="true"]:hover .kanban-promote-sash,
-  .kanban-promote-star[aria-pressed="true"]:focus-visible .kanban-promote-sash {
-    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 88%, #ffffff);
-  }
-  .kanban-promote-star[aria-pressed="true"]:focus-visible {
-    outline: 2px solid var(--border-focus);
-    outline-offset: 2px;
-  }
-  @keyframes kanban-ribbon-unfurl {
-    from {
-      opacity: 0.4;
-      transform: translateY(-6px) scaleY(0.8);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scaleY(1);
-    }
-  }
-  @media (hover: hover) and (pointer: fine) {
-    .kanban-promote-star[aria-pressed="false"] {
-      opacity: 0;
-    }
-    .kanban-card:hover .kanban-promote-star[aria-pressed="false"],
-    .kanban-card:focus-within .kanban-promote-star[aria-pressed="false"] {
-      opacity: 0.72;
-    }
-    .kanban-card:hover .kanban-promote-star[aria-pressed="false"]:hover,
-    .kanban-promote-star[aria-pressed="false"]:focus-visible {
-      opacity: 1;
-    }
-    .kanban-card-actions {
-      opacity: 1;
-      pointer-events: auto;
-    }
-  }
-  @media (pointer: coarse) {
-    .kanban-promote-star[aria-pressed="false"] {
-      min-inline-size: 40px;
-      min-block-size: 40px;
-      opacity: 0.5;
-    }
-    .kanban-promote-star[aria-pressed="true"] {
-      inline-size: 30px;
-      block-size: 38px;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .kanban-promote-star[aria-pressed="true"] {
-      animation: none;
-    }
-  }
-  .kanban-reaction-count:not([hidden]) {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    flex-shrink: 0;
-    padding: 2px 5px;
-    border-radius: 0.25rem;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 0.75rem;
-  }
-
-  /* Progress bar */
-  .kanban-progress {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 8px;
-  }
-  .kanban-progress-track {
-    flex: 1;
-    height: 4px;
-    background: var(--bg-hover);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .kanban-progress-bar {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 2px;
-    transition: width 300ms ease;
-  }
-  .kanban-progress-text {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    min-width: 28px;
-    text-align: right;
-  }
-
-  /* RICE + sync badges */
-  .kanban-rice-badge {
-    font-size: 11px;
-    color: var(--accent-text);
-    background: rgba(99, 102, 241, 0.1);
-    padding: 1px 6px;
-    border-radius: 4px;
-  }
-  .kanban-sync-badge {
-    font-size: 11px;
-    color: var(--info);
-  }
-
-  /* Custom fields on cards */
-  .kanban-custom-fields {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-  }
-  .kanban-cf-chip {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--info);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    white-space: nowrap;
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .kanban-cf-chip[hidden],
-  .kanban-custom-fields[hidden] {
-    display: none;
-  }
-
-  :global([data-theme="knight-rider"]) .kanban-cf-chip {
-    /* Opaque so task-colored cards cannot lower the accent text contrast. */
-    background: var(--bg-card);
-    color: var(--accent-text);
   }
 
   .kanban-inline-add {
@@ -2015,25 +1379,9 @@ if (groupByProject) {
     flex-direction: column;
     gap: 6px;
   }
-
-  /* Accessibility: suppress transitions for reduced-motion users */
-  @media (prefers-reduced-motion: reduce) {
-    .kanban-title-text,
-    .kanban-progress-bar,
-    .kanban-card-title,
-    .kanban-card-meta,
-    .kanban-card-desc,
-    .kanban-assignee-badge,
-    .kanban-card-due,
-    .kanban-card-header,
-    .kanban-card-actions,
-    .kanban-inline-add {
-      transition: none !important;
-    }
-  }
 </style>
 
-<style is:global>
+<style is:inline is:global>
   .kanban-board.density-compact .kanban-card {
     padding: 6px 8px;
     gap: 4px;
@@ -2085,11 +1433,336 @@ if (groupByProject) {
 
   /* T-1915: Column collapse CSS removed — feature was removed per UX feedback */
 
+  /* ── Manage Swimlanes (Tabler Sortable Table) ── */
+  .lane-mgmt-inner {
+    width: min(640px, calc(100vw - 32px)) !important;
+    padding: 0 !important;
+    overflow: hidden;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  }
+  .lane-mgmt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    margin: 0 !important;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .lane-mgmt-title-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lane-mgmt-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .lane-mgmt-help-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .lane-mgmt-help-btn:hover,
+  .lane-mgmt-help-btn:focus-visible,
+  .lane-mgmt-help-btn[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    color: var(--accent-text, var(--accent));
+    outline: none;
+  }
+  .lane-mgmt-help-popover {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 18px;
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-secondary));
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+  .lane-mgmt-help-popover[hidden] {
+    display: none;
+  }
+  .lane-mgmt-help-popover__icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--accent-text, var(--accent));
+  }
+  .lane-mgmt-help-popover__text {
+    margin: 0;
+  }
+  .lane-mgmt-help-popover__text strong {
+    color: var(--text-primary);
+  }
+  .lane-mgmt-table-wrap {
+    max-height: min(56vh, 420px);
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+  .lane-mgmt-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+  }
+  .lane-mgmt-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 9px 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .lane-mgmt-table thead th.lane-col-drag {
+    width: 44px;
+    padding-left: 14px;
+    padding-right: 6px;
+  }
+  .lane-mgmt-table thead th.lane-col-color {
+    width: 60px;
+    text-align: center;
+  }
+  .lane-mgmt-table thead th.lane-col-wip {
+    width: 78px;
+    text-align: center;
+  }
+  .lane-mgmt-table thead th.lane-col-actions {
+    width: 128px;
+    text-align: right;
+    padding-right: 16px;
+  }
+  .lane-mgmt-table tbody tr.lane-item {
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .lane-mgmt-table tbody tr.lane-item:last-child {
+    border-bottom: none;
+  }
+  .lane-mgmt-table tbody tr.lane-item:hover {
+    background: var(--bg-hover);
+  }
+  .lane-mgmt-table tbody tr.lane-item--ghost {
+    opacity: 0.38;
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary));
+  }
+  .lane-mgmt-table tbody tr.lane-item--chosen {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+  }
+  .lane-item--fallback {
+    display: table;
+    width: 100%;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--accent) !important;
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+    opacity: 0.96 !important;
+    z-index: 9999 !important;
+    pointer-events: none !important;
+  }
+  .lane-mgmt-table td {
+    padding: 10px 12px;
+    vertical-align: middle;
+  }
+  .lane-mgmt-table td.lane-cell-drag {
+    width: 44px;
+    padding-left: 14px;
+    padding-right: 6px;
+    text-align: center;
+  }
+  .lane-mgmt-table .lane-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: grab;
+    touch-action: none;
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .lane-mgmt-table .lane-drag-handle:hover,
+  .lane-mgmt-table .lane-drag-handle:focus-visible {
+    background: var(--bg-secondary);
+    border-color: var(--border);
+    color: var(--text-primary);
+    outline: none;
+  }
+  .lane-mgmt-table .lane-drag-handle:active {
+    cursor: grabbing;
+  }
+  .lane-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .lane-name-primary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lane-color-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .lane-visual-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .lane-system-name {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .lane-status-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 17px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .lane-status-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+  .lane-cell-color {
+    text-align: center;
+  }
+  .lane-cell-wip {
+    text-align: center;
+  }
+  .lane-mgmt-table .lane-wip-input {
+    width: 54px;
+    height: 30px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-primary);
+  }
+  .lane-cell-actions {
+    text-align: right;
+    padding-right: 16px !important;
+    white-space: nowrap;
+  }
+  .lane-actions-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .lane-mgmt-table .lane-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 110ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .lane-mgmt-table .lane-action-btn:hover,
+  .lane-mgmt-table .lane-action-btn:focus-visible {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--text-primary);
+    outline: none;
+  }
+  .lane-mgmt-table .lane-action-btn:active {
+    transform: scale(0.96);
+  }
+  .lane-mgmt-table .lane-action-btn.remove {
+    color: var(--danger);
+  }
+  .lane-mgmt-table .lane-action-btn.remove:hover,
+  .lane-mgmt-table .lane-action-btn.remove:focus-visible {
+    border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
+  }
+  .lane-builtin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+  }
+  .lane-mgmt-footer {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .lane-mgmt-footer .lane-mgmt-add-row {
+    margin-top: 0;
+  }
+  .lane-mgmt-footer .lane-mgmt-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
   /* ── Accessibility: reduced motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .quick-action-popover { animation: none; transition: none; }
-    .quick-action-popover.popover-exiting { transition: none; }
-    .kanban-card { transition: none; }
+    .quick-action-popover,
+    .quick-action-popover.popover-exiting,
+    .kanban-card,
+    .kanban-card-actions,
+    .lane-mgmt-help-btn,
+    .lane-mgmt-table tbody tr.lane-item,
+    .lane-mgmt-table .lane-drag-handle,
+    .lane-mgmt-table .lane-action-btn { transition: none !important; animation: none !important; }
     .kanban-card.dragging { animation: none; }
   }
 </style>

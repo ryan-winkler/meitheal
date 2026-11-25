@@ -821,59 +821,13 @@ components:
           nullable: true
           description: JSON-encoded strategic framework payload (RICE / dRICE)
         custom_fields:
-          type:
-            - string
-            - "null"
+          type: string
           description: JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items.
         checklists:
           type:
             - string
             - "null"
           description: A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null.
-        subtasks:
-          type: array
-          description: Direct readable child tasks (returned by single-task detail)
-          items:
-            type: object
-            required:
-              - id
-              - title
-              - status
-              - priority
-              - task_type
-            properties:
-              id:
-                type: string
-              ticket_number:
-                type: integer
-                nullable: true
-              ticket_key:
-                type: string
-                nullable: true
-              title:
-                type: string
-              status:
-                type: string
-              priority:
-                type: integer
-                minimum: 1
-                maximum: 5
-              task_type:
-                type: string
-                enum:
-                  - epic
-                  - story
-                  - task
-              assigned_to:
-                type: string
-                nullable: true
-              due_date:
-                type: string
-                nullable: true
-            additionalProperties: false
-        ticket_number:
-          type: integer
-          nullable: true
         ticket_key:
           type: string
           nullable: true
@@ -3097,25 +3051,20 @@ paths:
                   type: string
                   description: Initial status (e.g. backlog, pending, active, complete)
                 priority:
-                  type: number
+                  type: integer
                   minimum: 1
                   maximum: 5
-                  description: Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5.
+                  description: Priority 1-5 (1=Urgent, 5=Minimal)
                 due_date:
-                  type:
-                    - string
-                    - "null"
-                  description: Due date (YYYY-MM-DD or ISO timestamp)
+                  type: string
+                  nullable: true
+                  description: Due date (YYYY-MM-DD or ISO datetime)
                 start_date:
-                  type:
-                    - string
-                    - "null"
-                  description: Start date or ISO timestamp
+                  type: string
+                  nullable: true
                 end_date:
-                  type:
-                    - string
-                    - "null"
-                  description: End date or ISO timestamp
+                  type: string
+                  nullable: true
                 progress:
                   type: integer
                   minimum: 0
@@ -3135,6 +3084,7 @@ paths:
                     - standard_action
                     - shopping_item
                     - checklist
+                    - routine_instance
                     - calendar_event
                     - quick_capture
                   description: Behavioral kind — determines UI rendering and lifecycle rules
@@ -3147,6 +3097,43 @@ paths:
                 project_id:
                   type: string
                   nullable: true
+                labels:
+                  oneOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: string
+                      description: JSON-encoded array of label names
+                  description: Label names, as an array or as a JSON-encoded array.
+                custom_fields:
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      properties:
+                        items:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/ShoppingListItem"
+                          description: Structured shopping items (with optional qty, category, checked) for shopping_item tasks
+                    - type: string
+                      description: JSON-encoded custom fields object
+                checklists:
+                  oneOf:
+                    - type: array
+                      items:
+                        type: object
+                        required:
+                          - text
+                        properties:
+                          id:
+                            type: string
+                          text:
+                            type: string
+                          done:
+                            type: boolean
+                        additionalProperties: false
+                    - type: string
+                      description: JSON-encoded checklist array
                 recurrence_rule:
                   type: string
                   nullable: true
@@ -3181,43 +3168,6 @@ paths:
                   maxLength: 255
                   nullable: true
                   description: Must start with 'ha_' or 'custom_'
-                labels:
-                  oneOf:
-                    - type: array
-                      items:
-                        type: string
-                    - type: string
-                      description: JSON-encoded array of label names
-                  description: Label names, as an array or as a JSON-encoded array.
-                checklists:
-                  oneOf:
-                    - type: array
-                      items:
-                        type: object
-                        required:
-                          - text
-                        properties:
-                          id:
-                            type: string
-                          text:
-                            type: string
-                          done:
-                            type: boolean
-                        additionalProperties: false
-                    - type: string
-                      description: JSON-encoded checklist array
-                custom_fields:
-                  oneOf:
-                    - type: object
-                      additionalProperties: true
-                      properties:
-                        items:
-                          type: array
-                          items:
-                            $ref: "#/components/schemas/ShoppingListItem"
-                          description: Structured shopping items (with optional qty, category, checked) for shopping_item tasks
-                    - type: string
-                      description: JSON-encoded custom fields object
                 frameworkPayload:
                   type: object
                 calendar:
@@ -7213,9 +7163,7 @@ paths:
                           type: string
                         cadence:
                           type: string
-                          enum:
-                            - daily
-                            - weekly
+                          description: daily, weekly, or RFC 5545 RRULE
                         position:
                           type: integer
                         template_json:
@@ -8950,6 +8898,23 @@ paths:
       responses:
         "200":
           description: Test result
+  /api/routines:
+    get:
+      operationId: listRoutines
+      tags:
+        - Routines
+      summary: List routine templates and streaks
+      responses:
+        "200":
+          description: Routines list
+    post:
+      operationId: manageRoutine
+      tags:
+        - Routines
+      summary: Create, complete, update, or delete a routine
+      responses:
+        "200":
+          description: Routine operation result
   /api/integrations/calendar/sync:
     post:
       operationId: syncCalendar
@@ -8959,6 +8924,35 @@ paths:
       responses:
         "200":
           description: Sync result
+  /api/integrations/calendar/push:
+    post:
+      operationId: pushTaskToCalendar
+      tags:
+        - Integrations
+      summary: Manually push a scheduled task to the Board's connected Home Assistant calendar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - task_id
+              properties:
+                task_id:
+                  type: string
+                entity_id:
+                  type: string
+              additionalProperties: false
+      responses:
+        "200":
+          description: Task pushed to calendar
+        "400":
+          description: Task missing due date or invalid input
+        "404":
+          description: Task or enabled calendar binding not found
+        "409":
+          description: Imported calendar task or reminder artifact cannot be pushed back
   /api/integrations/calendar/status:
     get:
       operationId: getCalendarSyncStatus

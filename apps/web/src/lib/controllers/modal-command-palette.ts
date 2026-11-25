@@ -1,0 +1,191 @@
+/**
+ * modal-command-palette.ts — Ctrl+K command palette
+ *
+ * @domain tasks
+ * @kcs Extracted from task-modal-controller.ts for decomposition.
+ *      Fully self-contained: openCP/closeCP, Ctrl+K handler, search debounce, action routing.
+ */
+import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref } from "@lib/ingress-navigation"
+
+const PALETTE_ROUTES: Record<string, string> = {
+  "go-dashboard": "/",
+  "go-kanban": "/kanban",
+  "go-table": "/table",
+  "go-settings": "/settings",
+  "go-today": "/today",
+  "go-upcoming": "/upcoming",
+  "go-calendar": "/calendar",
+  "export-csv": "/api/export/tasks.csv",
+}
+
+function navigateSafe(path: string): void {
+  const dest = new URL(safeIngressHref(path), window.location.origin)
+  if (dest.origin === window.location.origin) {
+    window.location.assign(dest.pathname + dest.search + dest.hash) // nosemgrep
+  }
+}
+
+export interface CommandPaletteDeps {
+  openTaskDetail: (id: string) => void
+  __signal: AbortSignal
+}
+
+/**
+ * Initialise the command palette (Ctrl+K) overlay.
+ */
+export function initCommandPalette({ openTaskDetail, __signal }: CommandPaletteDeps): void {
+  const cpOverlay = document.getElementById(
+    "command-palette-overlay",
+  ) as HTMLDivElement
+  if (!cpOverlay) return
+  const cpSearch = document.getElementById(
+    "cp-search",
+  ) as HTMLInputElement
+  const cpTasksSection = document.getElementById(
+    "cp-tasks-section",
+  ) as HTMLDivElement
+  const cpTasks = document.getElementById("cp-tasks") as HTMLDivElement
+  let cpAllTasks: Array<{ id: string; title: string }> = []
+  const cpFocusTrap = cpOverlay ? createFocusTrap(cpOverlay) : null
+
+  const tdOverlay = document.getElementById(
+    "task-detail-overlay",
+  ) as HTMLDivElement
+
+  function openCP() {
+    cpOverlay?.classList.remove("hidden")
+    cpFocusTrap?.activate()
+    cpSearch?.focus()
+    // Load tasks for search
+    fetch((window.__ingress_path || "") + "/api/tasks?limit=200")
+      .then((r) => r.json())
+      .then((data: { tasks: Array<{ id: string; title: string }> }) => {
+        cpAllTasks = data.tasks || []
+      })
+      .catch(() => {})
+  }
+
+  function closeCP() {
+    cpFocusTrap?.deactivate()
+    cpOverlay?.classList.add("hidden")
+    if (cpSearch) cpSearch.value = ""
+    cpTasksSection?.classList.add("hidden")
+  }
+
+  // Ctrl+K / Cmd+K
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      const modalTdOpen = tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")
+      if (e.defaultPrevented || modalTdOpen) return
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault()
+        if (cpOverlay?.classList.contains("hidden")) openCP()
+        else closeCP()
+      }
+      if (e.key === "Escape" && !cpOverlay.classList.contains("hidden")) {
+        e.preventDefault()
+        closeCP()
+      }
+    },
+    { signal: __signal },
+  )
+
+  cpOverlay?.addEventListener(
+    "click",
+    (e) => {
+      if (e.target === cpOverlay) closeCP()
+    },
+    { signal: __signal },
+  )
+
+  // Search — filters both commands and tasks (P2-1: debounced 150ms)
+  let cpSearchTimeout: ReturnType<typeof setTimeout> | null = null
+  cpSearch?.addEventListener(
+    "input",
+    () => {
+      if (cpSearchTimeout) clearTimeout(cpSearchTimeout)
+      cpSearchTimeout = setTimeout(() => {
+        const q = cpSearch.value.toLowerCase().trim()
+        // Filter static command items
+        document
+          .querySelectorAll("#cp-results > .cp-item[data-action]")
+          .forEach((el) => {
+            const text =
+              (el as HTMLElement).textContent?.toLowerCase() ?? ""
+            ;(el as HTMLElement).style.display =
+              !q || text.includes(q) ? "" : "none"
+          })
+        // Also hide section headers if all children hidden
+        document
+          .querySelectorAll(
+            "#cp-results > div:not(.cp-item):not(#cp-tasks-section)",
+          )
+          .forEach((header) => {
+            const next = header.nextElementSibling
+            if (
+              next?.classList.contains("cp-item") &&
+              (next as HTMLElement).style.display === "none"
+            ) {
+              ;(header as HTMLElement).style.display = "none"
+            } else {
+              ;(header as HTMLElement).style.display = ""
+            }
+          })
+
+        if (!q) {
+          cpTasksSection?.classList.add("hidden")
+          return
+        }
+
+        const matches = cpAllTasks
+          .filter((t) => t.title.toLowerCase().includes(q))
+          .slice(0, 10)
+        if (matches.length > 0) {
+          cpTasksSection?.classList.remove("hidden")
+          cpTasks.replaceChildren(
+            ...matches.map((t) => {
+              const item = document.createElement("div")
+              item.className = "cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
+              item.dataset.taskId = t.id
+              item.textContent = t.title
+              return item
+            }),
+          )
+        } else {
+          cpTasksSection?.classList.add("hidden")
+        }
+      }, 150) // P2-1: 150ms debounce
+    },
+    { signal: __signal },
+  )
+
+  // Click handlers
+  document.getElementById("cp-results")?.addEventListener(
+    "click",
+    (e) => {
+      const target = (e.target as HTMLElement).closest(
+        ".cp-item",
+      ) as HTMLElement | null
+      if (!target) return
+      const action = target.dataset.action
+      const taskId = target.dataset.taskId
+
+      closeCP()
+
+      if (action === "new-task") {
+        const createBtn = document.querySelector<HTMLElement>("[data-action='create-task']")
+        if (createBtn) createBtn.click()
+        else navigateSafe("/tasks")
+      } else if (action === "new-area") {
+        document.querySelector<HTMLElement>(".area-add-btn")?.click()
+      } else if (action && Object.prototype.hasOwnProperty.call(PALETTE_ROUTES, action)) {
+        navigateSafe(PALETTE_ROUTES[action]!)
+      } else if (taskId) {
+        openTaskDetail(taskId)
+      }
+    },
+    { signal: __signal },
+  )
+}

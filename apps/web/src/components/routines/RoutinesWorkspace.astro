@@ -1,0 +1,1185 @@
+---
+/**
+ * RoutinesWorkspace.astro — Unified Tabler Routines Control Surface
+ *
+ * Rendered inline inside `/progress#routines` (embedded=true) and as the full
+ * workspace on `/routines` and `/habits` (embedded=false).
+ *
+ * @domain domain-tasks (routines bounded context)
+ * @bounded-context routines
+ */
+import Icon from "../ui/Icon.astro"
+import { scopeBoardAccess, scopePermits, type BoardScope } from "@domains/tasks/board-scope"
+import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { describeRule, cadenceToRRule, parseRRule } from "@domains/tasks/recurrence"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { formatCalendarDay } from "@lib/calendar-day"
+import { isValidTimezone } from "@lib/date"
+import { readStoredHouseholdTimezone } from "@lib/task-queries"
+import { serializeForScript } from "../../lib/safe-html"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
+import { taskDetailPath } from "@lib/task-page-url"
+import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
+
+export interface Props {
+  workScope: BoardScope
+  locale: Locale
+  area?: { id: string; name: string } | undefined
+  project?: { id: string; name?: string; title?: string } | undefined
+  areas?: AreaRow[] | undefined
+  projects?: ProjectRow[] | undefined
+  embedded?: boolean
+  openNew?: boolean
+}
+
+const ROUTINE_ICON_OPTIONS = [
+  "check",
+  "repeat",
+  "flame",
+  "sparkles",
+  "sun",
+  "moon",
+  "droplet",
+  "walk",
+  "heart",
+  "pill",
+  "book",
+  "wash",
+  "coffee",
+  "apple",
+  "star",
+  "target",
+] as const
+
+interface RoutineViewModel extends RoutineWithStats {
+  description: string
+  priority: number
+}
+
+const {
+  workScope,
+  locale,
+  area,
+  project,
+  areas: providedAreas,
+  projects: providedProjects,
+  embedded = false,
+  openNew = false,
+} = Astro.props
+
+const boardActive = scopeBoardAccess(workScope).state === "active"
+const canCreateRoutine = scopePermits(workScope, { resource: "routine", action: "create" })
+const canEditRoutine = scopePermits(workScope, { resource: "routine", action: "edit" })
+const canDeleteRoutine = scopePermits(workScope, { resource: "routine", action: "delete" })
+const canCompleteRoutine =
+  canEditRoutine &&
+  scopePermits(workScope, { resource: "task", action: "complete" }) &&
+  scopePermits(workScope, { resource: "task", action: "create" })
+
+let areas: AreaRow[] = providedAreas ?? []
+let projects: ProjectRow[] = providedProjects ?? []
+let routinesList: RoutineViewModel[] = []
+let loadFailed = false
+
+function parseTemplateDetails(routine: RoutineWithStats): {
+  description: string
+  priority: number
+} {
+  try {
+    const parsed = JSON.parse(routine.template_json) as Record<string, unknown>
+    return {
+      description: String(parsed.description ?? "").trim(),
+      priority: Number(parsed.priority ?? 3) || 3,
+    }
+  } catch {
+    return { description: "", priority: 3 }
+  }
+}
+
+function cadenceLabel(cadence: string): string {
+  return describeRule(cadence) || "Daily"
+}
+
+function streakUnit(cadence: string): string {
+  const parsed = parseRRule(cadenceToRRule(cadence) ?? cadence)
+  if (parsed?.freq === "WEEKLY") return "week"
+  if (parsed?.freq === "MONTHLY") return "month"
+  if (parsed?.freq === "YEARLY") return "year"
+  return "day"
+}
+
+function priorityLabel(priority: number): string {
+  switch (priority) {
+    case 1: return "P1"
+    case 2: return "P2"
+    case 4: return "P4"
+    case 5: return "P5"
+    default: return "P3"
+  }
+}
+
+function formatLastCompletedDate(value: string | null): string {
+  if (!value) return t("habits.never_completed", locale)
+  return t("habits.last_done", locale, { date: formatCalendarDay(value, locale) ?? value })
+}
+
+function summarizeCadences(items: RoutineViewModel[]): string {
+  if (!boardActive) return "This Board is unavailable. Return to Boards to choose another."
+  if (items.length === 0) return "Create your first routine to automatically schedule repeating tasks."
+  let daily = 0
+  let weekly = 0
+  let monthly = 0
+  let yearly = 0
+  for (const item of items) {
+    const parsed = parseRRule(cadenceToRRule(item.cadence) ?? item.cadence)
+    switch (parsed?.freq) {
+      case "WEEKLY": weekly++; break
+      case "MONTHLY": monthly++; break
+      case "YEARLY": yearly++; break
+      default: daily++; break
+    }
+  }
+  const parts: string[] = []
+  if (daily > 0) parts.push(`${daily} daily`)
+  if (weekly > 0) parts.push(`${weekly} weekly`)
+  if (monthly > 0) parts.push(`${monthly} monthly`)
+  if (yearly > 0) parts.push(`${yearly} yearly`)
+  return `${parts.join(" · ")} routine${items.length === 1 ? "" : "s"}`
+}
+
+try {
+  await ensureSchema()
+  const client = getPersistenceClient()
+  if (!providedAreas || !providedProjects) {
+    const hierarchy = new HierarchyRepository(client, workScope)
+    ;[areas, projects] = await Promise.all([hierarchy.findAllAreas(), hierarchy.findAllProjects()])
+  }
+  const rawTz = Astro.locals.timezone?.trim() ?? ""
+  const timezone = isValidTimezone(rawTz) ? rawTz : await readStoredHouseholdTimezone()
+  const repo = new TemplateRepository(client, workScope)
+  if (boardActive && scopePermits(workScope, { resource: "task", action: "create" })) {
+    await repo.ensureDueRoutineTasks(timezone).catch(() => 0)
+  }
+  const routines = await repo.getRoutinesWithStats(area?.id, project?.id, timezone)
+  routinesList = routines.map((routine) => ({
+    ...routine,
+    ...parseTemplateDetails(routine),
+  }))
+} catch {
+  loadFailed = true
+}
+
+const activeCount = routinesList.length
+const completedTodayCount = routinesList.filter((item) => item.todayCompleted).length
+const longestStreak = Math.max(0, ...routinesList.map((item) => item.longestStreak))
+const totalCompletions = routinesList.reduce((sum, item) => sum + item.totalCompletions, 0)
+const cadenceSummary = summarizeCadences(routinesList)
+const organization = await organizationLabelsFor(Astro)
+const newRoutine = newOrganizationLabel(organization("routine"), locale)
+const routinesBootstrap = serializeForScript({ routines: routinesList, habits: routinesList })
+---
+
+<div
+  id="habits-shell"
+  class:list={["habits-shell", embedded && "habits-shell--embedded"]}
+  data-area-id={area?.id}
+  data-project-id={project?.id}
+  data-can-edit={String(canEditRoutine)}
+  data-can-delete={String(canDeleteRoutine)}
+  data-can-complete={String(canCompleteRoutine)}
+  data-board-id={workScope.boardId}
+  data-board-active={String(boardActive)}
+  data-open-new={openNew && !loadFailed && boardActive ? "true" : undefined}
+  data-embedded={embedded ? "true" : undefined}
+>
+  {area && (
+    <div class="flex flex-wrap gap-2">
+      <a class="btn btn-ghost btn-sm" href={`/areas/${encodeURIComponent(area.id)}#routines`}>{area.name}</a>
+      <a class="btn btn-ghost btn-sm" href={`/routines?board_id=${encodeURIComponent(workScope.boardId)}`}>All Routines</a>
+    </div>
+  )}
+
+  {!embedded && (
+    <section id="habits-overview" class="habits-shell__section habits-shell__section--overview" data-habits-section>
+      <div class="habits-section__intro">
+        <div>
+          <h1 class="habits-heading m-0 text-2xl font-semibold tracking-tight">{organization("routine", true)}</h1>
+          <p class="m-0 mt-1 text-sm text-text-secondary">Repeatable routines automatically generate tasks on your Board for each scheduled period.</p>
+        </div>
+        <div class="habits-section__actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-open-habit-modal={loadFailed || !boardActive || !canCreateRoutine ? undefined : "true"}
+            disabled={loadFailed || !boardActive || !canCreateRoutine}
+          >
+            <Icon name="plus" size={16} sprite />
+            <span>{newRoutine}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <section id="habits-rhythm" class="habits-shell__section" data-habits-section>
+    {embedded ? (
+      <div class="habits-section__intro">
+        <div>
+          <h2 class="habits-section__title">{organization("routine", true)}</h2>
+          <p class="m-0 mt-1 text-sm text-text-secondary">Each routine automatically spawns a task on your Board for its scheduled cadence.</p>
+        </div>
+        <div class="habits-section__actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-open-habit-modal={loadFailed || !boardActive || !canCreateRoutine ? undefined : "true"}
+            disabled={loadFailed || !boardActive || !canCreateRoutine}
+          >
+            <Icon name="plus" size={16} sprite />
+            <span>{newRoutine}</span>
+          </button>
+        </div>
+      </div>
+    ) : (
+      <h2 class="habits-section__title">Rhythm</h2>
+    )}
+
+    {loadFailed ? (
+      <p role="status" class="m-0 text-text-secondary">Routine counts couldn’t load. Refresh the page to try again.</p>
+    ) : (
+      <>
+        <div class="habits-stats" id="habits-stats">
+          <div class="card stat-card">
+            <div class="card-body stat-card__body">
+              <span class="subheader stat-label">Active Routines</span>
+              <span class="stat-value" id="stat-active">{activeCount}</span>
+            </div>
+          </div>
+          <div class="card stat-card">
+            <div class="card-body stat-card__body">
+              <span class="subheader stat-label">Done This Period</span>
+              <span class="stat-value" id="stat-completed-today">{completedTodayCount}</span>
+            </div>
+          </div>
+          <div class="card stat-card">
+            <div class="card-body stat-card__body">
+              <span class="subheader stat-label">Best Streak</span>
+              <span class="stat-value" id="stat-longest-streak">{longestStreak}</span>
+            </div>
+          </div>
+          <div class="card stat-card">
+            <div class="card-body stat-card__body">
+              <span class="subheader stat-label">Total Completions</span>
+              <span class="stat-value" id="stat-total">{totalCompletions}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="habits-rhythm__summary card">
+          <div class="card-header habits-rhythm__summary-header">
+            <div class="flex items-center gap-2">
+              <Icon name="repeat" size={16} sprite />
+              <div>
+                <div class="card-title">Cadence mix</div>
+                <div class="card-subtitle" id="habits-cadence-summary">{cadenceSummary}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+  </section>
+
+  {!boardActive && !loadFailed && (
+    <p class="card card-body" role="status">
+      This Board is unavailable. Its Routines remain saved.
+      <a href="/boards">Open Boards</a>
+    </p>
+  )}
+
+  <section id="habits-library" class="habits-shell__section" data-habits-section>
+    <div class="card habits-library-card">
+      <div class="card-header habits-library-card__header">
+        <div>
+          <div class="card-title">Active routines</div>
+          {!loadFailed && (
+            <div class="card-subtitle" id="habits-library-count" hidden={activeCount === 0}>
+              {activeCount} active routine{activeCount !== 1 ? "s" : ""}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div class="habits-list" id="habits-list">
+        {loadFailed ? (
+          <div class="habits-empty">
+            <p class="habits-empty__title">Routines couldn’t load right now</p>
+            <p class="habits-empty__detail">
+              Refresh the page or inspect <code>/api/routines</code> if the database is still warming up.
+            </p>
+          </div>
+        ) : !boardActive ? (
+          <div class="habits-empty">
+            <p class="habits-empty__title">Board Routines are paused</p>
+            <p class="habits-empty__detail">Restore this Board from Boards to return to its saved Routines.</p>
+          </div>
+        ) : routinesList.length === 0 ? (
+          <div class="habits-empty">
+            <p class="habits-empty__title">No routines yet</p>
+            <p class="habits-empty__detail">Create a routine with any daily, weekly, monthly, or custom schedule and Meitheal will add each occurrence to your task list automatically.</p>
+          </div>
+        ) : (
+          routinesList.map((habit) => {
+            const routineIcon = mapEntityEmojiToTabler(habit.icon)
+            return (
+              <article
+                class:list={["card habit-card", habit.todayCompleted && "completed"]}
+                data-habit-id={habit.id}
+              >
+                <div class="habit-card__top">
+                  <button
+                    type="button"
+                    class="habit-card__check"
+                    disabled={!canCompleteRoutine || habit.todayCompleted || !habit.projectActive}
+                    aria-pressed={habit.todayCompleted ? "true" : "false"}
+                    data-action="complete"
+                    data-id={habit.id}
+                    aria-label={habit.todayCompleted ? `${habit.name} completed for this period` : `Complete ${habit.name}`}
+                  >
+                    {habit.todayCompleted && <Icon name="check" size={16} sprite />}
+                  </button>
+
+                  <span class="habit-card__icon" aria-hidden="true">
+                    {routineIcon ? <Icon name={routineIcon} size={18} sprite /> : habit.icon}
+                  </span>
+
+                  <div class="habit-card__info">
+                    <div class="habit-card__name">{habit.name}</div>
+                    <div class="habit-card__meta">
+                      {habit.currentStreak > 0 && (
+                        <span class="badge habit-card__meta-item habit-card__streak">
+                          <Icon name="flame" size={13} sprite />
+                          <span>{habit.currentStreak} {streakUnit(habit.cadence)} streak</span>
+                        </span>
+                      )}
+                      <span class="badge habit-card__meta-item habit-card__cadence">
+                        <Icon name="repeat" size={12} sprite />
+                        <span>{cadenceLabel(habit.cadence)}</span>
+                      </span>
+                      <span class="badge habit-card__meta-item">{priorityLabel(habit.priority)}</span>
+                      <span class="badge habit-card__meta-item">{habit.totalCompletions} total</span>
+                      <span class="badge habit-card__meta-item">{formatLastCompletedDate(habit.lastCompletedDate)}</span>
+                      {!habit.projectActive && (
+                        <span class="badge habit-card__meta-item habit-card__inactive">Paused project</span>
+                      )}
+                      {habit.todayTaskId && (
+                        <a class="badge habit-card__meta-item habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>
+                          <Icon name="external-link" size={12} sprite />
+                          <span>View task</span>
+                        </a>
+                      )}
+                      {habit.checklists.length > 0 && (
+                        <span class="badge habit-card__meta-item">
+                          {habit.checklists.length} checklist item{habit.checklists.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div class="habit-card__actions">
+                    <button
+                      type="button"
+                      class="btn-icon"
+                      disabled={!canEditRoutine}
+                      data-action="edit"
+                      data-id={habit.id}
+                      aria-label={`Edit ${habit.name}`}
+                      title={`Edit ${habit.name}`}
+                    >
+                      <Icon name="pencil" size={16} sprite />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-icon"
+                      disabled={!canDeleteRoutine}
+                      data-action="delete"
+                      data-id={habit.id}
+                      aria-label={`Delete ${habit.name}`}
+                      title={`Delete ${habit.name}`}
+                    >
+                      <Icon name="trash" size={16} sprite />
+                    </button>
+                  </div>
+                </div>
+
+                {habit.description && (
+                  <p class="habit-card__description">{habit.description}</p>
+                )}
+
+                {habit.checklists.length > 0 && (
+                  <ul class="habit-card__checklist" aria-label={`${habit.name} template checklist`}>
+                    {habit.checklists.map((item) => (
+                      <li class="habit-card__checklist-item">
+                        <span class="habit-card__checklist-marker" aria-hidden="true">
+                          {item.done ? <Icon name="check" size={14} sprite /> : "•"}
+                        </span>
+                        <span>{item.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            )
+          })
+        )}
+      </div>
+    </div>
+  </section>
+
+  <section id="habits-flow" class="habits-shell__section" data-habits-section>
+    <div class="card">
+      <div class="card-body flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="card-title mb-1">Related views</div>
+          <p class="m-0 text-sm text-text-secondary">Scheduled routines appear as real tasks across these views.</p>
+        </div>
+        <div class="habits-flow-links">
+          <a href={`/today?board_id=${encodeURIComponent(workScope.boardId)}`} class="btn btn-secondary btn-sm">
+            <Icon name="sun" size={14} sprite />
+            <span>Today</span>
+          </a>
+          <a href={`/boards/${encodeURIComponent(workScope.boardId)}?view=kanban`} class="btn btn-secondary btn-sm">
+            <Icon name="layout-kanban" size={14} sprite />
+            <span>Kanban</span>
+          </a>
+          <a href={`/boards/${encodeURIComponent(workScope.boardId)}?view=table`} class="btn btn-secondary btn-sm">
+            <Icon name="table" size={14} sprite />
+            <span>Table</span>
+          </a>
+          <a href={`/upcoming?board_id=${encodeURIComponent(workScope.boardId)}`} class="btn btn-secondary btn-sm">
+            <Icon name="calendar" size={14} sprite />
+            <span>Upcoming</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tabler Routine Form Modal -->
+  <div class="habit-modal-overlay hidden" id="habit-modal-overlay">
+    <div class="modal-dialog modal-dialog-centered habit-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
+      <div class="modal-content habit-modal">
+        <div class="modal-header habit-modal__header">
+          <h2 id="habit-modal-title" class="modal-title" data-create-title={boardActive ? newRoutine : "This Board is unavailable"} data-edit-title={`Edit ${organization("routine")}`}>
+            {newRoutine}
+          </h2>
+          <button type="button" class="btn-icon" id="habit-modal-close" aria-label="Close">
+            <Icon name="x" size={18} sprite />
+          </button>
+        </div>
+
+        <form id="habit-form" class="modal-body habit-modal__body">
+          <input type="hidden" id="habit-edit-id" value="" />
+
+          <div class="form-group" data-entity-field="name">
+            <label for="habit-name" class="form-label" data-entity-field-label>Routine Name</label>
+            <input
+              type="text"
+              id="habit-name"
+              class="form-control"
+              placeholder="e.g. Morning Walk"
+              maxlength="100"
+              required
+            />
+          </div>
+
+          <div class="form-group" data-entity-field="icon">
+            <label id="habit-icon-label" for="habit-icon" class="form-label" data-entity-field-label>Icon</label>
+            <input type="hidden" id="habit-icon" value="check" />
+            <div class="habit-icon-picker" id="habit-icon-picker" role="group" aria-labelledby="habit-icon-label">
+              {ROUTINE_ICON_OPTIONS.map((iconName) => {
+                const iconLabel = iconName.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase())
+                return (
+                  <button
+                    type="button"
+                    class={`habit-icon-picker__btn${iconName === "check" ? " is-selected" : ""}`}
+                    data-habit-icon-option={iconName}
+                    aria-pressed={iconName === "check" ? "true" : "false"}
+                    aria-label={iconLabel}
+                    title={iconLabel}
+                  >
+                    <Icon name={iconName} size={18} sprite />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" data-entity-field="cadence">
+              <label for="habit-cadence" class="form-label" data-entity-field-label>Recurrence / Cadence</label>
+              <select id="habit-cadence" class="form-select">
+                <option value="FREQ=DAILY">Daily</option>
+                <option value="FREQ=WEEKLY">Weekly</option>
+                <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday (Monday to Friday)</option>
+                <option value="FREQ=MONTHLY">Monthly</option>
+                <option value="FREQ=YEARLY">Annually</option>
+              </select>
+            </div>
+
+            <div class="form-group" data-entity-field="time">
+              <label for="habit-time" class="form-label" data-entity-field-label>Time (optional)</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="time"
+                  id="habit-time"
+                  class="form-control flex-1"
+                  aria-label="Routine time of day"
+                />
+                <button
+                  type="button"
+                  id="habit-time-clear"
+                  class="btn btn-ghost btn-sm"
+                  aria-label="Clear routine time"
+                  hidden
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" data-entity-field="priority">
+            <label for="habit-priority" class="form-label" data-entity-field-label>Priority</label>
+            <select id="habit-priority" class="form-select">
+              <option value="1">Urgent</option>
+              <option value="2">High</option>
+              <option value="3" selected>Medium</option>
+              <option value="4">Low</option>
+              <option value="5">None</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" data-entity-field="area">
+              <label for="habit-area" class="form-label" data-entity-field-label>Area</label>
+              <select id="habit-area" class="form-select">
+                <option value="" selected={!area}>Without an Area</option>
+                {areas.map((option) => (
+                  <option value={option.id} selected={area?.id === option.id}>{option.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="form-group" data-entity-field="project">
+              <label for="habit-project" class="form-label" data-entity-field-label>Project (optional)</label>
+              <select id="habit-project" class="form-select">
+                <option value="" selected={!project}>Without a Project</option>
+                {projects.map((option) => (
+                  <option value={option.id} data-area-id={option.area_id ?? ""} selected={project?.id === option.id}>{option.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" data-entity-field="description">
+            <label for="habit-description" class="form-label" data-entity-field-label>Description (optional)</label>
+            <textarea
+              id="habit-description"
+              class="form-control"
+              rows="3"
+              placeholder="What does this routine involve?"
+            ></textarea>
+          </div>
+
+          <div class="form-group" data-entity-field="checklist">
+            <label class="form-label" data-entity-field-label>Checklist (optional)</label>
+            <div id="checklist-items" class="checklist-builder"></div>
+            <button type="button" class="btn btn-ghost btn-sm mt-1" id="add-checklist-item">
+              <Icon name="plus" size={14} sprite />
+              <span>Add item</span>
+            </button>
+          </div>
+
+          <div class="modal-footer habit-modal__footer">
+            <button type="button" class="btn btn-ghost" id="habit-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Routine</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{!embedded && (
+  <button
+    id="habits-go-top"
+    class="go-top-btn habits-go-top"
+    type="button"
+    aria-label="Scroll to top"
+    title="Back to top"
+    hidden
+  >
+    <Icon name="arrow-up" size={18} sprite />
+  </button>
+)}
+
+<script id="habits-bootstrap" type="application/json" set:html={routinesBootstrap}></script>
+
+<script>
+  import "@lib/habits-controller"
+</script>
+
+<style is:inline is:global>
+  .habits-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px clamp(16px, 2vw, 24px) 48px;
+    max-width: 1120px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .habits-shell--embedded {
+    padding: 8px 0 28px;
+  }
+
+  .habits-shell__section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 20px);
+  }
+
+  .habits-section__intro {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .habits-section__title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .habits-section__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .habits-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 14px;
+  }
+
+  .stat-card {
+    margin: 0;
+    border-radius: var(--radius-lg, 12px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .stat-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  }
+
+  .stat-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .stat-value {
+    font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    line-height: 1.1;
+  }
+
+  .habits-rhythm__summary {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .habits-rhythm__summary-header {
+    padding: 14px 18px;
+    border-bottom: none;
+  }
+
+  .habits-library-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .habits-library-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .habits-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 20px 20px;
+  }
+
+  .habits-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 24px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--bg-surface, var(--bg-card));
+  }
+
+  .habits-empty__title {
+    margin: 0;
+    font-size: 0.975rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .habits-empty__detail {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .habit-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: var(--radius-lg, 12px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    transition:
+      transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .habit-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+    box-shadow: 0 8px 24px -18px rgba(0, 0, 0, 0.35);
+  }
+
+  .habit-card.completed {
+    border-color: color-mix(in srgb, var(--success, #22c55e) 42%, var(--border));
+    background: color-mix(in srgb, var(--success, #22c55e) 5%, var(--bg-card));
+  }
+
+  .habit-card.just-completed {
+    animation: habit-celebrate 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  @keyframes habit-celebrate {
+    0%, 100% { transform: scale(1); }
+    40% { transform: scale(1.012); }
+  }
+
+  .habit-card__top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .habit-card__check {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: transparent;
+    color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .habit-card__check:disabled {
+    cursor: default;
+    opacity: 0.72;
+  }
+
+  .habit-card__check:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .habit-card__check:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .habit-card.completed .habit-card__check,
+  .habit-card.completed .habit-card__check:disabled {
+    opacity: 1;
+    color: #fff;
+    background: var(--success, #22c55e);
+    border-color: var(--success, #22c55e);
+  }
+
+  .habit-card__icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+
+  .habit-card__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .habit-card__name {
+    font-size: 0.975rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .habit-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .habit-card__meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface, var(--bg-input));
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 500;
+  }
+
+  .habit-card__cadence {
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+    color: var(--text-primary);
+  }
+
+  .habit-card__streak {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+  }
+
+  :is([data-theme="dark"], [data-theme="knight-rider"]) .habit-card__streak {
+    color: #fbbf24;
+  }
+
+  .habit-card__inactive {
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 35%, transparent);
+    background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+    color: var(--danger, #dc2626);
+  }
+
+  .habit-card__task-link {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .habit-card__task-link:hover {
+    text-decoration: underline;
+  }
+
+  .habit-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .habit-card:hover .habit-card__actions,
+  .habit-card:focus-within .habit-card__actions {
+    opacity: 1;
+  }
+
+  .habit-card__actions .btn-icon {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+    border-radius: 8px;
+  }
+
+  @media (hover: none), (pointer: coarse), (max-width: 720px) {
+    .habit-card__actions {
+      opacity: 1;
+    }
+  }
+
+  .habit-card__description {
+    margin: 0;
+    padding-left: 50px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.55;
+  }
+
+  .habit-card__checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0 0 0 50px;
+    list-style: none;
+  }
+
+  .habit-card__checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .habit-card__checklist-marker {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .habits-flow-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .habit-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8, 10, 14, 0.66);
+  }
+
+  .habit-modal-overlay.hidden {
+    display: none;
+  }
+
+  .habit-modal-dialog {
+    width: 100%;
+    max-width: 560px;
+    margin: 0;
+  }
+
+  .habit-modal {
+    width: 100%;
+    max-width: 560px;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg, 14px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+    opacity: 1;
+    transform: none;
+  }
+
+  .habit-modal-overlay:not(.hidden) .habit-modal {
+    animation: modalFadeIn 180ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+
+  .habit-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .habit-modal__header .modal-title {
+    margin: 0;
+    font-size: 1.075rem;
+    font-weight: 600;
+  }
+
+  .habit-modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px 20px;
+  }
+
+  .habit-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 0 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .habit-modal .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .habit-modal .form-label {
+    margin: 0;
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .habit-modal .form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .habit-icon-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .habit-icon-picker__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface, var(--bg-input));
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .habit-icon-picker__btn:hover,
+  .habit-icon-picker__btn.is-selected {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+  }
+
+  .checklist-builder {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .checklist-builder__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .checklist-builder__item input[type="text"] {
+    flex: 1;
+  }
+
+  .btn-remove {
+    padding: 4px;
+    border: none;
+    background: none;
+    color: var(--danger, #ef4444);
+    cursor: pointer;
+    opacity: 0.75;
+    transition: opacity 120ms ease;
+  }
+
+  .btn-remove:hover {
+    opacity: 1;
+  }
+
+  .habits-go-top {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  .habits-go-top.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (max-width: 720px) {
+    .habit-modal .form-row {
+      grid-template-columns: 1fr;
+    }
+
+    .habit-card__top {
+      flex-wrap: wrap;
+    }
+
+    .habit-card__actions {
+      margin-left: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stat-card,
+    .habit-card,
+    .habit-card__check,
+    .habit-card__actions,
+    .habit-icon-picker__btn,
+    .habits-go-top {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>

@@ -14,7 +14,8 @@
 .btn-primary,
 .btn-secondary,
 .btn-outline,
-.btn-ghost {
+.btn-ghost,
+.btn-ghost-accent {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -145,12 +146,12 @@
 
 /* Button micro-interactions */
 /* ===== Button Press Micro-Interactions (Wave 7) ===== */
-:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger):focus-visible {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent):focus-visible {
   outline: 2px solid var(--border-focus, var(--accent));
   outline-offset: 2px;
 }
 
-:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .task-action-btn):active:not(:disabled) {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .task-action-btn):active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -182,7 +183,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-icon, .task-action-btn):active:not(:disabled) {
+  :is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .btn-icon, .task-action-btn):active:not(:disabled) {
     transform: none;
   }
 
@@ -191,7 +192,6 @@
     transition: none;
   }
 }
-
 /* Loading spinner for async ops */
 /* ===== Loading Spinner for Async Ops (Wave 7) ===== */
 @keyframes spin {

@@ -152,7 +152,7 @@ function isExternal(href: string): boolean {
                     data-board-nav-default={item.defaultHref ?? item.href}
                     title={item.label}
                     data-tooltip={item.label}
-                    data-astro-prefetch="viewport"
+                    data-astro-prefetch="hover"
                     aria-current={item.isActive ? "page" : undefined}
                     aria-label={item.label}
                   >
@@ -259,7 +259,7 @@ function isExternal(href: string): boolean {
                   data-board-nav-default={external || item.key === "settings" || item.taskView ? undefined : item.defaultHref ?? item.href}
                   title={item.label}
                   data-tooltip={item.label}
-                  data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" || item.taskView ? "false" : external ? undefined : "viewport"}
+                  data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" || item.taskView ? "false" : external ? undefined : "hover"}
                   aria-current={item.isActive ? "page" : undefined}
                   aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
                   {...(external
@@ -297,6 +297,17 @@ function isExternal(href: string): boolean {
                     title={`Unpin ${item.label}`}
                   >
                     <Icon name="pin" size={15} sprite={true} />
+                  </button>
+                )}
+                {item.taskView && (
+                  <button
+                    type="button"
+                    class="task-view-pin task-view-item-unpin"
+                    data-task-view-unpin={item.taskView}
+                    aria-label={`Unpin ${item.label} from navigation`}
+                    title={`Unpin ${item.label}`}
+                  >
+                    <Icon name="pin" size={15} />
                   </button>
                 )}
                 <div class="sidebar-edit-actions">
@@ -560,7 +571,7 @@ function isExternal(href: string): boolean {
       if (child) active = taskContext && child === view && !typedLink
       else if (isTasksLink) active = taskContext && !typedLink
       else if (context && link.dataset.page === "planning") active = logical.searchParams.get("view") === "groups" && !["goals", "routines", "pillars"].includes(logical.searchParams.get("section") ?? "")
-      else if (context && link.dataset.page === "progress") active = logical.pathname === "/progress" || logical.pathname === "/habits" || (logical.searchParams.get("view") === "groups" && ["goals", "routines", "pillars"].includes(logical.searchParams.get("section") ?? ""))
+      else if (context && link.dataset.page === "progress") active = logical.pathname === "/progress" || logical.pathname === "/routines" || logical.pathname === "/habits" || (logical.searchParams.get("view") === "groups" && ["goals", "routines", "pillars"].includes(logical.searchParams.get("section") ?? ""))
       else if (isFilteredShortcut(url)) active = link === typedLink
       else if (context && link.closest("[data-sidebar-board-children]") && href === backgroundPath) {
         const selected = readBoardNavigationContext(new URL(href + url.search, url))

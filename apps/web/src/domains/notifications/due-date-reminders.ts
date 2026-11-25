@@ -1,4 +1,8 @@
 import { serializeCalendarDelivery } from "@domains/calendar/calendar-delivery"
+import {
+  isMeithealOriginatedEvent,
+  stripCalendarReminderWrappers,
+} from "@domains/calendar/calendar-event-identity"
 import { decodeCalendarSetting, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
 import { isClosedStatus } from "@lib/status-config"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -98,21 +102,48 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     }
   } catch { return false }
 
-  // Loop prevention: skip tasks already synced to this calendar, or already reminded for this receiver & due timestamp
+  // Loop prevention: never create a calendar due-date reminder for:
+  // 1) tasks already imported from any calendar (1 invite = 1 ticket),
+  // 2) tasks already synced/written-back to this calendar,
+  // 3) tasks already reminded on this calendar for this due timestamp (even if receiver.id changed),
+  // 4) pre-existing Meitheal reminder/write-back artifacts.
+  const startIso = new Date(task.due_ms).toISOString()
+  const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
   const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
+  const isImportedOrOriginated = (current: { idempotency_key?: string | null; title?: string | null; description?: string | null } | null): boolean => {
+    if (!current) return false
+    if (typeof current.idempotency_key === "string" && /^(?:cal-sync-|caldav-sync-)/.test(current.idempotency_key)) {
+      return true
+    }
+    return isMeithealOriginatedEvent(
+      typeof current.title === "string" ? current.title : "",
+      typeof current.description === "string" ? current.description : null,
+    )
+  }
   const covered = async () => {
     const existingConf = await db.execute({
       sql: `SELECT confirmation_id FROM calendar_confirmations
             WHERE task_id = ?
               AND (
-                (source != 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ?)
+                source IN ('ha.calendar_sync', 'caldav')
+                OR (source != 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ?)
+                OR (source = 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ? AND json_extract(payload, '$.start') = ?)
                 OR request_id = ?
                 OR provider_event_id = ?
               )
             LIMIT 1`,
-      args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
+      args: [task.id, receiver.sourceId, receiver.sourceId, startIso, reminderRequestId, reminderRequestId],
     })
-    return existingConf.rows.length > 0
+    if (existingConf.rows.length > 0) return true
+    const existingDelivery = await db.execute({
+      sql: `SELECT request_id FROM calendar_reminder_deliveries
+            WHERE task_id = ? AND entity_id = ? AND due_ms = ?
+            LIMIT 1`,
+      args: [task.id, receiver.sourceId, task.due_ms],
+    })
+    if (existingDelivery.rows.length > 0) return true
+    const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
+    return isImportedOrOriginated(current)
   }
   if (await covered()) return false
 
@@ -121,6 +152,7 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
       !(await validateIntegrationScope(resolved.value, db, { resource: "task", action: "read" })).ok ||
       !await validateTaskOperation(db, context.scope, task.id, { resource: "task", action: "read" })) return false
     const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
+    if (isImportedOrOriginated(current)) return false
     return Boolean(current && Number(current.task_version) === task.task_version && current.due_date === task.due_date &&
       current.deferred_at == null && !isClosedStatus(current.status))
   }
@@ -135,11 +167,10 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     } catch { /* omit unavailable link */ }
   }
 
+  const cleanTitle = stripCalendarReminderWrappers(task.title) || task.title
   const summary = writeTicketDetails
-    ? `📋 ${task.ticket_key}: ${task.title} — DUE`
-    : `📋 ${task.title} — DUE`
-  const startIso = new Date(task.due_ms).toISOString()
-  const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
+    ? `📋 ${task.ticket_key}: ${cleanTitle} — DUE`
+    : `📋 ${cleanTitle} — DUE`
   const detailLines: string[] = []
   if (writeTicketDetails) {
     detailLines.push(`📋 ${task.ticket_key}`)

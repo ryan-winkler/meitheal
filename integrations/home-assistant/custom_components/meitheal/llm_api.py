@@ -9,6 +9,7 @@ without a separate address or credential.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 import math
 from typing import Any
@@ -378,20 +379,18 @@ class ListTasksTool(MeithealReadTool):
             tasks = []
             seen_ids: set[str] = set()
             expected_total: int | None = None
-            offset = 0
             inconsistent = False
-            while True:
+
+            def _build_params(page_offset: int) -> dict[str, str]:
                 params: dict[str, str] = {"assigned_to": assignee, "limit": "200", "sort": "updated_at"}
                 if task_kind:
                     params["task_kind"] = str(task_kind)
-                if offset > 0:
-                    params["offset"] = str(offset)
-                data = await coordinator.api.async_request(
-                    "GET",
-                    "/api/tasks",
-                    params=params,
-                    read_json=True,
-                )
+                if page_offset > 0:
+                    params["offset"] = str(page_offset)
+                return params
+
+            def _consume_page(data: Any) -> tuple[list[Any], int | None]:
+                nonlocal expected_total, inconsistent
                 rows = data.get("tasks") if isinstance(data, dict) else None
                 if not isinstance(rows, list):
                     raise HomeAssistantError(
@@ -404,7 +403,7 @@ class ListTasksTool(MeithealReadTool):
                         expected_total = total
                     elif total != expected_total:
                         inconsistent = True
-                        break
+                        return rows, total
                 for row in rows:
                     if not isinstance(row, dict):
                         continue
@@ -412,15 +411,58 @@ class ListTasksTool(MeithealReadTool):
                     if isinstance(row_id, str):
                         if row_id in seen_ids:
                             inconsistent = True
-                            break
+                            return rows, total
                         seen_ids.add(row_id)
                     if include_completed or str(row.get("status") or "").lower() not in _DONE_STATUSES:
                         tasks.append(_task_summary(row))
-                if inconsistent:
-                    break
-                offset += len(rows)
-                if not rows or (isinstance(total, int) and offset >= total) or (not isinstance(total, int) and len(rows) < 200):
-                    break
+                return rows, total
+
+            first_data = await coordinator.api.async_request(
+                "GET",
+                "/api/tasks",
+                params=_build_params(0),
+                read_json=True,
+            )
+            first_rows, total = _consume_page(first_data)
+            if inconsistent:
+                continue
+            offset = len(first_rows)
+            if first_rows and isinstance(total, int) and offset < total:
+                page_size = len(first_rows)
+                remaining_offsets = list(range(offset, total, page_size))
+                semaphore = asyncio.Semaphore(4)
+
+                async def _fetch_page(next_offset: int) -> Any:
+                    async with semaphore:
+                        return await coordinator.api.async_request(
+                            "GET",
+                            "/api/tasks",
+                            params=_build_params(next_offset),
+                            read_json=True,
+                        )
+
+                remaining_pages = await asyncio.gather(*(_fetch_page(off) for off in remaining_offsets))
+                for page_data in remaining_pages:
+                    rows, _ = _consume_page(page_data)
+                    if inconsistent:
+                        break
+                    offset += len(rows)
+                    if not rows:
+                        break
+            elif first_rows and not isinstance(total, int) and len(first_rows) == 200:
+                while True:
+                    next_data = await coordinator.api.async_request(
+                        "GET",
+                        "/api/tasks",
+                        params=_build_params(offset),
+                        read_json=True,
+                    )
+                    rows, next_total = _consume_page(next_data)
+                    if inconsistent:
+                        break
+                    offset += len(rows)
+                    if not rows or (isinstance(next_total, int) and offset >= next_total) or (not isinstance(next_total, int) and len(rows) < 200):
+                        break
             if not inconsistent:
                 break
         else:

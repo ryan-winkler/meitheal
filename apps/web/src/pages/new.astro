@@ -1,0 +1,980 @@
+---
+/**
+ * Dedicated Quick-Capture & Per-Task-Type Installable PWA Page (`/new`)
+ *
+ * Supports:
+ * - W3C Manifest `shortcuts` (`/new?kind=standard_action`, `/new?kind=shopping_item`, etc.)
+ * - Saving any task type as its own Home Screen PWA via dynamic `manifestHref`
+ * - Interactive Shopping List (items with quantity & category) and Checklist step builders
+ * - Web Share Target (`GET /new?title=...&text=...&url=...`)
+ *
+ * Bounded context: tasks / pwa
+ */
+import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { PWA_TASK_SHORTCUT_KINDS, resolvePwaTaskKind } from "@lib/pwa-manifest-builder"
+import { SHOPPING_CATEGORIES } from "@lib/pwa-capture-builder"
+
+const rawKind = Astro.url.searchParams.get("kind")
+const activeSpec = resolvePwaTaskKind(rawKind) ?? PWA_TASK_SHORTCUT_KINDS[0]!
+const manifestHref = `/manifest.webmanifest?kind=${encodeURIComponent(activeSpec.kind)}`
+
+// Safely read optional Web Share Target parameters (Astro auto-escapes all outputs)
+const sharedTitle = (Astro.url.searchParams.get("title") ?? "").trim().slice(0, 200)
+const sharedText = (Astro.url.searchParams.get("text") ?? "").trim().slice(0, 1000)
+const sharedUrl = (Astro.url.searchParams.get("url") ?? "").trim().slice(0, 500)
+const initialTitle = sharedTitle || (sharedUrl ? sharedUrl : "")
+const initialNotes = [sharedText, sharedUrl && sharedTitle ? sharedUrl : ""].filter(Boolean).join("\n\n")
+
+const scopeRes = await resolveBoardRequestScope(Astro, {
+  operation: { resource: "task", action: "create" },
+}).catch(() => null)
+const defaultBoardId = scopeRes?.ok ? scopeRes.scope.boardId : ""
+
+const isShopping = activeSpec.kind === "shopping_item"
+const isChecklist = activeSpec.kind === "checklist"
+---
+
+<Layout
+  title={`${activeSpec.label} — Meitheal`}
+  description={activeSpec.description}
+  manifestHref={manifestHref}
+>
+  <Fragment slot="page-title">
+    <span class="new-pwa-page-title">
+      <Icon name={activeSpec.icon as any} size={18} sprite={true} />
+      <span>{activeSpec.label}</span>
+    </span>
+  </Fragment>
+
+  <section class="new-pwa-shell" aria-labelledby="new-pwa-heading">
+    <div class="new-pwa-card">
+      <header class="new-pwa-card__head">
+        <div class="new-pwa-card__brand">
+          <img src="/icon-192.png" alt="Meitheal" width="40" height="40" decoding="async" class="new-pwa-card__app-icon" />
+          <div>
+            <h1 id="new-pwa-heading" class="new-pwa-card__title">{activeSpec.name}</h1>
+            <p class="new-pwa-card__subtitle">{activeSpec.description}</p>
+          </div>
+        </div>
+      </header>
+
+      <nav class="new-pwa-kind-tabs" aria-label="Choose task type to capture or save as shortcut">
+        {PWA_TASK_SHORTCUT_KINDS.map((spec) => (
+          <a
+            href={`/new?kind=${encodeURIComponent(spec.kind)}`}
+            class:list={["new-pwa-kind-pill", spec.kind === activeSpec.kind && "is-active"]}
+            aria-current={spec.kind === activeSpec.kind ? "page" : undefined}
+          >
+            <Icon name={spec.icon as any} size={14} sprite={true} />
+            <span>{spec.shortName}</span>
+          </a>
+        ))}
+      </nav>
+
+      <form
+        id="new-pwa-capture-form"
+        class="new-pwa-form"
+        data-kind={activeSpec.kind}
+        data-board-id={defaultBoardId}
+      >
+        <div class="new-pwa-field">
+          <label for="new-pwa-title" class="new-pwa-label">
+            {isShopping ? "List title" : isChecklist ? "Checklist title" : "Title"}
+          </label>
+          <input
+            id="new-pwa-title"
+            name="title"
+            type="text"
+            class="new-pwa-input"
+            required
+            maxlength="240"
+            autocomplete="off"
+            autofocus
+            placeholder={isShopping ? "e.g., Weekly groceries, Hardware run" : activeSpec.placeholder}
+            value={initialTitle}
+          />
+        </div>
+
+        {isShopping && (
+          <fieldset id="new-pwa-shopping-section" class="new-pwa-list-panel">
+            <legend class="new-pwa-list-panel__legend">
+              <span class="new-pwa-list-panel__title">
+                <Icon name="shopping-cart" size={15} sprite={true} />
+                <span>Shopping items</span>
+              </span>
+              <span id="new-pwa-shop-count" class="new-pwa-count-badge">0 items</span>
+            </legend>
+
+            <div class="new-pwa-shop-composer">
+              <input
+                id="new-pwa-shop-name"
+                type="text"
+                class="new-pwa-input new-pwa-shop-composer__name"
+                placeholder="Add item (e.g., Milk, Oats, Dish soap)…"
+                maxlength="160"
+                autocomplete="off"
+                aria-label="Shopping item name"
+              />
+              <input
+                id="new-pwa-shop-qty"
+                type="text"
+                class="new-pwa-input new-pwa-shop-composer__qty"
+                value="1"
+                placeholder="Qty"
+                maxlength="32"
+                autocomplete="off"
+                aria-label="Quantity"
+              />
+              <select
+                id="new-pwa-shop-cat"
+                class="new-pwa-select new-pwa-shop-composer__cat"
+                aria-label="Category"
+              >
+                {SHOPPING_CATEGORIES.map((cat) => (
+                  <option value={cat.value}>{cat.label}</option>
+                ))}
+              </select>
+              <button type="button" id="new-pwa-shop-add" class="btn btn-secondary btn-sm new-pwa-list-add-btn">
+                <Icon name="plus" size={14} sprite={true} />
+                <span>Add</span>
+              </button>
+            </div>
+
+            <ul id="new-pwa-shop-list" class="new-pwa-list-items" aria-label="Shopping items to create"></ul>
+            <p id="new-pwa-shop-empty" class="new-pwa-list-empty">
+              Press <strong>Enter</strong> or tap <strong>Add</strong> to build your shopping list with quantities and aisles.
+            </p>
+          </fieldset>
+        )}
+
+        {isChecklist && (
+          <fieldset id="new-pwa-checklist-section" class="new-pwa-list-panel">
+            <legend class="new-pwa-list-panel__legend">
+              <span class="new-pwa-list-panel__title">
+                <Icon name="list-check" size={15} sprite={true} />
+                <span>Checklist steps</span>
+              </span>
+              <span id="new-pwa-check-count" class="new-pwa-count-badge">0 steps</span>
+            </legend>
+
+            <div class="new-pwa-check-composer">
+              <input
+                id="new-pwa-check-text"
+                type="text"
+                class="new-pwa-input new-pwa-check-composer__input"
+                placeholder="Add a step (e.g., Pack chargers, Lock back door)…"
+                maxlength="240"
+                autocomplete="off"
+                aria-label="Checklist step"
+              />
+              <button type="button" id="new-pwa-check-add" class="btn btn-secondary btn-sm new-pwa-list-add-btn">
+                <Icon name="plus" size={14} sprite={true} />
+                <span>Add step</span>
+              </button>
+            </div>
+
+            <ul id="new-pwa-check-list" class="new-pwa-list-items" aria-label="Checklist steps to create"></ul>
+            <p id="new-pwa-check-empty" class="new-pwa-list-empty">
+              Press <strong>Enter</strong> or tap <strong>Add step</strong> to add checkable items in order.
+            </p>
+          </fieldset>
+        )}
+
+        <div class="new-pwa-field">
+          <label for="new-pwa-notes" class="new-pwa-label">Details (optional)</label>
+          <textarea
+            id="new-pwa-notes"
+            name="description"
+            rows="3"
+            class="new-pwa-textarea"
+            placeholder="Add notes, store preferences, links, or context…"
+          >{initialNotes}</textarea>
+        </div>
+
+        <div class="new-pwa-row">
+          <div class="new-pwa-field">
+            <label for="new-pwa-priority" class="new-pwa-label">Priority</label>
+            <select id="new-pwa-priority" name="priority" class="new-pwa-select">
+              <option value="none">No priority</option>
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+
+          <div class="new-pwa-field">
+            <label for="new-pwa-due" class="new-pwa-label">Due date</label>
+            <input id="new-pwa-due" name="due_date" type="date" class="new-pwa-input" />
+          </div>
+        </div>
+
+        <div class="new-pwa-actions">
+          <button type="submit" id="new-pwa-submit" class="btn btn-primary">
+            <Icon name="plus" size={16} sprite={true} />
+            <span>Create {activeSpec.label}</span>
+          </button>
+          <a href="/tasks" class="btn btn-ghost">Back to Tasks</a>
+        </div>
+
+        <div id="new-pwa-feedback" class="new-pwa-feedback" role="status" aria-live="polite" hidden></div>
+      </form>
+
+      <aside id="new-pwa-install-card" class="new-pwa-install-card" aria-label="Save shortcut to Home Screen">
+        <div class="new-pwa-install-card__body">
+          <strong class="new-pwa-install-card__title">
+            <Icon name="phone" size={15} sprite={true} />
+            <span>Save “{activeSpec.shortName}” to Home Screen</span>
+          </strong>
+          <p class="new-pwa-install-card__desc" id="new-pwa-install-desc">
+            Install this page as a dedicated home-screen shortcut so tapping the icon opens straight to <strong>{activeSpec.label}</strong>.
+          </p>
+        </div>
+        <div class="new-pwa-install-card__actions">
+          <button type="button" id="new-pwa-install-btn" class="btn btn-secondary btn-sm" hidden>
+            <Icon name="download" size={14} sprite={true} />
+            <span>Install “{activeSpec.shortName}”</span>
+          </button>
+          <span id="new-pwa-ios-tip" class="new-pwa-ios-tip">
+            On iPhone/iPad Safari: tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.
+          </span>
+        </div>
+      </aside>
+    </div>
+  </section>
+</Layout>
+
+<style is:inline>
+  .new-pwa-page-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .new-pwa-shell {
+    max-width: 640px;
+    margin: 12px auto 32px;
+  }
+  .new-pwa-card {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 20px;
+    border-radius: var(--radius-lg, 14px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-sm);
+  }
+  .new-pwa-card__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .new-pwa-card__app-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+  .new-pwa-card__title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .new-pwa-card__subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .new-pwa-kind-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .new-pwa-kind-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    padding: 6px 11px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms ease, color 140ms ease, transform 120ms ease;
+  }
+  .new-pwa-kind-pill:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+  .new-pwa-kind-pill:active {
+    transform: scale(0.98);
+  }
+  .new-pwa-kind-pill.is-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+    color: var(--accent-text, var(--accent));
+    font-weight: 600;
+  }
+  .new-pwa-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .new-pwa-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .new-pwa-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  /* Unified Tabler-styled input controls */
+  .new-pwa-input,
+  .new-pwa-textarea,
+  .new-pwa-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease;
+  }
+  .new-pwa-input::placeholder,
+  .new-pwa-textarea::placeholder {
+    color: var(--text-muted);
+  }
+  .new-pwa-input:hover,
+  .new-pwa-textarea:hover,
+  .new-pwa-select:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
+  .new-pwa-input:focus,
+  .new-pwa-textarea:focus,
+  .new-pwa-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+    background: var(--bg-card);
+  }
+  .new-pwa-textarea {
+    min-height: 84px;
+    resize: vertical;
+  }
+  .new-pwa-select {
+    min-height: 40px;
+    cursor: pointer;
+  }
+
+  /* Shopping & Checklist interactive builders */
+  .new-pwa-list-panel {
+    margin: 0;
+    padding: 14px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 75%, var(--bg-card));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .new-pwa-list-panel__legend {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0 2px;
+    margin-bottom: 2px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .new-pwa-list-panel__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .new-pwa-count-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .new-pwa-shop-composer {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) 74px minmax(105px, 0.9fr) auto;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .new-pwa-check-composer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .new-pwa-list-add-btn {
+    white-space: nowrap;
+    min-height: 38px;
+  }
+  .new-pwa-list-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .new-pwa-list-items:empty {
+    display: none;
+  }
+  .new-pwa-list-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    font-size: 0.84rem;
+    color: var(--text-primary);
+  }
+  .new-pwa-list-row.is-done .new-pwa-list-row__label {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+  .new-pwa-list-row__check {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .new-pwa-list-row__label {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+  .new-pwa-list-row__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .new-pwa-list-tag {
+    padding: 2px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .new-pwa-list-row__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+  .new-pwa-list-row__remove:hover {
+    color: var(--danger, #ef4444);
+    background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+  }
+  .new-pwa-list-empty {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+  .new-pwa-list-empty[hidden] {
+    display: none;
+  }
+
+  .new-pwa-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .new-pwa-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+  }
+  .new-pwa-feedback {
+    padding: 10px 12px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    font-size: 0.8125rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .new-pwa-feedback[hidden] {
+    display: none;
+  }
+  .new-pwa-feedback--ok {
+    border-color: color-mix(in srgb, var(--success, #22c55e) 50%, var(--border));
+    color: var(--text-primary);
+  }
+  .new-pwa-feedback--err {
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 50%, var(--border));
+    color: var(--danger, #ef4444);
+  }
+  .new-pwa-install-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px dashed color-mix(in srgb, var(--accent) 36%, var(--border));
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
+  }
+  .new-pwa-install-card[hidden] {
+    display: none;
+  }
+  .new-pwa-install-card__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.84rem;
+    color: var(--text-primary);
+  }
+  .new-pwa-install-card__desc {
+    margin: 4px 0 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .new-pwa-install-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .new-pwa-ios-tip {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  @media (max-width: 560px) {
+    .new-pwa-shell {
+      padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+    .new-pwa-card {
+      padding: 16px;
+    }
+    .new-pwa-row {
+      grid-template-columns: 1fr;
+    }
+    .new-pwa-shop-composer {
+      grid-template-columns: 1fr 84px;
+    }
+    .new-pwa-shop-composer__name {
+      grid-column: 1 / -1;
+    }
+    .new-pwa-shop-composer__cat {
+      grid-column: 1 / 2;
+    }
+    .new-pwa-list-add-btn {
+      grid-column: 2 / 3;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .new-pwa-kind-pill,
+    .new-pwa-input,
+    .new-pwa-textarea,
+    .new-pwa-select,
+    .new-pwa-list-row__remove {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { enqueueOfflineMutation } from "@lib/pwa-offline-sync"
+  import {
+    buildQuickCapturePayload,
+    SHOPPING_CATEGORIES,
+    type QuickChecklistStep,
+    type QuickShoppingItem,
+  } from "@lib/pwa-capture-builder"
+
+  pageLifecycle.onPageLoad((signal) => {
+    const form = document.getElementById("new-pwa-capture-form") as HTMLFormElement | null
+    if (!form) return
+
+    const kind = form.dataset.kind || "standard_action"
+    const submitBtn = document.getElementById("new-pwa-submit") as HTMLButtonElement | null
+    const feedback = document.getElementById("new-pwa-feedback")
+    const titleInput = document.getElementById("new-pwa-title") as HTMLInputElement | null
+    const notesInput = document.getElementById("new-pwa-notes") as HTMLTextAreaElement | null
+    const priorityInput = document.getElementById("new-pwa-priority") as HTMLSelectElement | null
+    const dueInput = document.getElementById("new-pwa-due") as HTMLInputElement | null
+
+    // Interactive Shopping List state
+    const shoppingItems: QuickShoppingItem[] = []
+    const shopNameInput = document.getElementById("new-pwa-shop-name") as HTMLInputElement | null
+    const shopQtyInput = document.getElementById("new-pwa-shop-qty") as HTMLInputElement | null
+    const shopCatSelect = document.getElementById("new-pwa-shop-cat") as HTMLSelectElement | null
+    const shopAddBtn = document.getElementById("new-pwa-shop-add") as HTMLButtonElement | null
+    const shopListEl = document.getElementById("new-pwa-shop-list")
+    const shopCountEl = document.getElementById("new-pwa-shop-count")
+    const shopEmptyEl = document.getElementById("new-pwa-shop-empty")
+
+    const categoryLabels = new Map<string, string>(SHOPPING_CATEGORIES.map((c) => [c.value, c.label]))
+
+    const renderShoppingList = () => {
+      if (!shopListEl) return
+      shopListEl.textContent = ""
+      for (const item of shoppingItems) {
+        const li = document.createElement("li")
+        li.className = item.done ? "new-pwa-list-row is-done" : "new-pwa-list-row"
+
+        const check = document.createElement("input")
+        check.type = "checkbox"
+        check.className = "new-pwa-list-row__check"
+        check.checked = item.done
+        check.setAttribute("aria-label", `Mark ${item.name} bought`)
+        check.addEventListener("change", () => {
+          item.done = check.checked
+          li.classList.toggle("is-done", item.done)
+        }, { signal })
+
+        const label = document.createElement("span")
+        label.className = "new-pwa-list-row__label"
+        label.textContent = item.name
+
+        const meta = document.createElement("span")
+        meta.className = "new-pwa-list-row__meta"
+
+        const qtyTag = document.createElement("span")
+        qtyTag.className = "new-pwa-list-tag"
+        qtyTag.textContent = `×${item.qty}`
+        meta.appendChild(qtyTag)
+
+        const catTag = document.createElement("span")
+        catTag.className = "new-pwa-list-tag"
+        catTag.textContent = categoryLabels.get(item.category) ?? item.category
+        meta.appendChild(catTag)
+
+        const removeBtn = document.createElement("button")
+        removeBtn.type = "button"
+        removeBtn.className = "new-pwa-list-row__remove"
+        removeBtn.setAttribute("aria-label", `Remove ${item.name}`)
+        removeBtn.textContent = "×"
+        removeBtn.addEventListener("click", () => {
+          const idx = shoppingItems.findIndex((entry) => entry.id === item.id)
+          if (idx >= 0) {
+            shoppingItems.splice(idx, 1)
+            renderShoppingList()
+          }
+        }, { signal })
+
+        li.append(check, label, meta, removeBtn)
+        shopListEl.appendChild(li)
+      }
+      if (shopCountEl) {
+        shopCountEl.textContent = `${shoppingItems.length} ${shoppingItems.length === 1 ? "item" : "items"}`
+      }
+      if (shopEmptyEl) {
+        shopEmptyEl.hidden = shoppingItems.length > 0
+      }
+    }
+
+    const addShoppingItem = () => {
+      const name = shopNameInput?.value.trim() ?? ""
+      if (!name) return false
+      shoppingItems.push({
+        id: `shop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        qty: (shopQtyInput?.value.trim() || "1"),
+        category: shopCatSelect?.value || "other",
+        done: false,
+      })
+      if (shopNameInput) shopNameInput.value = ""
+      if (shopQtyInput) shopQtyInput.value = "1"
+      renderShoppingList()
+      shopNameInput?.focus()
+      return true
+    }
+
+    shopAddBtn?.addEventListener("click", () => { addShoppingItem() }, { signal })
+    const onShopKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault()
+        addShoppingItem()
+      }
+    }
+    shopNameInput?.addEventListener("keydown", onShopKeydown, { signal })
+    shopQtyInput?.addEventListener("keydown", onShopKeydown, { signal })
+
+    // Interactive Checklist state
+    const checklistSteps: QuickChecklistStep[] = []
+    const checkInput = document.getElementById("new-pwa-check-text") as HTMLInputElement | null
+    const checkAddBtn = document.getElementById("new-pwa-check-add") as HTMLButtonElement | null
+    const checkListEl = document.getElementById("new-pwa-check-list")
+    const checkCountEl = document.getElementById("new-pwa-check-count")
+    const checkEmptyEl = document.getElementById("new-pwa-check-empty")
+
+    const renderChecklist = () => {
+      if (!checkListEl) return
+      checkListEl.textContent = ""
+      for (const step of checklistSteps) {
+        const li = document.createElement("li")
+        li.className = step.done ? "new-pwa-list-row is-done" : "new-pwa-list-row"
+
+        const check = document.createElement("input")
+        check.type = "checkbox"
+        check.className = "new-pwa-list-row__check"
+        check.checked = step.done
+        check.setAttribute("aria-label", `Mark step ${step.text} complete`)
+        check.addEventListener("change", () => {
+          step.done = check.checked
+          li.classList.toggle("is-done", step.done)
+        }, { signal })
+
+        const label = document.createElement("span")
+        label.className = "new-pwa-list-row__label"
+        label.textContent = step.text
+
+        const removeBtn = document.createElement("button")
+        removeBtn.type = "button"
+        removeBtn.className = "new-pwa-list-row__remove"
+        removeBtn.setAttribute("aria-label", `Remove ${step.text}`)
+        removeBtn.textContent = "×"
+        removeBtn.addEventListener("click", () => {
+          const idx = checklistSteps.findIndex((entry) => entry.id === step.id)
+          if (idx >= 0) {
+            checklistSteps.splice(idx, 1)
+            renderChecklist()
+          }
+        }, { signal })
+
+        li.append(check, label, removeBtn)
+        checkListEl.appendChild(li)
+      }
+      if (checkCountEl) {
+        checkCountEl.textContent = `${checklistSteps.length} ${checklistSteps.length === 1 ? "step" : "steps"}`
+      }
+      if (checkEmptyEl) {
+        checkEmptyEl.hidden = checklistSteps.length > 0
+      }
+    }
+
+    const addChecklistStep = () => {
+      const text = checkInput?.value.trim() ?? ""
+      if (!text) return false
+      checklistSteps.push({
+        id: `chk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        text,
+        done: false,
+      })
+      if (checkInput) checkInput.value = ""
+      renderChecklist()
+      checkInput?.focus()
+      return true
+    }
+
+    checkAddBtn?.addEventListener("click", () => { addChecklistStep() }, { signal })
+    checkInput?.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault()
+        addChecklistStep()
+      }
+    }, { signal })
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault()
+      // Capture any un-submitted item/step sitting in the inline composer
+      if (kind === "shopping_item" && shopNameInput?.value.trim()) addShoppingItem()
+      if (kind === "checklist" && checkInput?.value.trim()) addChecklistStep()
+
+      const title = titleInput?.value.trim() ?? ""
+      if (!title) {
+        titleInput?.focus()
+        return
+      }
+      if (submitBtn) {
+        submitBtn.disabled = true
+        submitBtn.setAttribute("aria-busy", "true")
+      }
+      if (feedback) {
+        feedback.hidden = true
+        feedback.className = "new-pwa-feedback"
+      }
+
+      const resetFormAfterCapture = () => {
+        if (titleInput) {
+          titleInput.value = ""
+          titleInput.focus()
+        }
+        if (notesInput) notesInput.value = ""
+        if (shoppingItems.length > 0) {
+          shoppingItems.length = 0
+          renderShoppingList()
+        }
+        if (checklistSteps.length > 0) {
+          checklistSteps.length = 0
+          renderChecklist()
+        }
+      }
+
+      const payload = buildQuickCapturePayload({
+        title,
+        kind,
+        description: notesInput?.value,
+        priority: priorityInput?.value || "medium",
+        dueDate: dueInput?.value,
+        shoppingItems,
+        checklistSteps,
+      })
+      const serializedPayload = JSON.stringify(payload)
+      const boardId = form.dataset.boardId?.trim() || undefined
+
+      const queueForOffline = async () => {
+        const queued = await enqueueOfflineMutation({
+          url: "/api/tasks",
+          method: "POST",
+          boardId,
+          body: serializedPayload,
+        })
+        if (!queued) throw new Error("Offline storage is unavailable in this browser.")
+        if (feedback) {
+          feedback.textContent = ""
+          const msg = document.createElement("span")
+          msg.textContent = `Saved offline: ${title} — will sync automatically when back online.`
+          feedback.appendChild(msg)
+          feedback.className = "new-pwa-feedback new-pwa-feedback--ok"
+          feedback.hidden = false
+        }
+        resetFormAfterCapture()
+      }
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+          await queueForOffline()
+          return
+        }
+
+        const headers: Record<string, string> = { "Content-Type": "application/json" }
+        if (boardId) headers["X-Meitheal-Board-Id"] = boardId
+
+        let res: Response
+        try {
+          res = await fetch("/api/tasks", {
+            method: "POST",
+            headers,
+            body: serializedPayload,
+          })
+        } catch (networkErr) {
+          if (networkErr instanceof TypeError || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+            await queueForOffline()
+            return
+          }
+          throw networkErr
+        }
+
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(typeof data?.error === "string" ? data.error : "Could not create item.")
+        }
+
+        // POST /api/tasks returns a flat task object { id, ticket_key, title, ... }
+        const ticketKey = typeof data?.ticket_key === "string" ? data.ticket_key : ""
+        if (feedback) {
+          feedback.textContent = ""
+          const msg = document.createElement("span")
+          const itemSummary = kind === "shopping_item" && shoppingItems.length > 0
+            ? ` (${shoppingItems.length} ${shoppingItems.length === 1 ? "item" : "items"})`
+            : kind === "checklist" && checklistSteps.length > 0
+              ? ` (${checklistSteps.length} ${checklistSteps.length === 1 ? "step" : "steps"})`
+              : ""
+          msg.textContent = ticketKey
+            ? `Created ${ticketKey}: ${title}${itemSummary}`
+            : `Created: ${title}${itemSummary}`
+          feedback.appendChild(msg)
+          if (ticketKey) {
+            const link = document.createElement("a")
+            link.href = `/tickets/${encodeURIComponent(ticketKey)}`
+            link.className = "btn btn-secondary btn-sm"
+            link.textContent = `Open ${ticketKey}`
+            feedback.appendChild(link)
+          }
+          feedback.className = "new-pwa-feedback new-pwa-feedback--ok"
+          feedback.hidden = false
+        }
+
+        resetFormAfterCapture()
+      } catch (err) {
+        if (feedback) {
+          feedback.textContent = err instanceof Error ? err.message : "Could not create item."
+          feedback.className = "new-pwa-feedback new-pwa-feedback--err"
+          feedback.hidden = false
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false
+          submitBtn.removeAttribute("aria-busy")
+        }
+      }
+    }, { signal })
+
+    // Install card visibility & prompt wiring
+    const installCard = document.getElementById("new-pwa-install-card")
+    const installBtn = document.getElementById("new-pwa-install-btn") as HTMLButtonElement | null
+    const isStandalone = Boolean(
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone
+    )
+    if (isStandalone && installCard) {
+      installCard.hidden = true
+      return
+    }
+    const syncInstallBtn = () => {
+      if (!installBtn) return
+      installBtn.hidden = !(window as any).__pwa_install_prompt
+    }
+    syncInstallBtn()
+    window.addEventListener("meitheal-pwa-installable", syncInstallBtn, { signal })
+    window.addEventListener("meitheal-pwa-prompt-consumed", syncInstallBtn, { signal })
+    window.addEventListener("meitheal-pwa-installed", () => {
+      if (installCard) installCard.hidden = true
+    }, { signal })
+    installBtn?.addEventListener("click", async () => {
+      await consumePwaInstallPrompt()
+      syncInstallBtn()
+    }, { signal })
+  })
+</script>

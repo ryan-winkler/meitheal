@@ -90,7 +90,7 @@ const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
   ? `#${[...areaColor.slice(1)].map(channel => channel.repeat(2)).join("")}`
   : areaColor
 
-const routinesPath = `/habits?board_id=${encodeURIComponent((workScope?.boardId ?? ""))}&area_id=${encodeURIComponent(areaId)}`
+const routinesPath = `/progress?board_id=${encodeURIComponent((workScope?.boardId ?? ""))}&area_id=${encodeURIComponent(areaId)}#routines`
 
 const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const organization = await organizationLabelsFor(Astro)
@@ -255,7 +255,7 @@ const tabs = [
   </section>
 </Layout>}
 
-<style>
+<style is:inline>
   @reference "../../styles/global.css";
 
   /* Tab bar */

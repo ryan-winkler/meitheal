@@ -3,15 +3,13 @@ import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { boardContextHref } from "@lib/board-workspace"
 import { resolveBoardPageScope } from "@lib/board-http"
 import { organizationLabelsFor } from "@lib/organization-labels"
-const organization = await organizationLabelsFor(Astro)
 /**
- * AchievementsTab — Inline Gamification/Achievements for Progress & Growth shell
+ * AchievementsTab — Unified Tabler Gamification & Achievements dashboard
  *
- * Extracted from gamification.astro for embedding inside progress.astro.
- * Self-contained: fetches its own data via SSR.
+ * Shared by `/progress#achievements` and `/gamification` (DRY).
+ * Respects all Look & Feel settings (theme, accent, radius, typography, fluid width).
  *
  * @domain gamification
- * @phase 18 — Progress & Growth Unification
  */
 import GamificationWidget from "../gamification/GamificationWidget.astro"
 import Icon from "../ui/Icon.astro"
@@ -30,19 +28,23 @@ import {
 } from "@domains/gamification"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
+const organization = await organizationLabelsFor(Astro)
 const scoped = await resolveBoardPageScope(Astro)
 const workScope = scoped.ok ? scoped.scope : null
 const pagePlacement = workScope ? await readBoardPagePlacement(workScope, Astro.url) : null
-const achievementsHref = workScope && pagePlacement?.ok ? boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/progress#achievements") : undefined
+const achievementsHref = workScope && pagePlacement?.ok
+  ? boardContextHref(
+      { boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id },
+      "/progress#achievements",
+    )
+  : undefined
 
 const gamificationEnabled = await isFeatureEnabled("gamification")
 
-// Ensure schema exists
 try {
   if (gamificationEnabled) await ensureGamificationSchema()
 } catch { /* DB not available */ }
 
-// Fetch all data
 let stats = {
   currentStreak: 0,
   longestStreak: 0,
@@ -57,24 +59,26 @@ let heatmapData: { date: string; count: number }[] = []
 
 try {
   if (workScope && gamificationEnabled) {
-    [stats, weekly, achievementData] = await Promise.all([
+    ;[stats, weekly, achievementData] = await Promise.all([
       getStats(workScope),
       getWeeklyData(workScope),
       getAllAchievements(workScope),
     ])
     heatmapData = await getYearlyHeatmapData(workScope)
   }
-} catch { dataUnavailable = true }
+} catch {
+  dataUnavailable = true
+}
 
 const level = getLevel(stats.totalPoints)
 const progress = getProgressToNextLevel(stats.totalPoints)
+const progressPct = Math.round(progress * 100)
 const xpToNext = getXpToNextLevel(stats.totalPoints)
 const currentXp = stats.totalPoints - getXpForLevel(level)
 const nextLevelXp = getXpForLevel(level + 1) - getXpForLevel(level)
-const circumference = 2 * Math.PI * 54
+const circumference = 2 * Math.PI * 52
 const dashOffset = circumference * (1 - progress)
 
-// Heatmap helpers
 const today = new Date()
 const currentYear = today.getFullYear()
 const maxCount = Math.max(...heatmapData.map((d) => d.count), 1)
@@ -82,9 +86,9 @@ const maxCount = Math.max(...heatmapData.map((d) => d.count), 1)
 function heatmapColor(count: number): string {
   if (count === 0) return "var(--bg-secondary)"
   const intensity = Math.min(count / maxCount, 1)
-  if (intensity < 0.25) return "color-mix(in srgb, var(--accent) 28%, var(--bg-secondary))"
+  if (intensity < 0.25) return "color-mix(in srgb, var(--accent) 26%, var(--bg-secondary))"
   if (intensity < 0.5) return "color-mix(in srgb, var(--accent) 48%, var(--bg-secondary))"
-  if (intensity < 0.75) return "color-mix(in srgb, var(--accent) 72%, var(--bg-secondary))"
+  if (intensity < 0.75) return "color-mix(in srgb, var(--accent) 74%, var(--bg-secondary))"
   return "var(--accent)"
 }
 
@@ -139,8 +143,7 @@ function getAchievementProgress(id: string): string {
     return `Level ${Math.min(level, levelTarget)}/${levelTarget}`
   }
 
-  if (id === "daily_goal") return `${Math.min(stats.todayCompleted, 5)}/5 today`
-  if (id === "five_in_day") return `${Math.min(stats.todayCompleted, 5)}/5 today`
+  if (id === "daily_goal" || id === "five_in_day") return `${Math.min(stats.todayCompleted, 5)}/5 today`
   if (id === "ten_in_day") return `${Math.min(stats.todayCompleted, 10)}/10 today`
   return "Locked"
 }
@@ -159,444 +162,856 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
   { key: "xp", label: "XP Earned", icon: "star" },
   { key: "special", label: "Special", icon: "sparkles" },
 ]
+
+const unlockedPercent = achievementData.total > 0
+  ? Math.round((achievementData.unlocked / achievementData.total) * 100)
+  : 0
 ---
 
-{!workScope || !achievementsHref || dataUnavailable ? <p role="status">Achievements are unavailable. Reload to try again.</p> : !gamificationEnabled ? (
-  <div class="achievements-tab__disabled">
-    <div class="achievements-tab__disabled-icon"><Icon name="trophy" size={48} sprite={true} /></div>
-    <h2>Gamification is disabled</h2>
-    <p>Enable the gamification feature flag in Settings to track achievements, XP, and streaks.</p>
+{!workScope || !achievementsHref || dataUnavailable ? (
+  <div class="card achievements-tab__state-card" role="status">
+    <div class="card-body achievements-tab__empty">
+      <svg class="achievements-tab__illustration" viewBox="0 0 180 120" fill="none" aria-hidden="true">
+        <rect x="28" y="22" width="124" height="76" rx="12" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="2" />
+        <circle cx="90" cy="56" r="20" fill="color-mix(in srgb, var(--accent) 16%, var(--bg-card))" stroke="var(--accent)" stroke-width="2" />
+        <path d="M90 46v12M90 64h.01" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" />
+        <rect x="54" y="84" width="72" height="6" rx="3" fill="var(--border)" />
+      </svg>
+      <h2 class="achievements-tab__empty-title">Achievements are unavailable</h2>
+      <p class="achievements-tab__empty-desc">Reload the page to retry loading your progress and achievements.</p>
+    </div>
+  </div>
+) : !gamificationEnabled ? (
+  <div class="card achievements-tab__state-card">
+    <div class="card-body achievements-tab__empty">
+      <svg class="achievements-tab__illustration" viewBox="0 0 180 120" fill="none" aria-hidden="true">
+        <circle cx="90" cy="60" r="44" fill="color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+        <path d="M72 40h36v16c0 10-8 18-18 18s-18-8-18-18V40Z" fill="var(--bg-card)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" />
+        <path d="M72 46h-8c0 9 3 14 8 15M108 46h8c0 9-3 14-8 15" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />
+        <path d="M90 74v10M76 84h28" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />
+        <circle cx="48" cy="36" r="3" fill="var(--accent)" opacity="0.5" />
+        <circle cx="136" cy="40" r="4" fill="var(--accent)" opacity="0.35" />
+        <circle cx="132" cy="84" r="2.5" fill="var(--accent)" opacity="0.5" />
+      </svg>
+      <h2 class="achievements-tab__empty-title">Gamification is disabled</h2>
+      <p class="achievements-tab__empty-desc">
+        Enable Gamification in Settings to track XP points, daily streaks, levels, and household achievements.
+      </p>
+      <a href="/settings#tasks-boards-settings" class="btn btn-primary btn-sm">
+        <Icon name="settings" size={15} sprite={true} />
+        <span>Open Optional Features</span>
+      </a>
+    </div>
   </div>
 ) : (
   <div class="achievements-tab" id="achievements-tab-root">
-    <!-- Level Card -->
-    <section class="achievements-tab__level-card">
-      <div class="achievements-tab__level-ring-wrapper">
-        <svg viewBox="0 0 120 120" class="achievements-tab__level-ring" aria-hidden="true">
-          <circle cx="60" cy="60" r="54" class="achievements-tab__ring-bg" />
-          <circle
-            cx="60" cy="60" r="54"
-            class="achievements-tab__ring-fill"
-            style={`stroke-dasharray: ${circumference}; stroke-dashoffset: ${dashOffset};`}
-          />
-        </svg>
-        <div class="achievements-tab__ring-content">
-          <span class="achievements-tab__level-number">{level}</span>
-          <span class="achievements-tab__level-label">Level</span>
-        </div>
-      </div>
-      <div class="achievements-tab__level-info">
-        <div class="achievements-tab__xp-bar">
-          <div class="achievements-tab__xp-bar-fill" style={`width: ${progress * 100}%;`}></div>
-        </div>
-        <div class="achievements-tab__xp-text">
-          <span>{currentXp} / {nextLevelXp} XP</span>
-          <span style="color: var(--text-muted);">{xpToNext} to Level {level + 1}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Stats Grid -->
-    <section class="achievements-tab__stats-grid">
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="star" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{stats.totalPoints.toLocaleString()}</span>
-        <span class="achievements-tab__stat-label">Total XP</span>
-      </div>
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="checkbox" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{stats.totalCompleted.toLocaleString()}</span>
-        <span class="achievements-tab__stat-label">Tasks Completed</span>
-      </div>
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="flame" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{stats.currentStreak}</span>
-        <span class="achievements-tab__stat-label">Current Streak</span>
-      </div>
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="trophy" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{stats.longestStreak}</span>
-        <span class="achievements-tab__stat-label">Best Streak</span>
-      </div>
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="star" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{achievementData.unlocked} / {achievementData.total}</span>
-        <span class="achievements-tab__stat-label">{organization("achievement", true)}</span>
-      </div>
-      <div class="achievements-tab__stat-card">
-        <span class="achievements-tab__stat-icon"><Icon name="calendar" size={20} sprite={true} /></span>
-        <span class="achievements-tab__stat-value">{stats.todayCompleted}</span>
-        <span class="achievements-tab__stat-label">Today</span>
-      </div>
-    </section>
-
-    <!-- Weekly Progress -->
-    <section class="achievements-tab__section">
-      <GamificationWidget achievementsHref={achievementsHref} stats={stats} weekly={weekly} achievements={achievementData.achievements} />
-    </section>
-
-    <!-- Activity Heatmap -->
-    {heatmapData.length > 0 && (
-      <section class="achievements-tab__section">
-        <h2 class="achievements-tab__section-title"><Icon name="chart-bar" size={18} sprite={true} /> Activity Heatmap — {currentYear}</h2>
-        <div class="achievements-tab__heatmap-container">
-          <div class="achievements-tab__heatmap">
-            {heatmapData.map((day) => (
-              <div
-                class="achievements-tab__heatmap-cell"
-                style={`background: ${heatmapColor(day.count)};`}
-                title={`${day.date}: ${day.count} task${day.count !== 1 ? "s" : ""}`}
-              />
-            ))}
-          </div>
-          <div class="achievements-tab__heatmap-legend">
-            <span style="font-size: 0.75rem; color: var(--text-muted);">Less</span>
-            <div class="achievements-tab__heatmap-cell" style="background: var(--bg-hover, #1d211f);" />
-            <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 28%, var(--bg-card));" />
-            <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 50%, var(--bg-card));" />
-            <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 75%, var(--bg-card));" />
-            <div class="achievements-tab__heatmap-cell" style="background: var(--accent);" />
-            <span style="font-size: 0.75rem; color: var(--text-muted);">More</span>
+    <!-- Hero Level Card (Tabler Card + Theme-Reactive Illustration) -->
+    <section class="card achievements-tab__hero achievements-tab__anchor" id="achievements-level">
+      <div class="card-body achievements-tab__hero-body">
+        <div class="achievements-tab__level-ring-wrapper">
+          <svg viewBox="0 0 120 120" class="achievements-tab__level-ring" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" class="achievements-tab__ring-bg" />
+            <circle
+              cx="60" cy="60" r="52"
+              class="achievements-tab__ring-fill"
+              style={`stroke-dasharray: ${circumference}; stroke-dashoffset: ${dashOffset};`}
+            />
+          </svg>
+          <div class="achievements-tab__ring-content">
+            <span class="achievements-tab__level-number">{level}</span>
+            <span class="achievements-tab__level-label">Level</span>
           </div>
         </div>
+
+        <div class="achievements-tab__level-info">
+          <div class="achievements-tab__hero-heading">
+            <div>
+              <div class="subheader">Household Momentum</div>
+              <h2 class="achievements-tab__hero-title">
+                Level {level} · {stats.totalPoints.toLocaleString()} XP
+              </h2>
+            </div>
+            <span class="achievements-tab__pill">
+              <Icon name="trophy" size={14} sprite={true} />
+              <span>{achievementData.unlocked} / {achievementData.total} unlocked ({unlockedPercent}%)</span>
+            </span>
+          </div>
+
+          <div class="progress achievements-tab__progress" role="progressbar" aria-label="Progress to next level" aria-valuenow={progressPct} aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar achievements-tab__progress-bar" style={`width: ${Math.max(progressPct, 2)}%;`}></div>
+          </div>
+
+          <div class="achievements-tab__xp-text">
+            <span><strong>{currentXp.toLocaleString()}</strong> / {nextLevelXp.toLocaleString()} XP this level</span>
+            <span class="achievements-tab__xp-muted">{xpToNext.toLocaleString()} XP to Level {level + 1}</span>
+          </div>
+          <p class="achievements-tab__explain">Levels rise automatically as you earn XP from completed tasks, routines, and daily goals.</p>
+        </div>
+
+        <div class="achievements-tab__hero-art" aria-hidden="true">
+          <svg viewBox="0 0 160 112" fill="none" class="achievements-tab__hero-svg">
+            <ellipse cx="80" cy="96" rx="58" ry="8" fill="color-mix(in srgb, var(--accent) 14%, transparent)" />
+            <rect x="44" y="78" width="72" height="14" rx="4" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="1.5" />
+            <rect x="56" y="68" width="48" height="12" rx="3" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5" />
+            <path d="M58 24h44v20c0 12.15-9.85 22-22 22s-22-9.85-22-22V24Z" fill="color-mix(in srgb, var(--accent) 18%, var(--bg-card))" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" />
+            <path d="M58 30H46c0 11 4.5 17 12 19M102 30h12c0 11-4.5 17-12 19" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />
+            <path d="M80 34l2.7 5.5 6 .9-4.35 4.25 1.03 6L80 47.8l-5.38 2.85 1.03-6L71.3 40.4l6-.9L80 34Z" fill="var(--accent)" />
+            <path d="M26 28l2-4 2 4 4 2-4 2-2 4-2-4-4-2 4-2Z" fill="var(--accent)" opacity="0.6" />
+            <circle cx="134" cy="24" r="3.5" fill="var(--accent)" opacity="0.45" />
+            <circle cx="140" cy="64" r="2.5" fill="var(--accent)" opacity="0.65" />
+            <circle cx="24" cy="68" r="2.5" fill="var(--accent)" opacity="0.4" />
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabler KPI Stats Grid -->
+    <section class="achievements-tab__stats-grid" aria-label="Progress statistics">
+      <div class="card achievements-tab__stat-card achievements-tab__anchor" id="achievements-xp">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">Total XP</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="star" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{stats.totalPoints.toLocaleString()}</div>
+          <p class="achievements-tab__stat-caption">Earned on every completed task; higher priority awards more XP.</p>
+        </div>
+      </div>
+
+      <div class="card achievements-tab__stat-card">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">Completed</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="checkbox" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{stats.totalCompleted.toLocaleString()}</div>
+          <p class="achievements-tab__stat-caption">All-time finished tasks counted toward milestone badges.</p>
+        </div>
+      </div>
+
+      <div class="card achievements-tab__stat-card achievements-tab__anchor" id="achievements-streaks">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">Current Streak</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="flame" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{stats.currentStreak} {stats.currentStreak === 1 ? "day" : "days"}</div>
+          <p class="achievements-tab__stat-caption">Consecutive days with at least one completed task or routine.</p>
+        </div>
+      </div>
+
+      <div class="card achievements-tab__stat-card">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">Best Streak</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="trophy" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{stats.longestStreak} {stats.longestStreak === 1 ? "day" : "days"}</div>
+          <p class="achievements-tab__stat-caption">Your longest unbroken run of daily completions.</p>
+        </div>
+      </div>
+
+      <div class="card achievements-tab__stat-card">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">{organization("achievement", true)}</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="sparkles" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{achievementData.unlocked} / {achievementData.total}</div>
+          <p class="achievements-tab__stat-caption">Badges unlocked across milestones, streaks, and XP tiers.</p>
+        </div>
+      </div>
+
+      <div class="card achievements-tab__stat-card achievements-tab__anchor" id="achievements-today">
+        <div class="card-body achievements-tab__stat-body">
+          <div class="achievements-tab__stat-top">
+            <span class="subheader">Today</span>
+            <span class="achievements-tab__stat-avatar"><Icon name="calendar" size={18} sprite={true} /></span>
+          </div>
+          <div class="achievements-tab__stat-value">{stats.todayCompleted}</div>
+          <p class="achievements-tab__stat-caption">Tasks finished today toward your daily ring and streak.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Weekly Progress + Activity Heatmap Split Grid -->
+    <div class="achievements-tab__insights-grid">
+      <section class="achievements-tab__widget-wrap">
+        <GamificationWidget
+          achievementsHref={achievementsHref}
+          stats={stats}
+          weekly={weekly}
+          level={level}
+          progressToNext={progress}
+          achievements={achievementData.achievements}
+        />
       </section>
-    )}
 
-    <!-- Achievement Gallery -->
-    <section class="achievements-tab__section">
-      <h2 class="achievements-tab__section-title">
-        <Icon name="trophy" size={18} sprite={true} /> {organization("achievement", true)}
-        <span class="achievements-tab__section-count">{achievementData.unlocked} / {achievementData.total}</span>
-      </h2>
-      {categories.map(({ key, label, icon }) => {
-        const categoryAchievements = achievementData.achievements.filter(
-          (a: any) => a.category === key
-        )
-        if (categoryAchievements.length === 0) return null
-        return (
-          <div class="achievements-tab__category">
-            <h3 class="achievements-tab__category-title"><Icon name={icon} size={14} sprite={true} /> {label}</h3>
-            <div class="achievements-tab__achievement-grid">
-              {categoryAchievements.map((a: any) => {
-                const tooltip = getAchievementTooltip(a)
-                return (
+      {heatmapData.length > 0 && (
+        <section class="card achievements-tab__heatmap-card">
+          <div class="card-header achievements-tab__card-header">
+            <h2 class="card-title achievements-tab__section-title">
+              <Icon name="chart-bar" size={18} sprite={true} />
+              <span>Activity Heatmap — {currentYear}</span>
+            </h2>
+            <span class="achievements-tab__section-count">
+              {stats.totalCompleted.toLocaleString()} completions
+            </span>
+          </div>
+          <div class="card-body achievements-tab__heatmap-body">
+            <div class="achievements-tab__heatmap-container">
+              <div class="achievements-tab__heatmap">
+                {heatmapData.map((day) => (
                   <div
-                    class={`achievements-tab__achievement-card ${a.unlockedAt ? "achievements-tab__achievement-card--unlocked" : ""}`}
-                    title={tooltip}
-                  >
-                    <span class="achievements-tab__achievement-icon inline-flex items-center justify-center" aria-hidden="true">
-                      <Icon name={resolveAchievementTablerIcon(a.id || a.icon)} size={20} sprite={true} />
-                    </span>
-                    <div class="achievements-tab__achievement-info">
-                      <span class="achievements-tab__achievement-name">{a.name}</span>
-                      <span class="achievements-tab__achievement-desc">{a.description}</span>
-                      {a.unlockedAt ? (
-                        <span class="achievements-tab__achievement-date">
-                          <Icon name="check" size={12} sprite={true} /> {new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
-                        </span>
-                      ) : (
-                        <span class="achievements-tab__achievement-progress">
-                          {getAchievementProgress(a.id)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                    class="achievements-tab__heatmap-cell"
+                    style={`background: ${heatmapColor(day.count)};`}
+                    title={`${day.date}: ${day.count} task${day.count !== 1 ? "s" : ""}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <div class="achievements-tab__heatmap-legend">
+              <span class="achievements-tab__legend-label">Less</span>
+              <div class="achievements-tab__heatmap-cell" style="background: var(--bg-secondary);" />
+              <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 26%, var(--bg-secondary));" />
+              <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 48%, var(--bg-secondary));" />
+              <div class="achievements-tab__heatmap-cell" style="background: color-mix(in srgb, var(--accent) 74%, var(--bg-secondary));" />
+              <div class="achievements-tab__heatmap-cell" style="background: var(--accent);" />
+              <span class="achievements-tab__legend-label">More</span>
             </div>
           </div>
-        )
-      })}
+        </section>
+      )}
+    </div>
+
+    <!-- Achievement Gallery -->
+    <section class="card achievements-tab__gallery-card achievements-tab__anchor" id="achievements-gallery">
+      <div class="card-header achievements-tab__card-header">
+        <h2 class="card-title achievements-tab__section-title">
+          <Icon name="trophy" size={18} sprite={true} />
+          <span>{organization("achievement", true)}</span>
+        </h2>
+        <span class="achievements-tab__pill">
+          {achievementData.unlocked} / {achievementData.total} unlocked
+        </span>
+      </div>
+      <div class="card-body achievements-tab__gallery-body">
+        {categories.map(({ key, label, icon }) => {
+          const categoryAchievements = achievementData.achievements.filter((a: any) => a.category === key)
+          if (categoryAchievements.length === 0) return null
+          const catUnlocked = categoryAchievements.filter((a: any) => Boolean(a.unlockedAt)).length
+          return (
+            <div class="achievements-tab__category">
+              <div class="achievements-tab__category-header">
+                <h3 class="subheader achievements-tab__category-title">
+                  <Icon name={icon} size={14} sprite={true} />
+                  <span>{label}</span>
+                </h3>
+                <span class="achievements-tab__category-count">
+                  {catUnlocked} / {categoryAchievements.length}
+                </span>
+              </div>
+              <div class="achievements-tab__achievement-grid">
+                {categoryAchievements.map((a: any) => {
+                  const tooltip = getAchievementTooltip(a)
+                  const unlocked = Boolean(a.unlockedAt)
+                  return (
+                    <div
+                      class={`achievements-tab__achievement-card ${unlocked ? "achievements-tab__achievement-card--unlocked" : ""}`}
+                      title={tooltip}
+                    >
+                      <span class="achievements-tab__achievement-icon" aria-hidden="true">
+                        <Icon name={resolveAchievementTablerIcon(a.id || a.icon)} size={20} sprite={true} />
+                      </span>
+                      <div class="achievements-tab__achievement-info">
+                        <span class="achievements-tab__achievement-name">{a.name}</span>
+                        <span class="achievements-tab__achievement-desc">{a.description}</span>
+                        {unlocked ? (
+                          <span class="achievements-tab__achievement-date">
+                            <Icon name="check" size={12} sprite={true} />
+                            <span>{new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}</span>
+                          </span>
+                        ) : (
+                          <span class="achievements-tab__achievement-progress">
+                            {getAchievementProgress(a.id)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </section>
   </div>
 )}
 
-<style>
+<style is:inline>
   @reference "../../styles/global.css";
 
   .achievements-tab {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    padding: 0.5rem 0;
-    max-width: 1000px;
+    gap: 1.25rem;
+    padding: 0.25rem 0 1.5rem;
+    width: 100%;
+    max-width: 1200px;
   }
 
-  .achievements-tab__disabled {
+  :root[data-appearance-width="fluid"] .achievements-tab {
+    max-width: none;
+  }
+
+  .achievements-tab__state-card {
+    padding: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+    max-width: 720px;
+    margin: 1rem auto;
+  }
+
+  .achievements-tab__empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
     text-align: center;
-    border: 2px dashed var(--border);
-    border-radius: var(--radius-lg, 12px);
-    color: var(--text-muted);
+    gap: 0.75rem;
+    padding: 3rem 1.5rem;
   }
-  .achievements-tab__disabled-icon { margin-bottom: 1rem; opacity: 0.6; }
 
-  /* Level Card */
-  .achievements-tab__level-card {
+  .achievements-tab__illustration {
+    width: 168px;
+    height: 112px;
+    margin-bottom: 0.25rem;
+  }
+
+  .achievements-tab__empty-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .achievements-tab__empty-desc {
+    margin: 0;
+    max-width: 440px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Hero Level Card */
+  .achievements-tab__hero {
+    padding: 0;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 8%, var(--bg-card)),
+      var(--bg-card) 62%
+    );
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+  }
+
+  .achievements-tab__hero-body {
     display: flex;
     align-items: center;
-    gap: 2rem;
-    padding: 1.5rem 2rem;
-    background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
-    border-radius: 16px;
-    border: 1px solid var(--border);
+    gap: 1.75rem;
+    padding: 1.5rem 1.75rem;
   }
+
   .achievements-tab__level-ring-wrapper {
     position: relative;
-    width: 120px;
-    height: 120px;
+    width: 112px;
+    height: 112px;
     flex-shrink: 0;
   }
+
   .achievements-tab__level-ring {
     width: 100%;
     height: 100%;
     transform: rotate(-90deg);
   }
+
   .achievements-tab__ring-bg {
     fill: none;
     stroke: var(--border);
-    stroke-width: 6;
+    stroke-width: 7;
   }
+
   .achievements-tab__ring-fill {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 6;
+    stroke-width: 7;
     stroke-linecap: round;
-    transition: stroke-dashoffset 0.8s ease;
-  }
-  .achievements-tab__ring-content {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    line-height: 1;
-  }
-  .achievements-tab__level-number {
-    font-size: 2.5rem;
-    font-weight: 800;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-    display: block;
-  }
-  .achievements-tab__level-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-top: 0.125rem;
-  }
-  .achievements-tab__level-info {
-    flex: 1;
-    min-width: 0;
-  }
-  .achievements-tab__xp-bar {
-    height: 8px;
-    background: var(--bg-hover);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
-  }
-  .achievements-tab__xp-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 4px;
-    transition: width 0.6s ease;
-    min-width: 2px;
-  }
-  .achievements-tab__xp-text {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.23, 1, 0.32, 1);
   }
 
-  /* Stats Grid */
-  .achievements-tab__stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
-  }
-  .achievements-tab__stat-card {
+  .achievements-tab__ring-content {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
-    padding: 1rem;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  .achievements-tab__level-number {
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .achievements-tab__level-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.2rem;
+  }
+
+  .achievements-tab__level-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .achievements-tab__hero-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+  }
+
+  .achievements-tab__hero-title {
+    margin: 0.15rem 0 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .achievements-tab__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-text, var(--accent));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .achievements-tab__progress {
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  }
+
+  .achievements-tab__progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 999px;
+    transition: width 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .achievements-tab__xp-text {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .achievements-tab__xp-muted {
+    color: var(--text-muted);
+  }
+
+  .achievements-tab__hero-art {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .achievements-tab__hero-svg {
+    width: 148px;
+    height: 104px;
+  }
+
+  /* Tabler KPI Stats Grid */
+  .achievements-tab__stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 0.875rem;
+  }
+
+  .achievements-tab__stat-card {
+    padding: 0;
     background: var(--bg-card);
-    border-radius: 12px;
     border: 1px solid var(--border);
-    text-align: center;
-    transition: transform 0.15s, border-color 0.15s;
+    border-radius: var(--radius-lg, 12px);
+    transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
   .achievements-tab__stat-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    transform: translateY(-1px);
   }
-  .achievements-tab__stat-icon { display: inline-flex; color: var(--accent); }
+
+  .achievements-tab__stat-body {
+    padding: 0.95rem 1.05rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .achievements-tab__stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .achievements-tab__stat-top .subheader {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .achievements-tab__stat-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md, 8px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-text, var(--accent));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+    flex-shrink: 0;
+  }
+
   .achievements-tab__stat-value {
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
-  }
-  .achievements-tab__stat-label {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    line-height: 1.15;
   }
 
-  /* Sections */
-  .achievements-tab__section {
-    padding: 1.25rem;
-    background: var(--bg-card);
-    border-radius: 12px;
-    border: 1px solid var(--border);
+  .achievements-tab__explain {
+    margin: 0.1rem 0 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
+
+  .achievements-tab__stat-caption {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.38;
+  }
+
+  .achievements-tab__anchor {
+    scroll-margin-top: 88px;
+  }
+
+  .achievements-tab__anchor.is-hash-highlighted {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  /* Insights Split Grid */
+  .achievements-tab__insights-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: stretch;
+  }
+
+  .achievements-tab__widget-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .achievements-tab__widget-wrap > .gamification-widget {
+    height: 100%;
+  }
+
+  .achievements-tab__heatmap-card,
+  .achievements-tab__gallery-card {
+    padding: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+  }
+
+  .achievements-tab__card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.95rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+
   .achievements-tab__section-title {
-    font-size: 1rem;
+    margin: 0;
+    font-size: 0.95rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 1rem 0;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
   }
-  .achievements-tab__section-count {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--text-muted);
-    margin-left: auto;
+
+  .achievements-tab__section-title svg {
+    color: var(--accent-text, var(--accent));
   }
 
-  /* Heatmap */
-  .achievements-tab__heatmap-container { overflow-x: auto; }
+  .achievements-tab__section-count {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .achievements-tab__heatmap-body {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.875rem;
+  }
+
+  .achievements-tab__heatmap-container {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
   .achievements-tab__heatmap {
     display: grid;
     grid-template-rows: repeat(7, 1fr);
     grid-auto-flow: column;
-    grid-auto-columns: 14px;
+    grid-auto-columns: 11px;
     gap: 2px;
     min-width: fit-content;
   }
+
   .achievements-tab__heatmap-cell {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 2px;
-    transition: transform 0.1s;
+    border: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+    transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
   .achievements-tab__heatmap-cell:hover {
-    transform: scale(1.3);
+    transform: scale(1.25);
     outline: 1px solid var(--accent);
   }
+
   .achievements-tab__heatmap-legend {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-top: 0.75rem;
+    gap: 5px;
     justify-content: flex-end;
   }
 
-  /* Achievement Cards */
-  .achievements-tab__category { margin-bottom: 1.25rem; }
-  .achievements-tab__category:last-child { margin-bottom: 0; }
+  .achievements-tab__legend-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  /* Achievement Gallery */
+  .achievements-tab__gallery-body {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .achievements-tab__category-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
   .achievements-tab__category-title {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 0.75rem 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    gap: 0.4rem;
+    margin: 0;
   }
+
+  .achievements-tab__category-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
   .achievements-tab__achievement-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 0.75rem;
   }
+
   .achievements-tab__achievement-card {
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.875rem;
     background: var(--bg-secondary);
-    border-radius: 10px;
+    border-radius: var(--radius-md, 10px);
     border: 1px dashed var(--border);
-    opacity: 0.82;
-    filter: grayscale(0.45);
-    transition: opacity 0.2s, filter 0.2s, border-color 0.2s, transform 0.15s;
+    opacity: 0.8;
+    transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
   .achievements-tab__achievement-card:hover,
   .achievements-tab__achievement-card:focus-visible {
     opacity: 1;
     border-color: var(--accent);
     outline: none;
   }
+
   .achievements-tab__achievement-card--unlocked {
     opacity: 1;
-    filter: none;
     background: var(--bg-card);
     border-style: solid;
-    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   }
+
   .achievements-tab__achievement-card--unlocked:hover {
     border-color: var(--accent);
     transform: translateY(-1px);
   }
+
   .achievements-tab__achievement-icon {
-    font-size: 1.5rem;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md, 8px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    line-height: 1;
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
   }
+
+  .achievements-tab__achievement-card--unlocked .achievements-tab__achievement-icon {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+    color: var(--accent-text, var(--accent));
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  }
+
   .achievements-tab__achievement-info {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 0.2rem;
     min-width: 0;
   }
+
   .achievements-tab__achievement-name {
-    font-size: 0.8125rem;
+    font-size: 0.84rem;
     font-weight: 600;
     color: var(--text-primary);
   }
+
   .achievements-tab__achievement-desc {
-    font-size: 0.75rem;
+    font-size: 0.76rem;
     color: var(--text-secondary);
-    line-height: 1.35;
+    line-height: 1.4;
   }
+
   .achievements-tab__achievement-date {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: 0.7rem;
+    font-weight: 600;
     color: var(--accent-text, var(--accent));
-    margin-top: 0.125rem;
-  }
-  .achievements-tab__achievement-progress {
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: 0.15rem;
   }
 
-  /* Responsive */
+  .achievements-tab__achievement-progress {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 960px) {
+    .achievements-tab__hero-art {
+      display: none;
+    }
+    .achievements-tab__insights-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   @media (max-width: 600px) {
-    .achievements-tab__level-card {
+    .achievements-tab__hero-body {
       flex-direction: column;
       text-align: center;
       gap: 1rem;
       padding: 1.25rem;
     }
-    .achievements-tab__level-ring-wrapper { width: 100px; height: 100px; }
-    .achievements-tab__level-number { font-size: 2rem; }
-    .achievements-tab__stats-grid { grid-template-columns: repeat(2, 1fr); }
-    .achievements-tab__achievement-grid { grid-template-columns: 1fr; }
+    .achievements-tab__hero-heading {
+      justify-content: center;
+    }
+    .achievements-tab__level-ring-wrapper {
+      width: 96px;
+      height: 96px;
+    }
+    .achievements-tab__level-number {
+      font-size: 1.9rem;
+    }
+    .achievements-tab__stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .achievements-tab__achievement-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .achievements-tab__ring-fill,
+    .achievements-tab__progress-bar,
+    .achievements-tab__stat-card,
+    .achievements-tab__heatmap-cell,
+    .achievements-tab__achievement-card {
+      transition: none;
+    }
+    .achievements-tab__stat-card:hover,
+    .achievements-tab__achievement-card--unlocked:hover,
+    .achievements-tab__heatmap-cell:hover {
+      transform: none;
+    }
   }
 </style>

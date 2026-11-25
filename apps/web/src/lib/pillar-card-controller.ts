@@ -1,7 +1,15 @@
 import type { Principle } from "@domains/pillars/principle-service"
+import { renderMarkdownPreviewInto } from "./task-description-editor"
 import { pageLifecycle } from "./page-lifecycle"
 
 pageLifecycle.onPageLoad(signal => {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-pillar-manifesto-md]")) {
+    const md = el.dataset.pillarManifestoMd?.trim()
+    if (md) {
+      void renderMarkdownPreviewInto(el, md, { shouldApply: () => !signal.aborted })
+    }
+  }
+
   document.addEventListener("click", event => {
     const button = (event.target as Element).closest<HTMLButtonElement>("[data-pillar-json] button")
     const card = button?.closest<HTMLElement>("[data-pillar-json]")

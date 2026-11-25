@@ -1,5 +1,5 @@
 /**
- * Kanban Lane Management Panel
+ * Kanban Lane Management Panel (Tabler Sortable Table)
  *
  * @domain kanban
  * @bounded-context kanban (view-layer controller)
@@ -9,12 +9,11 @@ import { createClientLogger } from "@lib/client-logger"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { promptDialog } from "@lib/prompt-dialog"
-import { safeFetch } from "@lib/safe-fetch"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { showToast } from "@lib/toast"
+import { createSpriteIconElement } from "../../generated/icon-registry"
 
 const log = createClientLogger("kanban-lanes")
-const LANE_API_PATH_RE = /^\/api\/lanes(?:\/[A-Za-z0-9._-]+)?$/
 
 interface LanePanelLane {
   id: string
@@ -25,6 +24,20 @@ interface LanePanelLane {
   builtIn: boolean
   position: number
   wip_limit: number
+}
+
+const BUILTIN_DEFAULT_LABELS: Record<string, string> = {
+  backlog: "Backlog",
+  pending: "Todo",
+  active: "In Progress",
+  complete: "Done",
+}
+
+const DEFAULT_LANE_COLORS: Record<string, string> = {
+  backlog: "#9ca3af",
+  pending: "#3b82f6",
+  active: "#f59e0b",
+  complete: "#22c55e",
 }
 
 function laneHeaders(json = false): HeadersInit | undefined {
@@ -38,6 +51,12 @@ function emitLanesChanged(action: string): void {
   document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action } }))
 }
 
+function resolveLaneColor(lane: LanePanelLane): string {
+  return lane.color && /^#[0-9a-fA-F]{6}$/.test(lane.color)
+    ? lane.color
+    : (DEFAULT_LANE_COLORS[lane.key] ?? "#64748b")
+}
+
 export function initLaneManagementPanel(): void {
   const manageLanesBtn = document.getElementById("manage-lanes-btn")
   const laneMgmt = document.getElementById("lane-mgmt")
@@ -45,6 +64,8 @@ export function initLaneManagementPanel(): void {
   const newLaneInput = document.getElementById("new-lane-input") as HTMLInputElement | null
   const addLaneBtn = document.getElementById("add-lane-btn")
   const laneMgmtClose = document.getElementById("lane-mgmt-close")
+  const helpBtn = document.getElementById("lane-mgmt-help-btn")
+  const helpPopover = document.getElementById("lane-mgmt-help-popover")
 
   if (!manageLanesBtn || !laneMgmt || !laneList || !newLaneInput || !addLaneBtn) {
     log.warn("Lane management panel skipped due to missing DOM contract")
@@ -52,6 +73,14 @@ export function initLaneManagementPanel(): void {
   }
 
   let loadedLanes: LanePanelLane[] = []
+
+  if (helpBtn && helpPopover) {
+    pageLifecycle.on(helpBtn, "click", () => {
+      const nextOpen = helpPopover.hidden
+      helpPopover.hidden = !nextOpen
+      helpBtn.setAttribute("aria-expanded", String(nextOpen))
+    })
+  }
 
   async function fetchLanes(): Promise<LanePanelLane[]> {
     try {
@@ -78,13 +107,8 @@ export function initLaneManagementPanel(): void {
     eventAction: string,
     opts: { refreshList?: boolean; onSuccess?: () => void } = {},
   ): Promise<boolean> {
-    if (!LANE_API_PATH_RE.test(url)) {
-      log.warn("Blocked unexpected lane API path", { url })
-      notify(failMessage, "error")
-      return false
-    }
     try {
-      const res = await safeFetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
+      const res = await fetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
       if (!res.ok) {
         const err = await res.json().catch(() => null) as { error?: string } | null
         notify(err?.error ?? failMessage, "error")
@@ -101,7 +125,7 @@ export function initLaneManagementPanel(): void {
   }
 
   async function persistLaneOrder(): Promise<void> {
-    const orderedIds = Array.from(laneList!.querySelectorAll<HTMLElement>(".lane-item[data-id]"))
+    const orderedIds = Array.from(laneList!.querySelectorAll<HTMLElement>("tr.lane-item[data-id]"))
       .map(el => el.dataset.id)
       .filter((id): id is string => Boolean(id))
     if (!orderedIds.length) return
@@ -113,33 +137,78 @@ export function initLaneManagementPanel(): void {
     loadedLanes = await fetchLanes()
     laneList.replaceChildren(
       ...loadedLanes.map((lane) => {
-        const item = document.createElement("div")
-        item.className = "lane-item"
-        item.dataset.id = lane.id
-        item.dataset.position = String(lane.position)
+        const row = document.createElement("tr")
+        row.className = "lane-item"
+        row.dataset.id = lane.id
+        row.dataset.position = String(lane.position)
 
+        // Column 1: Single centered Tabler drag handle (no competing second icon)
+        const dragCell = document.createElement("td")
+        dragCell.className = "lane-cell-drag"
         const dragHandle = document.createElement("button")
         dragHandle.type = "button"
-        dragHandle.className = "lane-drag-handle btn-icon"
+        dragHandle.className = "lane-drag-handle"
         dragHandle.title = "Drag or press Alt+Up/Down to reorder"
         dragHandle.setAttribute("aria-label", `Reorder ${lane.label}`)
-        dragHandle.textContent = "⋮⋮"
+        dragHandle.appendChild(createSpriteIconElement("grip-vertical", { size: 15 }))
+        dragCell.appendChild(dragHandle)
 
-        const labelSpan = document.createElement("span")
-        labelSpan.className = "lane-item-label"
-        labelSpan.textContent = `${lane.builtIn ? "🔒" : "📌"} ${lane.label}`
+        // Column 2: Color dot + visual label + (system name) when built-in is aliased
+        const nameCell = document.createElement("td")
+        const nameWrap = document.createElement("div")
+        nameWrap.className = "lane-name-cell"
 
+        const primaryLine = document.createElement("div")
+        primaryLine.className = "lane-name-primary"
+
+        const colorHex = resolveLaneColor(lane)
+        const colorDot = document.createElement("span")
+        colorDot.className = "lane-color-dot"
+        colorDot.style.background = colorHex
+        colorDot.setAttribute("aria-hidden", "true")
+
+        const visualLabel = document.createElement("span")
+        visualLabel.className = "lane-visual-label"
+        visualLabel.textContent = lane.label
+        primaryLine.append(colorDot, visualLabel)
+
+        if (lane.builtIn) {
+          const defaultName = BUILTIN_DEFAULT_LABELS[lane.key] ?? lane.key
+          if (lane.label.trim().toLowerCase() !== defaultName.toLowerCase()) {
+            const sysName = document.createElement("span")
+            sysName.className = "lane-system-name"
+            sysName.textContent = `(${defaultName})`
+            sysName.title = `System swimlane: ${defaultName} (status key: ${lane.key})`
+            primaryLine.appendChild(sysName)
+          }
+        }
+        nameWrap.appendChild(primaryLine)
+
+        const metaLine = document.createElement("div")
+        metaLine.className = "lane-status-meta"
+        const mappedKeys = lane.includes && lane.includes.length > 0 ? lane.includes : [lane.key]
+        const statusCode = document.createElement("span")
+        statusCode.className = "lane-status-code"
+        statusCode.textContent = `status: ${mappedKeys.join(", ")}`
+        metaLine.appendChild(statusCode)
+        nameWrap.appendChild(metaLine)
+        nameCell.appendChild(nameWrap)
+
+        // Column 3: Color picker
+        const colorCell = document.createElement("td")
+        colorCell.className = "lane-cell-color"
         const colorInput = document.createElement("input")
         colorInput.type = "color"
         colorInput.className = "lane-color-input"
         colorInput.dataset.id = lane.id
-        colorInput.value = lane.color && /^#[0-9a-fA-F]{6}$/.test(lane.color) ? lane.color : "#64748b"
+        colorInput.value = colorHex
         colorInput.title = "Lane accent color"
         colorInput.setAttribute("aria-label", `Color for ${lane.label}`)
+        colorCell.appendChild(colorInput)
 
-        const wipLabel = document.createElement("label")
-        wipLabel.className = "lane-wip-label"
-        wipLabel.title = "WIP limit (0 = unlimited)"
+        // Column 4: WIP limit
+        const wipCell = document.createElement("td")
+        wipCell.className = "lane-cell-wip"
         const wipInput = document.createElement("input")
         wipInput.type = "number"
         wipInput.className = "lane-wip-input"
@@ -147,71 +216,98 @@ export function initLaneManagementPanel(): void {
         wipInput.value = String(lane.wip_limit)
         wipInput.min = "0"
         wipInput.max = "99"
-        wipLabel.append(document.createTextNode("WIP: "), wipInput)
+        wipInput.title = "WIP limit (0 = unlimited)"
+        wipInput.setAttribute("aria-label", `WIP limit for ${lane.label}`)
+        wipCell.appendChild(wipInput)
 
-        item.append(dragHandle, labelSpan, colorInput, wipLabel)
+        // Column 5: Peer-weighted Tabler actions
+        const actionsCell = document.createElement("td")
+        actionsCell.className = "lane-cell-actions"
+        const actionsGroup = document.createElement("div")
+        actionsGroup.className = "lane-actions-group"
+
+        const editBtn = document.createElement("button")
+        editBtn.type = "button"
+        editBtn.className = "lane-action-btn edit lane-edit"
+        editBtn.dataset.id = lane.id
+        editBtn.dataset.label = lane.label
+        editBtn.dataset.builtin = String(lane.builtIn)
+        editBtn.title = lane.builtIn ? "Alias / rename built-in lane" : "Rename lane"
+        editBtn.setAttribute("aria-label", `Rename ${lane.label}`)
+        editBtn.appendChild(createSpriteIconElement("pencil", { size: 14 }))
+
         if (lane.builtIn) {
-          const builtinSpan = document.createElement("span")
-          builtinSpan.className = "lane-builtin-label"
-          builtinSpan.textContent = "built-in"
-          item.appendChild(builtinSpan)
+          const builtinBadge = document.createElement("span")
+          builtinBadge.className = "lane-builtin-badge"
+          builtinBadge.textContent = "Built-in"
+          builtinBadge.title = `Built-in system status (${lane.key})`
+          actionsGroup.append(builtinBadge, editBtn)
         } else {
           const aliasesBtn = document.createElement("button")
           aliasesBtn.type = "button"
           aliasesBtn.className = "lane-action-btn lane-includes"
           aliasesBtn.dataset.id = lane.id
-          aliasesBtn.title = "Mapped statuses"
-          aliasesBtn.setAttribute("aria-label", "Edit mapped statuses")
-          aliasesBtn.textContent = "⊞"
-
-          const editBtn = document.createElement("button")
-          editBtn.type = "button"
-          editBtn.className = "lane-action-btn edit lane-edit"
-          editBtn.dataset.id = lane.id
-          editBtn.dataset.label = lane.label
-          editBtn.title = "Rename"
-          editBtn.setAttribute("aria-label", "Rename lane")
-          editBtn.textContent = "✎"
+          aliasesBtn.title = "Edit mapped status keys"
+          aliasesBtn.setAttribute("aria-label", `Edit mapped statuses for ${lane.label}`)
+          aliasesBtn.appendChild(createSpriteIconElement("tag", { size: 14 }))
 
           const removeBtn = document.createElement("button")
           removeBtn.type = "button"
           removeBtn.className = "lane-action-btn remove lane-remove"
           removeBtn.dataset.id = lane.id
           removeBtn.dataset.label = lane.label
-          removeBtn.title = "Remove"
-          removeBtn.setAttribute("aria-label", "Remove lane")
-          removeBtn.textContent = "×"
+          removeBtn.title = "Delete lane"
+          removeBtn.setAttribute("aria-label", `Delete ${lane.label}`)
+          removeBtn.appendChild(createSpriteIconElement("trash", { size: 14 }))
 
-          item.append(aliasesBtn, editBtn, removeBtn)
+          actionsGroup.append(aliasesBtn, editBtn, removeBtn)
         }
-        return item
+
+        actionsCell.appendChild(actionsGroup)
+        row.append(dragCell, nameCell, colorCell, wipCell, actionsCell)
+        return row
       }),
     )
   }
 
-  let dragBound = false
+  let sortableMounted = false
+  let sortableInstance: { destroy(): void } | null = null
   const ensureDragReorder = (): void => {
-    if (dragBound) return
-    dragBound = true
-    void import("@lib/list-drag-reorder")
-      .then(({ attachVerticalListDragReorder }) => {
+    if (sortableMounted) return
+    sortableMounted = true
+    void import("sortablejs")
+      .then(({ default: Sortable }) => {
         if (pageLifecycle.signal.aborted) return
-        attachVerticalListDragReorder(laneList, {
+        sortableInstance = Sortable.create(laneList, {
           handle: ".lane-drag-handle",
-          item: ".lane-item",
-          ghostClass: "dragging",
-          signal: pageLifecycle.signal,
-          onEnd: () => { void persistLaneOrder() },
+          draggable: "tr.lane-item",
+          animation: 160,
+          easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+          forceFallback: true,
+          fallbackOnBody: true,
+          fallbackTolerance: 3,
+          ghostClass: "lane-item--ghost",
+          chosenClass: "lane-item--chosen",
+          fallbackClass: "lane-item--fallback",
+          onEnd: (evt) => {
+            if (evt.oldIndex !== evt.newIndex) {
+              void persistLaneOrder()
+            }
+          },
         })
+        pageLifecycle.signal.addEventListener("abort", () => {
+          sortableInstance?.destroy()
+          sortableInstance = null
+        }, { once: true })
       })
-      .catch(() => { dragBound = false })
+      .catch(() => { sortableMounted = false })
   }
 
   pageLifecycle.on(laneList, "keydown", (event) => {
     const e = event as KeyboardEvent
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return
     const handle = (e.target as HTMLElement | null)?.closest<HTMLElement>(".lane-drag-handle")
-    const item = handle?.closest<HTMLElement>(".lane-item")
+    const item = handle?.closest<HTMLElement>("tr.lane-item")
     if (!handle || !item) return
     e.preventDefault()
     const sibling = e.key === "ArrowUp" ? item.previousElementSibling : item.nextElementSibling
@@ -255,6 +351,8 @@ export function initLaneManagementPanel(): void {
     const target = event.target as HTMLElement
     const colorInput = target.closest<HTMLInputElement>(".lane-color-input")
     if (colorInput?.dataset.id) {
+      const dot = colorInput.closest("tr")?.querySelector<HTMLElement>(".lane-color-dot")
+      if (dot) dot.style.background = colorInput.value
       await mutateLane(`/api/lanes/${encodeURIComponent(colorInput.dataset.id)}`, "PUT", { color: colorInput.value }, "Failed to update lane color", "kanban-lane-color")
       return
     }
@@ -287,7 +385,14 @@ export function initLaneManagementPanel(): void {
     if (editButton?.dataset.id) {
       const laneId = editButton.dataset.id
       const currentLabel = editButton.dataset.label ?? ""
-      const newName = await promptDialog({ title: "Rename Lane", placeholder: "Lane name", defaultValue: currentLabel, required: true })
+      const isBuiltIn = editButton.dataset.builtin === "true"
+      const newName = await promptDialog({
+        title: isBuiltIn ? "Alias Built-in Lane" : "Rename Lane",
+        message: isBuiltIn ? "Set a display alias for this swimlane. Its underlying system status stays unchanged." : undefined,
+        placeholder: "Lane name",
+        defaultValue: currentLabel,
+        required: true,
+      })
       if (!newName) return
       await mutateLane(`/api/lanes/${encodeURIComponent(laneId)}`, "PUT", { label: newName.trim() }, "Failed to rename lane", "kanban-lane-rename", { refreshList: true })
       return
@@ -322,5 +427,12 @@ export function initLaneManagementPanel(): void {
       refreshList: true,
       onSuccess: () => { newLaneInput.value = "" },
     })
+  })
+
+  pageLifecycle.on(newLaneInput, "keydown", (event) => {
+    if ((event as KeyboardEvent).key === "Enter") {
+      event.preventDefault()
+      addLaneBtn.click()
+    }
   })
 }

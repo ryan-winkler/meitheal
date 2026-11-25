@@ -96,22 +96,46 @@ function parseRawProfile(raw: unknown): Record<string, unknown> {
   return typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 }
 
+const RAW_HA_HEX_ID = /^[a-f0-9]{32}$/i
+
+export function isOpaqueHexUserId(value: string | undefined | null): boolean {
+  return typeof value === "string" && RAW_HA_HEX_ID.test(value.trim())
+}
+
+function handleFromDisplayName(displayName: string): string {
+  const slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24)
+  return slug || DEFAULT_USER_PROFILE.username
+}
+
 export function normalizeUserProfile(
   raw: unknown,
   fallback?: Partial<UserProfile>,
 ): UserProfile {
   const source = parseRawProfile(raw)
+  const fallbackDisplay = cleanText(fallback?.displayName, 60)
+  const safeFallbackDisplay = fallbackDisplay && !isOpaqueHexUserId(fallbackDisplay)
+    ? fallbackDisplay
+    : DEFAULT_USER_PROFILE.displayName
+  const fallbackUsername = cleanUsername(fallback?.username)
+  const safeFallbackUsername = fallbackUsername && !isOpaqueHexUserId(fallbackUsername)
+    ? fallbackUsername
+    : handleFromDisplayName(safeFallbackDisplay)
+
   const base: UserProfile = {
-    displayName: cleanText(fallback?.displayName, 60) || DEFAULT_USER_PROFILE.displayName,
-    username: cleanUsername(fallback?.username) || DEFAULT_USER_PROFILE.username,
+    displayName: safeFallbackDisplay,
+    username: safeFallbackUsername,
     role: cleanText(fallback?.role, 60) || DEFAULT_USER_PROFILE.role,
     avatarColor: isValidAvatarColor(fallback?.avatarColor)
       ? fallback.avatarColor
       : DEFAULT_USER_PROFILE.avatarColor,
   }
 
-  const displayName = cleanText(source.displayName, 60) || base.displayName
-  const username = cleanUsername(source.username) || base.username
+  const rawDisplay = cleanText(source.displayName, 60)
+  const displayName = rawDisplay && !isOpaqueHexUserId(rawDisplay) ? rawDisplay : base.displayName
+  const rawUsername = cleanUsername(source.username)
+  const username = rawUsername && !isOpaqueHexUserId(rawUsername)
+    ? rawUsername
+    : (base.username !== DEFAULT_USER_PROFILE.username ? base.username : handleFromDisplayName(displayName))
   const role = typeof source.role === "string" ? cleanText(source.role, 60) : base.role
   const avatarColor = isValidAvatarColor(source.avatarColor)
     ? source.avatarColor

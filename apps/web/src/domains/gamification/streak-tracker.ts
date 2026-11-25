@@ -140,12 +140,16 @@ export async function readStatsFromRunner(
   return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
 }
 
-export async function prepareCompletionStatsWrite(
+/**
+ * Record a task completion. Increments today's count and updates streak.
+ * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
+ */
+export async function recordTaskCompletion(
   scope: BoardScope,
   points = 0,
   now = new Date(),
   timezone = "UTC",
-) {
+): Promise<GamificationStats | null> {
   await ensureGamificationSchema()
   const base = getPersistenceClient()
   const client = await gamificationClient(scope, true)
@@ -168,26 +172,8 @@ export async function prepareCompletionStatsWrite(
     await client.execute(insertStatement)
     throw new BoardOperationError("unavailable")
   }
-  return { base, client, today, yesterday, insertStatement }
-}
-
-/**
- * Record a task completion. Increments today's count and updates streak.
- * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
- */
-export async function recordTaskCompletion(
-  scope: BoardScope,
-  points = 0,
-  now = new Date(),
-  timezone = "UTC",
-): Promise<GamificationStats | null> {
-  const prepared = await prepareCompletionStatsWrite(scope, points, now, timezone)
-  if (!prepared) return null
-  const [, agg] = await prepared.client.batch(
-    [prepared.insertStatement, statsQuery(scope, prepared.today, prepared.yesterday)],
-    "write",
-  )
-  if (!await canReadBoardAggregate(prepared.base, scope)) throw new BoardOperationError("unavailable")
+  const [, agg] = await client.batch([insertStatement, statsQuery(scope, today, yesterday)], "write")
+  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
   return parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
 }
 
@@ -197,11 +183,7 @@ export async function recordTaskCompletion(
 export async function getStats(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = await gamificationClient(scope)
-  const today = statsDayKey(now, 0, timezone)
-  const yesterday = statsDayKey(now, -1, timezone)
-
-  const agg = await client.execute(statsQuery(scope, today, yesterday))
-  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
+  return readStatsFromRunner(client, scope, now, timezone)
 }
 
 /**

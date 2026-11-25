@@ -44,7 +44,18 @@ const { class: className, boardId = "household" } = Astro.props
 
     <div class="card-customizer__divider"></div>
 
-    <span class="card-customizer__section-label card-customizer__section-label--padded">Visible Fields</span>
+    <div class="card-customizer__search-wrap">
+      <input
+        type="search"
+        id="card-customizer-search"
+        class="card-customizer__search"
+        placeholder="Search all fields…"
+        aria-label="Search card fields"
+        autocomplete="off"
+      />
+    </div>
+
+    <span class="card-customizer__section-label card-customizer__section-label--padded" id="card-customizer-builtin-label">Visible Fields</span>
     <ul class="card-customizer__list" id="card-customizer-list">
       <!-- Populated by JS -->
     </ul>
@@ -52,6 +63,7 @@ const { class: className, boardId = "household" } = Astro.props
     <div class="card-customizer__divider" id="card-customizer-cf-divider" hidden></div>
     <span class="card-customizer__section-label card-customizer__section-label--padded" id="card-customizer-cf-label" hidden>Board Custom Fields (max 4)</span>
     <ul class="card-customizer__list" id="card-customizer-cf-list" hidden></ul>
+    <p class="card-customizer__empty" id="card-customizer-empty" hidden>No matching fields</p>
 
     <div class="card-customizer__footer">
       <button type="button" class="btn text-xs" id="card-customizer-reset">
@@ -185,6 +197,30 @@ const { class: className, boardId = "household" } = Astro.props
   background: var(--border);
   margin: 0 0.75rem;
 }
+.card-customizer__search-wrap {
+  padding: 0.5rem 0.75rem 0.25rem;
+}
+.card-customizer__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input, var(--bg-primary));
+  color: var(--text-primary);
+}
+.card-customizer__search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.card-customizer__empty {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: center;
+}
 </style>
 
 <script>
@@ -238,11 +274,17 @@ const { class: className, boardId = "household" } = Astro.props
   const ALL_FIELDS = [
     { id: "key", label: "Ticket Key", alwaysVisible: false, defaultVisible: true },
     { id: "type", label: "Task Type", alwaysVisible: false, defaultVisible: true },
+    { id: "description", label: "Description", alwaysVisible: false, defaultVisible: true },
     { id: "priority", label: "Priority", alwaysVisible: false, defaultVisible: true },
     { id: "due-date", label: "Due Date", alwaysVisible: false, defaultVisible: true },
+    { id: "assignee", label: "Assignee", alwaysVisible: false, defaultVisible: true },
+    { id: "labels", label: "Labels", alwaysVisible: false, defaultVisible: true },
     { id: "rice", label: "RICE Score", alwaysVisible: false, defaultVisible: true },
     { id: "sync", label: "Sync Status", alwaysVisible: false, defaultVisible: true },
-    { id: "subtasks", label: "Subtasks", alwaysVisible: false, defaultVisible: true }
+    { id: "subtasks", label: "Subtasks", alwaysVisible: false, defaultVisible: true },
+    { id: "checklist", label: "Checklist", alwaysVisible: false, defaultVisible: true },
+    { id: "comments", label: "Comments", alwaysVisible: false, defaultVisible: true },
+    { id: "progress", label: "Progress Bar", alwaysVisible: false, defaultVisible: true },
   ]
 
   function loadFieldPrefs(): Record<string, boolean> {
@@ -316,6 +358,7 @@ const { class: className, boardId = "household" } = Astro.props
   ) {
     const li = document.createElement("li")
     li.className = "card-customizer__item"
+    li.dataset.searchText = `${opts.labelText} ${opts.value}`.toLowerCase()
     const label = document.createElement("label")
     label.className = "card-customizer__label"
     const checkbox = document.createElement("input")
@@ -330,6 +373,38 @@ const { class: className, boardId = "household" } = Astro.props
     label.append(checkbox, span)
     li.appendChild(label)
     list.appendChild(li)
+  }
+
+  function applyFieldSearchFilter() {
+    const searchInput = document.getElementById("card-customizer-search") as HTMLInputElement | null
+    const query = (searchInput?.value ?? "").trim().toLowerCase()
+    const builtinList = document.getElementById("card-customizer-list")
+    const builtinLabel = document.getElementById("card-customizer-builtin-label")
+    const cfList = document.getElementById("card-customizer-cf-list")
+    const cfLabel = document.getElementById("card-customizer-cf-label")
+    const cfDivider = document.getElementById("card-customizer-cf-divider")
+    const emptyEl = document.getElementById("card-customizer-empty")
+
+    const filterList = (ul: HTMLElement | null): number => {
+      if (!ul) return 0
+      let visible = 0
+      ul.querySelectorAll<HTMLLIElement>(".card-customizer__item").forEach(li => {
+        const match = !query || (li.dataset.searchText ?? "").includes(query)
+        li.hidden = !match
+        if (match) visible++
+      })
+      return visible
+    }
+
+    const visibleBuiltIn = filterList(builtinList)
+    const visibleCf = filterList(cfList)
+    if (builtinLabel) builtinLabel.hidden = visibleBuiltIn === 0
+    if (builtinList) builtinList.hidden = visibleBuiltIn === 0
+    const hasCfItems = (cfList?.children.length ?? 0) > 0
+    if (cfLabel) cfLabel.hidden = !hasCfItems || visibleCf === 0
+    if (cfList) cfList.hidden = !hasCfItems || visibleCf === 0
+    if (cfDivider) cfDivider.hidden = visibleBuiltIn === 0 || visibleCf === 0
+    if (emptyEl) emptyEl.hidden = visibleBuiltIn + visibleCf > 0
   }
 
   function renderBoardCustomFieldList(defs: CustomFieldDef[], signal: AbortSignal) {
@@ -443,12 +518,17 @@ const { class: className, boardId = "household" } = Astro.props
     renderFieldList(signal)
     applyFieldVisibility() // Apply initial state on load
     renderBoardCustomFieldList([], signal)
+    applyFieldSearchFilter()
+
+    const searchInput = document.getElementById("card-customizer-search") as HTMLInputElement | null
+    searchInput?.addEventListener("input", () => applyFieldSearchFilter(), { signal })
+
     const fieldsHost = panel.closest("#kanban-fields-panel")
     if (fieldsHost && !fieldsHost.classList.contains("hidden")) {
-      void loadBoardCustomFields()
+      void loadBoardCustomFields()?.then(() => applyFieldSearchFilter())
     }
     document.getElementById("toggle-fields-btn")?.addEventListener("click", () => {
-      void loadBoardCustomFields()
+      void loadBoardCustomFields()?.then(() => applyFieldSearchFilter())
     }, { signal })
     document.addEventListener("meitheal:custom-fields-updated", event => {
       customFieldsPromise = null
@@ -456,8 +536,9 @@ const { class: className, boardId = "household" } = Astro.props
       if (detailFields !== undefined) {
         loadedBoardCustomFields = normalizeCustomFieldDefs(detailFields)
         renderBoardCustomFieldList(loadedBoardCustomFields, signal)
+        applyFieldSearchFilter()
       } else if (fieldsHost && !fieldsHost.classList.contains("hidden")) {
-        void loadBoardCustomFields()
+        void loadBoardCustomFields()?.then(() => applyFieldSearchFilter())
       }
       applyCustomFieldVisibility()
     }, { signal })
@@ -486,8 +567,10 @@ const { class: className, boardId = "household" } = Astro.props
         localStorage.removeItem(FIELD_PREFS_KEY)
         localStorage.removeItem(`${KANBAN_CARD_FIELDS_PREFIX}${activeBoardId()}`)
         localStorage.removeItem(DENSITY_KEY)
+        if (searchInput) searchInput.value = ""
         renderFieldList(signal)
         renderBoardCustomFieldList(loadedBoardCustomFields, signal)
+        applyFieldSearchFilter()
         applyFieldVisibility()
         applyDensity(DEFAULT_DENSITY)
       }, { signal })

@@ -318,17 +318,18 @@ async function fetchPillarContext(signal?: AbortSignal): Promise<string | null> 
  */
 async function fetchHabitContext(signal?: AbortSignal): Promise<string | null> {
   try {
-    const res = await fetch("/api/habits", { signal: signal ?? null })
+    const res = await fetch("/api/routines", { signal: signal ?? null })
     if (!res.ok) return null;
     const data = await res.json();
-    const habits = data?.habits ?? data ?? [];
-    if (!Array.isArray(habits) || habits.length === 0) return null;
+    const routines = data?.routines ?? data?.habits ?? data ?? [];
+    if (!Array.isArray(routines) || routines.length === 0) return null;
 
-    return habits
+    return routines
       .filter((h: { projectActive?: boolean }) => h.projectActive !== false)
       .map((h: { name: string; currentStreak?: number; todayCompleted?: boolean; cadence?: string }) => {
-        const unit = h.cadence === "weekly" ? "week" : "day"
-        return `- ${h.name}: ${h.currentStreak ?? 0} ${unit} streak${h.todayCompleted ? " (done)" : ""} (cadence: ${h.cadence ?? "daily"})`
+        const cadence = String(h.cadence ?? "daily")
+        const unit = cadence.toUpperCase().includes("WEEKLY") ? "week" : "day"
+        return `- ${h.name}: ${h.currentStreak ?? 0} ${unit} streak${h.todayCompleted ? " (done)" : ""} (cadence: ${cadence})`
       })
       .join("\n")
   } catch {

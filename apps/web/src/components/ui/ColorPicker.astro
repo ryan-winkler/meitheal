@@ -104,7 +104,7 @@ const { id, value = "#146C4E", locale = "en" } = Astro.props
   </div>
 </div>
 
-<style>
+<style is:inline>
   /* Trigger button — inline preview of current color */
   .color-picker-wrapper {
     position: relative;
@@ -204,7 +204,7 @@ const { id, value = "#146C4E", locale = "en" } = Astro.props
   }
 
   /* Shared swatch button style (used by both default and custom) */
-  :global(.picker-swatch) {
+  .picker-swatch {
     width: 24px;
     height: 24px;
     border-radius: 50%;
@@ -214,11 +214,11 @@ const { id, value = "#146C4E", locale = "en" } = Astro.props
     padding: 0;
     flex-shrink: 0;
   }
-  :global(.picker-swatch:hover) {
+  .picker-swatch:hover {
     transform: scale(1.15);
     box-shadow: 0 0 0 2px rgb(var(--border-rgb) / 0.3);
   }
-  :global(.picker-swatch.selected) {
+  .picker-swatch.selected {
     border-color: var(--text-primary);
     transform: scale(1.15);
     box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.3);
@@ -285,7 +285,7 @@ const { id, value = "#146C4E", locale = "en" } = Astro.props
   }
 
   /* Focus rings */
-  :global(.picker-swatch:focus-visible),
+  .picker-swatch:focus-visible,
   .color-picker__hex-input:focus-visible,
   .color-picker__add-btn:focus-visible {
     outline: 2px solid var(--accent);
@@ -294,6 +294,6 @@ const { id, value = "#146C4E", locale = "en" } = Astro.props
 
   @media (prefers-reduced-motion: reduce) {
     .color-picker { animation: none; }
-    :global(.picker-swatch:hover) { transform: none; }
+    .picker-swatch:hover { transform: none; }
   }
 </style>

@@ -159,7 +159,10 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=_TOKEN_FORM,
+            data_schema=self.add_suggested_values_to_schema(
+                _TOKEN_FORM,
+                {CONF_BOARD_ID: entry.data.get(CONF_BOARD_ID, "")},
+            ),
             errors=errors,
         )
 

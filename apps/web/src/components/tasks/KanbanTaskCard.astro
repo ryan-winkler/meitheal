@@ -1,0 +1,406 @@
+---
+/**
+ * KanbanTaskCard — Canonical Tabler-styled Meitheal task card.
+ *
+ * Shared across the Kanban board and Dashboard Recent Tasks so promoted corner
+ * ribbons, reaction badges, priority/due/area/checklist metadata, and the
+ * 6-icon quick-action bar stay identical everywhere (DRY + Kanban as parent).
+ */
+import Icon from "../ui/Icon.astro"
+import BotBadge from "../ui/BotBadge.astro"
+import LabelBadges from "../ui/LabelBadges.astro"
+import StatusBadge from "../ui/StatusBadge.astro"
+import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import type { DateFormat } from "../../lib/date"
+import { formatRegionalDate } from "../../lib/regional-date"
+import { priorityTablerIcon } from "../../lib/priority-config"
+import { formatCardCustomFieldValue } from "../../lib/custom-field-defs"
+import { taskDetailPath } from "../../lib/task-page-url"
+import { taskSurface } from "../../lib/task-surface"
+
+interface Props {
+  task: Record<string, unknown>
+  boardId: string
+  locale: Locale
+  ticketKey: string
+  priority: number
+  priorityLabel: string
+  priorityClass: string
+  taskType: string
+  typeColor: string
+  promoted: boolean
+  canEdit: boolean
+  canCreate: boolean
+  dateFormat?: DateFormat
+  timezone?: string
+  dueStatus?: "overdue" | "today" | "upcoming" | null
+  dueLabel?: string | null
+  description?: string | null
+  rice?: number | null
+  childCount?: number
+  area?: { id: string; name: string; color?: string; icon?: string } | null
+  showAreaBadge?: boolean
+  showStatusBadge?: boolean
+  showMoreButton?: boolean
+  epicGroup?: { id: string; label: string }
+  assigneeKey?: string
+  projectGroup?: string
+  projectLabel?: { title: string; qualifier?: string }
+  extraClass?: string
+}
+
+const {
+  task,
+  boardId,
+  locale,
+  ticketKey,
+  priority,
+  priorityLabel,
+  priorityClass,
+  taskType,
+  typeColor,
+  promoted,
+  canEdit,
+  canCreate,
+  dateFormat,
+  timezone = "Europe/Dublin",
+  dueStatus = null,
+  dueLabel = null,
+  description = null,
+  rice = null,
+  childCount = 0,
+  area = null,
+  showAreaBadge = false,
+  showStatusBadge = false,
+  showMoreButton = true,
+  epicGroup,
+  assigneeKey,
+  projectGroup,
+  projectLabel,
+  extraClass = "",
+} = Astro.props
+
+const taskId = String(task.id)
+const title = String(task.title ?? "")
+const status = String(task.status ?? "pending")
+const isDone = status === "complete" || status === "done"
+const { style: taskColorStyle, ...surface } = taskSurface(status, task.color)
+
+let checklistInfo: { done: number; total: number } | null = null
+try {
+  const cl = task.checklists
+    ? typeof task.checklists === "string"
+      ? JSON.parse(String(task.checklists))
+      : task.checklists
+    : []
+  if (Array.isArray(cl) && cl.length > 0) {
+    const done = cl.filter((item: { done?: boolean; checked?: boolean }) => Boolean(item?.done ?? item?.checked)).length
+    checklistInfo = { done, total: cl.length }
+  }
+} catch { /* ignore malformed checklists */ }
+
+let customFieldState:
+  | { kind: "shopping"; quantity?: string; category?: string; itemNames: string[] }
+  | { kind: "generic"; entries: Array<[string, string]> }
+  | null = null
+try {
+  const cf = typeof task.custom_fields === "string"
+    ? JSON.parse(String(task.custom_fields ?? "{}"))
+    : (task.custom_fields && typeof task.custom_fields === "object" ? task.custom_fields : {}) as Record<string, unknown>
+  if (String(task.task_kind) === "shopping_item" && Array.isArray(cf.items)) {
+    const itemNames = cf.items
+      .map((item: { name?: string }) => item?.name)
+      .filter((name: unknown): name is string => typeof name === "string" && name.length > 0)
+    customFieldState = {
+      kind: "shopping",
+      quantity: cf.quantity ? String(cf.quantity) : undefined,
+      category: cf.category ? String(cf.category) : undefined,
+      itemNames,
+    }
+  } else {
+    const entries: Array<[string, string]> = []
+    for (const key of Object.keys(cf)) {
+      const formatted = formatCardCustomFieldValue(cf[key])
+      if (formatted !== null) entries.push([key, formatted])
+    }
+    if (entries.length > 0) customFieldState = { kind: "generic", entries }
+  }
+} catch { /* ignore malformed custom fields */ }
+---
+
+<div
+  class={`kanban-card flat-card${extraClass ? ` ${extraClass}` : ""}`}
+  {...surface}
+  data-id={taskId}
+  data-version={task.task_version != null ? String(task.task_version) : undefined}
+  data-title={title}
+  data-desc={task.description ? String(task.description).slice(0, 200) : ""}
+  data-priority={String(priority)}
+  data-promoted={String(promoted)}
+  data-status={status}
+  data-deferral-version={task.task_version != null ? String(task.task_version) : undefined}
+  data-deferral-revision={task.deferral_revision ? String(task.deferral_revision) : ""}
+  data-task-type={taskType}
+  data-task-kind={String(task.task_kind ?? "standard_action")}
+  data-area={area?.id ?? String(task.area_id ?? "")}
+  data-area-name={area?.name}
+  data-area-icon={area?.icon}
+  data-epic={epicGroup?.id}
+  data-epic-label={epicGroup?.label}
+  data-assigned={String(task.assigned_to ?? "")}
+  data-assignee-key={assigneeKey}
+  data-labels={String(task.labels ?? "[]")}
+  data-task-id={taskId}
+  data-project-group={projectGroup}
+  data-project-label={projectLabel?.title}
+  data-project-qualifier={projectLabel?.qualifier}
+  data-area-id={task.project_id ? String(task.project_id) : undefined}
+  style={`--card-accent: ${task.color ? String(task.color) : typeColor};${taskColorStyle ?? ""}`}
+>
+  <div class="kanban-card-header">
+    <div class={`kanban-card-title${isDone ? " done" : ""}`}>
+      <a
+        href={taskDetailPath({ id: taskId, ticket_key: ticketKey }) + `?board_id=${encodeURIComponent(boardId)}`}
+        data-task-detail-link={taskId}
+        class="card-open-btn"
+        data-id={taskId}
+        aria-label={`Task: ${title}, Priority: ${priorityLabel}${ticketKey ? `, ${ticketKey}` : ""}${promoted ? `, ${t("kanban.promoted", locale)}` : ""}`}
+      >
+        <TaskTypeIcon type={taskType} kind={typeof task.task_kind === "string" ? task.task_kind : null} size={16} class="kanban-type-icon" />
+        {ticketKey && <span class="kanban-ticket-key">{ticketKey}</span>}
+      </a>
+      <span
+        class="kanban-title-text"
+        dir="auto"
+        title={title}
+        data-task-id={taskId}
+      >
+        {title}
+      </span>
+    </div>
+    <div class="kanban-card-header-controls">
+      <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden>
+        <Icon name="heart" size={12} sprite />
+        <span data-reaction-count-value></span>
+      </span>
+      {showMoreButton && (
+        <button
+          type="button"
+          class="card-action-btn card-more-btn"
+          data-id={taskId}
+          title={t("kanban.more_actions", locale)}
+          aria-label={t("kanban.more_actions_for", locale, { title })}
+          aria-expanded="false"
+          aria-controls="kanban-card-menu"
+        >
+          <Icon name="dots-vertical" size={15} sprite />
+        </button>
+      )}
+      <button
+        type="button"
+        class="kanban-promote-star"
+        data-promote-toggle
+        data-id={taskId}
+        aria-pressed={promoted ? "true" : "false"}
+        disabled={!canEdit}
+        title={promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}
+        aria-label={`${promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}: ${title}`}
+      >
+        <span class="kanban-promote-sash" aria-hidden="true">
+          <Icon name="star" size={15} sprite />
+        </span>
+      </button>
+    </div>
+  </div>
+  <span class={`kanban-work-status${showStatusBadge ? " kanban-work-status--visible" : ""}`}>
+    <StatusBadge status={status} />
+  </span>
+  <img
+    class="kanban-attachment hidden"
+    data-task-id={taskId}
+    alt="Attachment"
+    loading="lazy"
+  />
+  {description && <div class="kanban-card-desc">{description}</div>}
+  <div data-inactivity-slot></div>
+  <div class="kanban-card-meta">
+    <span class={`priority-label inline-flex items-center gap-1 ${priorityClass}`}>
+      <Icon name={priorityTablerIcon(priority)} size={13} sprite />
+      <span>{priorityLabel}</span>
+    </span>
+    {showAreaBadge && area && (
+      <span
+        class="bento-area-badge"
+        style={`--area-accent: ${area.color || "var(--accent)"};`}
+        title={`Area: ${area.name}`}
+      >
+        <span class="bento-area-badge__dot" aria-hidden="true"></span>
+        <span>{area.name}</span>
+      </span>
+    )}
+    {(dueLabel || task.due_date) && (
+      <span class={`kanban-card-due ${dueStatus ? `due-${dueStatus}` : ""}`}>
+        <Icon
+          name={dueStatus === "overdue" ? "alert-triangle" : "calendar-event"}
+          size={12}
+          sprite
+        />{" "}
+        {dueLabel ?? formatRegionalDate(String(task.due_date), { format: dateFormat, timezone })}
+      </span>
+    )}
+    {childCount > 0 && (
+      <span class="kanban-meta-subtasks inline-flex items-center gap-1" title={`${childCount} sub-tasks`}>
+        <Icon name="list-check" size={12} sprite />
+        <span>{childCount}</span>
+      </span>
+    )}
+    {rice !== null && <span class="kanban-rice-badge">RICE: {rice}</span>}
+    {String(task.calendar_sync_state) === "confirmed" && (
+      <span class="kanban-sync-badge" title={t("kanban.calendar_synced", locale)}>
+        <Icon name="calendar-event" size={13} sprite />
+      </span>
+    )}
+    {task.recurrence_rule && (
+      <span class="kanban-meta-recurrence" title="Recurring task">
+        <Icon name="repeat" size={13} sprite />
+      </span>
+    )}
+    {checklistInfo && (
+      <span
+        class={`kanban-meta-checklist inline-flex items-center gap-1${checklistInfo.done === checklistInfo.total ? " checklist-complete" : ""}`}
+        title={`Checklist: ${checklistInfo.done}/${checklistInfo.total}`}
+      >
+        <Icon name="checkbox" size={12} sprite />
+        <span>{checklistInfo.done}/{checklistInfo.total}</span>
+      </span>
+    )}
+    {Number(task.comment_count ?? 0) > 0 && (
+      <span class="kanban-meta-comments" title={`${Number(task.comment_count ?? 0)} comments`}>
+        <Icon name="message-circle" size={12} sprite /> {Number(task.comment_count ?? 0)}
+      </span>
+    )}
+    {task.assigned_to && (
+      <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
+        <Icon name="user" size={14} sprite />
+        <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>
+          {t("tasks.assignee_loading", locale)}
+        </span>
+      </span>
+    )}
+    <BotBadge
+      owner={String(task.owner ?? "")}
+      handoffState={String(task.handoff_state ?? "")}
+    />
+  </div>
+  {Number(task.progress ?? 0) > 0 && (
+    <div class="kanban-progress">
+      <div class="kanban-progress-track">
+        <div class="kanban-progress-bar" style={`width: ${Number(task.progress)}%`} />
+      </div>
+      <span class="kanban-progress-text">{Number(task.progress)}%</span>
+    </div>
+  )}
+  <LabelBadges labels={task.labels as string} compact max={3} />
+  {customFieldState?.kind === "shopping" && (
+    <div class="kanban-custom-fields">
+      {customFieldState.quantity && <span class="kanban-cf-chip" title={`qty: ${customFieldState.quantity}`}>×{customFieldState.quantity}</span>}
+      {customFieldState.category && <span class="kanban-cf-chip" title={`category: ${customFieldState.category}`}>{customFieldState.category}</span>}
+      {customFieldState.itemNames.length > 0 && <span class="kanban-cf-chip" title={customFieldState.itemNames.join(", ")}>{customFieldState.itemNames.length} items</span>}
+    </div>
+  )}
+  {customFieldState?.kind === "generic" && (
+    <div class="kanban-custom-fields">
+      {customFieldState.entries.slice(0, 8).map(([key, formatted], idx) => (
+        <span
+          class="kanban-cf-chip"
+          data-cf-name={key}
+          data-cf-default-hidden={idx >= 4 ? "true" : undefined}
+          hidden={idx >= 4}
+          title={`${key}: ${formatted}`}
+        >
+          {key}: {formatted}
+        </span>
+      ))}
+      {customFieldState.entries.length > 4 && (
+        <span class="kanban-cf-chip kanban-cf-more">+{customFieldState.entries.length - 4} more</span>
+      )}
+    </div>
+  )}
+  <div class="kanban-card-actions">
+    <button
+      type="button"
+      class="card-action-btn card-edit-btn"
+      data-id={taskId}
+      title={!canEdit ? "View task" : t("kanban.edit_task", locale)}
+      aria-label={`${!canEdit ? "View" : "Edit"} task: ${title.slice(0, 50)}`}
+    >
+      <Icon name="pencil" size={14} sprite />
+    </button>
+    <button
+      type="button"
+      class="card-action-btn card-ai-btn"
+      data-id={taskId}
+      data-title={title}
+      data-desc={task.description ? String(task.description) : ""}
+      data-status={status}
+      data-priority={String(priority)}
+      title={t("tasks.ask_ai", locale)}
+      aria-label={`AI assist for: ${title.slice(0, 50)}`}
+    >
+      <Icon name="sparkles" size={14} sprite />
+    </button>
+    {canCreate && (
+      <>
+        <button
+          type="button"
+          class="card-action-btn card-dup-btn"
+          data-id={taskId}
+          title={t("kanban.duplicate", locale)}
+          aria-label={`Duplicate task: ${title.slice(0, 50)}`}
+        >
+          <Icon name="clipboard-list" size={14} sprite />
+        </button>
+        <button
+          type="button"
+          class="card-action-btn card-child-btn"
+          data-id={taskId}
+          data-title={title}
+          data-status={status}
+          data-priority={String(priority)}
+          title="Add child task"
+          aria-label={`Add subtask to: ${title.slice(0, 50)}`}
+        >
+          <Icon name="plus" size={14} sprite />
+        </button>
+      </>
+    )}
+    {canEdit && (
+      <>
+        <button
+          type="button"
+          class="card-action-btn card-assign-btn"
+          data-id={taskId}
+          data-assigned={String(task.assigned_to ?? "")}
+          title="Assign user"
+          aria-label={`Assign user to: ${title.slice(0, 50)}`}
+          aria-haspopup="true"
+        >
+          <Icon name="user" size={14} sprite />
+        </button>
+        <button
+          type="button"
+          class="card-action-btn card-color-btn"
+          data-id={taskId}
+          data-color={String(task.color ?? "")}
+          title="Set card color"
+          aria-label={`Set color for: ${title.slice(0, 50)}`}
+          aria-haspopup="true"
+        >
+          <Icon name="palette" size={14} sprite />
+        </button>
+      </>
+    )}
+  </div>
+</div>

@@ -55,12 +55,14 @@ function clientCatalog(locale: Locale) {
         if (!catalog || typeof catalog !== "object") continue
         for (const key of Object.keys(catalog)) {
             if (!key.startsWith("settings.")) continue
-            const value = getNestedValue(merged, key)
-            const current = value === key ? getNestedValue(merged[locale], key) : value
+            const current = getNestedValue(merged, key)
             const resolved = t(key, locale)
             if (current !== resolved) merged[key] = resolved
         }
     }
+    // Remove duplicate/cross-locale legacy wrappers (~27 KB) now that settings.* keys are hoisted.
+    delete merged.en
+    delete merged.ga
     return merged
 }
 

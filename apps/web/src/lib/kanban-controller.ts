@@ -3,13 +3,12 @@ import { onTaskCompleted, type TaskCompletionResponse } from "@lib/gamification-
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
 // No direct safe-html imports — moved to extracted modules
-import { initTouchDrag } from "@lib/controllers/kanban-touch-drag";
 import { initQuickActions } from "@lib/controllers/kanban-quick-actions";
 import { initContextMenu } from "@lib/controllers/kanban-context-menu";
 import { toggleCardPromotion } from "@lib/controllers/kanban-promotion";
 import { initKeyboardAndSearch } from "@lib/controllers/kanban-keyboard";
 import { initKanbanGrouping } from "@lib/controllers/kanban-grouping";
-import type { KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
+import { bumpKanbanMutationEpoch, type KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
 import { isDoneStatus } from "@lib/status-config"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
@@ -87,10 +86,87 @@ export function initKanbanArea(
 
     initKanbanGrouping(board, __signal)
 
-    async function moveTask(card: HTMLElement, lane: HTMLElement, dropGroup?: HTMLElement) {
+    function adjustLaneCount(col: Element | null, delta: number) {
+      if (!(col instanceof HTMLElement)) return
+      const nextTotal = Math.max(0, (Number(col.dataset.total) || 0) + delta)
+      col.dataset.total = String(nextTotal)
+      const badge = col.querySelector(".kanban-count")
+      if (badge && /^\d+$/.test(badge.textContent?.trim() ?? "")) badge.textContent = String(nextTotal)
+      const list = col.querySelector<HTMLElement>(".kanban-cards")
+      if (!list) return
+      const hasCards = list.querySelectorAll(".kanban-card").length > 0
+      const emptyEl = list.querySelector<HTMLElement>(".kanban-empty")
+      if (hasCards && emptyEl) {
+        emptyEl.hidden = true
+      } else if (!hasCards && emptyEl) {
+        emptyEl.hidden = false
+      }
+    }
+
+    function playSettleMotion(card: HTMLElement) {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+      card.classList.remove("kanban-card--settled")
+      void card.offsetWidth
+      card.classList.add("kanban-card--settled")
+      card.addEventListener("animationend", () => card.classList.remove("kanban-card--settled"), { once: true })
+    }
+
+    function findAnchorForCard(container: HTMLElement, card: HTMLElement): { anchorId: string; before: boolean } | null {
+      const peers = Array.from(container.querySelectorAll<HTMLElement>(":scope > .kanban-card"))
+        .filter((el) => el.dataset.promoted === card.dataset.promoted)
+      const idx = peers.indexOf(card)
+      if (idx < 0 || peers.length <= 1) return null
+      const next = peers[idx + 1]
+      if (next?.dataset.id) return { anchorId: next.dataset.id, before: true }
+      const prev = peers[idx - 1]
+      if (prev?.dataset.id) return { anchorId: prev.dataset.id, before: false }
+      return null
+    }
+
+    async function persistRelativeOrder(
+      card: HTMLElement,
+      container: HTMLElement,
+      laneStatus: string,
+    ): Promise<boolean> {
+      const taskId = card.dataset.id
+      if (!taskId) return true
+      const anchor = findAnchorForCard(container, card)
+      const ctx = currentTaskApiContext()
+      const headers = ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" }
+      if (anchor) {
+        const res = await fetch("/api/tasks/reorder", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ task_id: taskId, anchor_id: anchor.anchorId, lane: laneStatus, before: anchor.before }),
+        })
+        return res.ok
+      }
+      const orderedIds = Array.from(container.querySelectorAll<HTMLElement>(":scope > .kanban-card[data-id]"))
+        .map((el) => el.dataset.id)
+        .filter((id): id is string => Boolean(id))
+      if (orderedIds.length < 2) return true
+      const res = await fetch("/api/tasks/reorder", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ scope: "kanban", ordered_ids: orderedIds }),
+      })
+      return res.ok
+    }
+
+    async function moveTask(
+      card: HTMLElement,
+      lane: HTMLElement,
+      dropGroup?: HTMLElement,
+      alreadyPlaced?: {
+        fromContainer: HTMLElement
+        oldIndex: number
+        sourceLane: HTMLElement | null
+        toContainer: HTMLElement
+      },
+    ) {
       const taskId = card.dataset.id
       const status = lane.dataset.status
-      const source = card.closest(".kanban-column")
+      const source = alreadyPlaced ? alreadyPlaced.sourceLane : card.closest<HTMLElement>(".kanban-column")
       const typeGroup = dropGroup?.matches(".swimlane-group:not(.dynamic-group):not([hidden])") ? dropGroup : undefined
       const newType = typeGroup?.dataset.swimlaneType
       const typeChanged = Boolean(newType && newType !== card.dataset.taskType)
@@ -101,6 +177,11 @@ export function initKanbanArea(
       const incoming = [...pendingMoves].filter(([movingCard, destination]) =>
         destination === lane && movingCard.closest(".kanban-column") !== lane).length
       if (source !== lane && limit > 0 && Number(lane.dataset.total) + incoming >= limit) {
+        if (alreadyPlaced) {
+          const fromCards = alreadyPlaced.fromContainer.querySelectorAll<HTMLElement>(":scope > .kanban-card")
+          const refNode = fromCards[alreadyPlaced.oldIndex] ?? null
+          alreadyPlaced.fromContainer.insertBefore(card, refNode)
+        }
         const message = window.mI18n?.get("kanban.lane_full") ?? "{lane} has reached its work-in-progress limit ({limit})."
         showToast(message.replace("{limit}", String(limit)).replace("{lane}", laneName), "warning")
         return
@@ -108,11 +189,41 @@ export function initKanbanArea(
 
       const restoreFocus = card.contains(document.activeElement)
       const wasDone = isDoneStatus(card.dataset.status ?? "")
+      const prevParent = alreadyPlaced ? alreadyPlaced.fromContainer : card.parentElement
+      const prevNext = alreadyPlaced
+        ? (alreadyPlaced.fromContainer.querySelectorAll<HTMLElement>(":scope > .kanban-card")[alreadyPlaced.oldIndex] ?? null)
+        : card.nextElementSibling
+      const prevStatus = card.dataset.status ?? ""
+      const prevType = card.dataset.taskType ?? ""
+      const targetContainer = alreadyPlaced
+        ? alreadyPlaced.toContainer
+        : (typeGroup?.querySelector<HTMLElement>(".swimlane-cards") ?? lane.querySelector<HTMLElement>(".kanban-cards"))
 
       pendingMoves.set(card, lane)
-      card.setAttribute("aria-busy", "true")
+      bumpKanbanMutationEpoch()
+      if (!alreadyPlaced && targetContainer && prevParent !== targetContainer) {
+        if (typeGroup) typeGroup.hidden = false
+        targetContainer.append(card)
+      }
+      card.dataset.status = status
+      if (typeChanged && newType) card.dataset.taskType = newType
+      if (source !== lane) {
+        adjustLaneCount(source, -1)
+        adjustLaneCount(lane, 1)
+      }
+      playSettleMotion(card)
       syncMoveStatus(lane)
-      let saved = false
+
+      const rollbackMove = () => {
+        if (prevParent?.isConnected) prevParent.insertBefore(card, prevNext)
+        card.dataset.status = prevStatus
+        card.dataset.taskType = prevType
+        if (source !== lane) {
+          adjustLaneCount(source, 1)
+          adjustLaneCount(lane, -1)
+        }
+      }
+
       try {
         const ctx = currentTaskApiContext()
         const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
@@ -120,36 +231,36 @@ export function initKanbanArea(
           headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
         })
-        saved = res.ok
-        if (__signal.aborted) {
-          if (saved) queueMoveRefresh()
-          return
-        }
+        if (__signal.aborted) return
         if (!res.ok) {
+          rollbackMove()
           const problem = res.status === 409 ? await res.json().catch(() => null) : null
           const message = problem?.blocked_by?.length
             ? window.mI18n?.get("kanban.move_blocked") ?? "Finish the blocking tasks before moving this one into progress."
-            : window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
+            : problem?.error ?? window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
           showToast(message, "error")
           return
         }
 
+        // Persist exact intra-lane placement inside destination lane after status change
+        if (targetContainer) {
+          await persistRelativeOrder(card, targetContainer, status).catch(() => {})
+        }
+        if (__signal.aborted) return
+
         const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
         showToast(moved.replace("{lane}", laneName))
-        queueMoveRefresh(restoreFocus ? { taskId, lane: status } : undefined)
         if (!wasDone && isDoneStatus(status)) {
           const completed = await res.json().catch(() => null)
           if (completed && !__signal.aborted) recordCompletion(card, restoreFocus, completed)
         }
       } catch (error) {
         if (__signal.aborted) return
+        rollbackMove()
         log.warn("Could not update the Kanban lane", error)
         showToast(window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again.", "error")
       } finally {
-        // An accepted move still reserves space until the Board replaces its older totals.
-        if (saved) card.draggable = false
-        else pendingMoves.delete(card)
-        card.removeAttribute("aria-busy")
+        pendingMoves.delete(card)
         syncMoveStatus(lane)
       }
     }
@@ -165,130 +276,146 @@ export function initKanbanArea(
           else fireConfetti({ particleCount: 32, duration: 1200 })
         }).catch(() => window.triggerConfetti?.())
       }
-
     }
 
-    function handleDrop(event: DragEvent) {
-      event.preventDefault()
-      const lane = event.currentTarget as HTMLElement
-      setHoveredLane(null)
-      const id = event.dataTransfer?.getData("text/plain")
-      if (!id) return
-      const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
-      const targetGroup = (event.target as HTMLElement | null)?.closest<HTMLElement>(".swimlane-group") ?? undefined
-      if (card) void moveTask(card, lane, targetGroup)
-    }
+    // Mount SortableJS on visible Kanban card containers (.swimlane-cards when grouped, otherwise .kanban-cards)
+    const canEditBoard = board.closest<HTMLElement>("[data-task-workspace]")?.dataset.canEdit !== "false"
+    const sortableInstances: Array<{ destroy: () => void }> = []
+    let justDragged = false
+    let dragGuardTimer: ReturnType<typeof setTimeout> | undefined
 
-    board.addEventListener("dragover", event => {
-      const lane = (event.target as Element | null)?.closest<HTMLElement>(".kanban-column") ?? null
-      setHoveredLane(lane)
-      if (lane) event.preventDefault()
-    }, { signal: __signal })
-    board.addEventListener("dragleave", event => {
-      const next = event.relatedTarget ?? document.elementFromPoint(event.clientX, event.clientY)
-      if (!(next instanceof Node) || !board.contains(next)) setHoveredLane(null)
-    }, { signal: __signal })
-    __signal.addEventListener("abort", () => {
-      setHoveredLane(null)
-      for (const status of board.querySelectorAll("[data-kanban-move-status]")) status.textContent = ""
-    }, { once: true })
-
-    board.querySelectorAll<HTMLElement>(".kanban-column").forEach((col) => {
-      col.addEventListener("drop", handleDrop, { signal: __signal })
-
-      const cardsContainer = col.querySelector<HTMLElement>(".kanban-cards");
-      if (!cardsContainer) return;
-
-      // Card-level: dragstart, dragend (replaces inline handlers for CSP)
-      cardsContainer.querySelectorAll<HTMLElement>(".kanban-card").forEach((card) => {
-        card.addEventListener("dragstart", (e: DragEvent) => {
-          if (pendingMoves.has(card)) {
-            e.preventDefault()
-            return
-          }
-          e.dataTransfer?.setData("text/plain", card.dataset.id ?? "");
-          card.classList.add("dragging");
-        }, { signal: __signal });
-        card.addEventListener("dragend", () => {
-          card.classList.remove("dragging");
-          board.querySelector(".reorder-indicator")?.remove()
-          document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
-          setHoveredLane(null)
-        }, { signal: __signal });
-      });
-
-      const dropList = (event: DragEvent) =>
-        (event.target as HTMLElement | null)?.closest<HTMLElement>(".swimlane-cards") ?? cardsContainer
-
-      cardsContainer.addEventListener("dragover", event => {
-        const drag = event as DragEvent
-        drag.preventDefault()
-        const dragging = col.querySelector<HTMLElement>(".kanban-card.dragging")
-        const targetList = dropList(drag)
-        cardsContainer.querySelector(".reorder-indicator")?.remove()
-        if (!dragging || dragging.parentElement !== targetList) return
-        const position = getReorderPosition(targetList, dragging, drag)
-        if (!position) return
-
-        const indicator = document.createElement("div")
-        indicator.className = "reorder-indicator"
-        targetList.insertBefore(indicator, position.before ? position.anchor : position.anchor.nextElementSibling)
-      }, { signal: __signal })
-
-      cardsContainer.addEventListener("dragleave", () => {
-        cardsContainer.querySelector(".reorder-indicator")?.remove()
-      }, { signal: __signal })
-
-      cardsContainer.addEventListener("drop", async event => {
-        const drag = event as DragEvent
-        drag.preventDefault()
-        cardsContainer.querySelector(".reorder-indicator")?.remove()
-
-        const id = drag.dataTransfer?.getData("text/plain")
-        const card = id ? col.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`) : null
-        const targetList = dropList(drag)
-        if (!card || card.parentElement !== targetList || pendingMoves.has(card)) return
-
-        drag.stopPropagation()
-        setHoveredLane(null)
-        const position = getReorderPosition(targetList, card, drag)
-        if (!id || !position?.anchor.dataset.id) return
-
-        const prevSibling = card.nextElementSibling
-        pendingMoves.set(card, col)
-        targetList.insertBefore(card, position.before ? position.anchor : position.anchor.nextElementSibling)
-        try {
-          const ctx = currentTaskApiContext()
-          const res = await fetch("/api/tasks/reorder", {
-            method: "POST",
-            headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
-            body: JSON.stringify({ task_id: id, anchor_id: position.anchor.dataset.id, lane: col.dataset.status, before: position.before }),
-          })
-          if (!res.ok) throw new Error("Reorder rejected")
-          if (!__signal.aborted) await refreshBoard()
-        } catch {
-          if (card.parentElement === targetList) targetList.insertBefore(card, prevSibling)
-          if (!__signal.aborted) showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "error")
-        } finally {
-          pendingMoves.delete(card)
+    if (canEditBoard) {
+      // Prevent native HTML5 dragstart (e.g. from links/images/text inside a card) from hijacking SortableJS pointer drag
+      board.addEventListener("dragstart", (e) => {
+        if ((e.target as HTMLElement | null)?.closest(".kanban-card")) {
+          e.preventDefault()
         }
       }, { signal: __signal })
-    });
 
-    function getReorderPosition(container: HTMLElement, card: HTMLElement, event: DragEvent) {
-      const hovered = (event.target as Element | null)?.closest<HTMLElement>(".kanban-card")
-      if (hovered && hovered.dataset.promoted !== card.dataset.promoted) return
-      const peers = Array.from(container.querySelectorAll<HTMLElement>(":scope > .kanban-card:not(.dragging)"))
-        .filter(candidate => candidate !== card && candidate.dataset.promoted === card.dataset.promoted && candidate.getClientRects().length)
-      const before = peers.find(peer => {
-        const box = peer.getBoundingClientRect()
-        return event.clientY < box.top + box.height / 2
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      const groupMode = board.dataset.groupBy ?? "none"
+      const lists: HTMLElement[] = []
+      board.querySelectorAll<HTMLElement>(".kanban-column").forEach((col) => {
+        const visibleSwimlaneLists = groupMode !== "none"
+          ? Array.from(col.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden]) > .swimlane-cards"))
+          : []
+        if (visibleSwimlaneLists.length > 0) {
+          lists.push(...visibleSwimlaneLists)
+        } else {
+          const list = col.querySelector<HTMLElement>(".kanban-cards")
+          if (list) lists.push(list)
+        }
       })
-      const anchor = before ?? peers.at(-1)
-      return anchor ? { anchor, before: Boolean(before) } : undefined
+
+      void import("sortablejs").then(({ default: Sortable }) => {
+        if (__signal.aborted) return
+        for (const list of lists) {
+          const instance = Sortable.create(list, {
+            group: "kanban-cards",
+            draggable: ".kanban-card",
+            filter: "button, a, input, textarea, select, [contenteditable='true'], .kanban-empty, .kanban-inline-add",
+            preventOnFilter: false,
+            forceFallback: true,
+            fallbackOnBody: true,
+            fallbackTolerance: 3,
+            touchStartThreshold: 4,
+            delayOnTouchOnly: true,
+            delay: 140,
+            invertSwap: true,
+            animation: reducedMotion ? 0 : 180,
+            easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+            ghostClass: "kanban-sortable-ghost",
+            chosenClass: "kanban-sortable-chosen",
+            dragClass: "kanban-sortable-drag",
+            fallbackClass: "kanban-sortable-fallback",
+            swapThreshold: 0.65,
+            emptyInsertThreshold: 44,
+            onStart: () => {
+              justDragged = true
+              clearTimeout(dragGuardTimer)
+              document.body.classList.add("kanban-dragging")
+            },
+            onMove: (evt) => {
+              const dragged = evt.dragged as HTMLElement
+              const related = evt.related as HTMLElement | null
+              const targetCol = evt.to.closest<HTMLElement>(".kanban-column")
+              setHoveredLane(targetCol)
+              if (related?.classList.contains("swimlane-group")) return false
+              if (evt.from === evt.to && related?.classList.contains("kanban-card")) {
+                // Keep promoted cards grouped above regular cards inside the same lane
+                if (dragged.dataset.promoted !== related.dataset.promoted) return false
+              }
+              return true
+            },
+            onEnd: async (evt) => {
+              document.body.classList.remove("kanban-dragging")
+              setHoveredLane(null)
+              clearTimeout(dragGuardTimer)
+              dragGuardTimer = setTimeout(() => { justDragged = false }, 120)
+
+              const card = evt.item as HTMLElement
+              const fromList = evt.from as HTMLElement
+              const toList = evt.to as HTMLElement
+              const sourceLane = fromList.closest<HTMLElement>(".kanban-column")
+              const targetLane = toList.closest<HTMLElement>(".kanban-column")
+              const oldIndex = evt.oldDraggableIndex ?? evt.oldIndex ?? 0
+              const newIndex = evt.newDraggableIndex ?? evt.newIndex ?? 0
+              if (!targetLane || !card.dataset.id) return
+
+              if (fromList === toList) {
+                if (oldIndex === newIndex || pendingMoves.has(card)) return
+                const laneStatus = targetLane.dataset.status
+                if (!laneStatus) return
+                pendingMoves.set(card, targetLane)
+                bumpKanbanMutationEpoch()
+                playSettleMotion(card)
+                try {
+                  const ok = await persistRelativeOrder(card, toList, laneStatus)
+                  if (!ok) throw new Error("Reorder rejected")
+                } catch {
+                  // Rollback DOM order smoothly without board reload flash
+                  const cards = Array.from(toList.querySelectorAll<HTMLElement>(":scope > .kanban-card"))
+                  const targetRef = cards[oldIndex] ?? null
+                  if (oldIndex < newIndex) toList.insertBefore(card, targetRef)
+                  else toList.insertBefore(card, targetRef ? targetRef.nextElementSibling : null)
+                  if (!__signal.aborted) {
+                    showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "error")
+                  }
+                } finally {
+                  pendingMoves.delete(card)
+                }
+                return
+              }
+
+              const targetGroup = toList.closest<HTMLElement>(".swimlane-group") ?? undefined
+              await moveTask(card, targetLane, targetGroup, {
+                fromContainer: fromList,
+                oldIndex,
+                sourceLane,
+                toContainer: toList,
+              })
+            },
+          })
+          sortableInstances.push(instance)
+        }
+      }).catch((err) => {
+        log.warn("SortableJS init failed on Kanban", err)
+      })
     }
+
+    __signal.addEventListener("abort", () => {
+      clearTimeout(dragGuardTimer)
+      document.body.classList.remove("kanban-dragging")
+      setHoveredLane(null)
+      for (const inst of sortableInstances) {
+        try { inst.destroy() } catch { /* already destroyed */ }
+      }
+      sortableInstances.length = 0
+      for (const status of board.querySelectorAll("[data-kanban-move-status]")) status.textContent = ""
+    }, { once: true })
     // O(1) delegated Kanban card interactions (1-click Tabler Star promote, open/edit, AI, duplicate, body click)
     board.addEventListener("click", async (event) => {
+      if (justDragged) return
       const target = event.target instanceof Element ? event.target : null
       if (!target) return
 
@@ -410,12 +537,9 @@ export function initKanbanArea(
       sel?.removeAllRanges()
       sel?.addRange(range)
 
-      if (card) card.setAttribute("draggable", "false")
-
       async function saveEdit() {
         const newTitle = titleSpan!.textContent?.trim() ?? ""
         titleSpan!.contentEditable = "false"
-        if (card) card.draggable = !pendingMoves.has(card)
 
         titleSpan!.removeEventListener("blur", saveEdit)
         titleSpan!.removeEventListener("keydown", handleKeys)
@@ -465,7 +589,6 @@ export function initKanbanArea(
         } else if (ev.key === "Escape") {
           titleSpan!.textContent = originalText
           titleSpan!.contentEditable = "false"
-          if (card) card.draggable = !pendingMoves.has(card)
           titleSpan!.removeEventListener("blur", saveEdit)
           titleSpan!.removeEventListener("keydown", handleKeys)
         }
@@ -525,8 +648,4 @@ export function initKanbanArea(
         /* Offline attachments unavailable — non-critical */
       }
     })();
-
-    // ─── Touch Drag Polyfill (Long-Press Paradigm) ─────────────
-    // Extracted to @lib/controllers/kanban-touch-drag.ts
-    try { initTouchDrag(handleDrop, __signal) } catch (e) { log.warn("Touch drag init failed", e) }
 }

@@ -13,5 +13,13 @@ export type { CalendarEvent, TodoItem, HAServiceOperationOptions } from "./ha-se
 export { fireHAEvent, emitTaskCreated, emitTaskUpdated, emitTaskCompleted, emitTaskDeleted, emitTaskOverdue, emitAreaUpdated, emitCalendarSynced, emitCalendarEventCreated } from "./ha-events"
 export type { MeithealEventType, MeithealTaskEventData, MeithealAreaEventData, MeithealCalendarEventData } from "./ha-events"
 export { readCurrentHARole, verifyCurrentHAAdministrator, verifyCurrentHAParticipant } from "./current-admin"
-export { getCurrentHAUserRoster, listHAUserDirectory, listHAUsers } from "./ha-users"
+export { getCachedHAUserName, getCurrentHAUserRoster, listHAUserDirectory, listHAUsers } from "./ha-users"
+export {
+  cacheTrustedIngressUser,
+  currentSupervisorFingerprint,
+  ensureHAUserCacheSchema,
+  getCachedHAUserDisplayNameSync,
+  isRawHAUserId,
+  resolveCachedHAUserDisplayName,
+} from "./ha-user-cache"
 export type { MeithealUser } from "./ha-users"

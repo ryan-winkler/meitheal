@@ -1,5 +1,7 @@
 ---
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import Icon from "../ui/Icon.astro"
+import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 interface Props {
@@ -108,15 +110,39 @@ const user = verifiedIngressUser(Astro.locals)
   ) : (
     <p class="settings-hint">Open Meitheal from Home Assistant to use local feedback.</p>
   )}
-  <p class="settings-hint mt-3">
-    <a class="feedback-security-link" href="mailto:info@coolockvillage.ie">Report a security vulnerability privately</a>
-  </p>
+  <SettingsActionRow style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+    <a
+      href="https://github.com/ryan-winkler/meitheal/issues/new/choose"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="btn btn-secondary settings-link"
+    >
+      <Icon name="bug" size={14} sprite={true} />
+      <span>GitHub Issues</span>
+    </a>
+    <a
+      href="https://github.com/ryan-winkler/meitheal/discussions"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="btn btn-secondary settings-link"
+    >
+      <Icon name="message-circle" size={14} sprite={true} />
+      <span>GitHub Discussions</span>
+    </a>
+    <a
+      class="btn btn-ghost settings-link feedback-security-link"
+      href="mailto:hi@meitheal.io"
+    >
+      <Icon name="shield-check" size={14} sprite={true} />
+      <span>Report a security vulnerability privately</span>
+    </a>
+  </SettingsActionRow>
 </SettingsPanelCard>
 
-<style>
+<style is:inline>
   .feedback-security-link {
     color: var(--color-text-primary);
-    text-decoration: underline;
+    text-decoration: underline !important;
   }
 
   .feedback-panel :is(.settings-hint, .btn-secondary) {
@@ -169,7 +195,7 @@ const user = verifiedIngressUser(Astro.locals)
     white-space: pre-wrap;
   }
 
-  .feedback-panel :global([hidden]) {
+  .feedback-panel [hidden] {
     display: none !important;
   }
 

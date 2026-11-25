@@ -151,7 +151,8 @@ export async function readNamedBoardPlanning(client: Client, scope: BoardScope, 
       description: project.description ?? "",
       status: project.status,
       areaId: project.area_id,
-      goalId: project.goal_id
+      goalId: project.goal_id,
+      isDefault: Boolean(project.is_default)
     })),
     goals: goals.map((goal) => ({
       id: goal.id,

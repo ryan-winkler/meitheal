@@ -1,7 +1,6 @@
 import { confirmDialog } from "./confirm-dialog"
 import { domEl as element } from "./settings-utils"
 import { showToast } from "./toast"
-import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 interface LabelData {
   id: number
@@ -60,20 +59,20 @@ export function initSettingsLabels(signal: AbortSignal) {
     const parameters: Record<string, string> = typeof values === "string" ? { name: values } : values
     return (copy[key] ?? key).replace(/\{(\w+)\}/g, (token, name: string) => parameters[name] ?? token)
   }
-  const list = qs<HTMLUListElement>(root, "#labels-list")!
-  const status = qs<HTMLElement>(root, "[data-label-editor-status]")!
-  const retry = qs<HTMLButtonElement>(root, "[data-label-editor-retry]")!
-  const search = qs<HTMLInputElement>(root, "[data-label-search]")!
-  const range = qs<HTMLElement>(root, "[data-label-range]")!
-  const pages = qs<HTMLElement>(root, "[data-label-pages]")!
-  const pageLabel = qs<HTMLElement>(root, "[data-label-page]")!
-  const previous = qs<HTMLButtonElement>(root, "[data-label-previous]")!
-  const next = qs<HTMLButtonElement>(root, "[data-label-next]")!
-  const empty = qs<HTMLElement>(root, "[data-label-empty]")!
-  const create = qs<HTMLFormElement>(root, "#create-label-form")!
-  const newTitle = qs<HTMLInputElement>(root, "#new-label-title")!
-  const newColor = qs<HTMLInputElement>(root, "#new-label-color")!
-  const createButton = qs<HTMLButtonElement>(create, 'button[type="submit"]')!
+  const list = root.querySelector<HTMLUListElement>("#labels-list")!
+  const status = root.querySelector<HTMLElement>("[data-label-editor-status]")!
+  const retry = root.querySelector<HTMLButtonElement>("[data-label-editor-retry]")!
+  const search = root.querySelector<HTMLInputElement>("[data-label-search]")!
+  const range = root.querySelector<HTMLElement>("[data-label-range]")!
+  const pages = root.querySelector<HTMLElement>("[data-label-pages]")!
+  const pageLabel = root.querySelector<HTMLElement>("[data-label-page]")!
+  const previous = root.querySelector<HTMLButtonElement>("[data-label-previous]")!
+  const next = root.querySelector<HTMLButtonElement>("[data-label-next]")!
+  const empty = root.querySelector<HTMLElement>("[data-label-empty]")!
+  const create = root.querySelector<HTMLFormElement>("#create-label-form")!
+  const newTitle = root.querySelector<HTMLInputElement>("#new-label-title")!
+  const newColor = root.querySelector<HTMLInputElement>("#new-label-color")!
+  const createButton = create.querySelector<HTMLButtonElement>('button[type="submit"]')!
   // Full definitions and primitive drafts survive paging; editor DOM does not.
   const states = new Map<number, LabelState>()
   const mountedRows = new Map<number, LabelRow>()
@@ -87,7 +86,7 @@ export function initSettingsLabels(signal: AbortSignal) {
   search.value = ""
   newTitle.readOnly = false
   newColor.disabled = false
-  setAttr(createButton, "aria-disabled", "false")
+  createButton.setAttribute("aria-disabled", "false")
   // A replacement lifecycle can reuse the shell after its predecessor aborts.
   for (const child of [...list.children]) child.remove()
 
@@ -102,16 +101,16 @@ export function initSettingsLabels(signal: AbortSignal) {
     if (row.color.value !== state.draftColor) row.color.value = state.draftColor
     row.badge.textContent = display
     row.swatch.style.backgroundColor = label.hex_color
-    setAttr(row.save, "aria-label", text("save_label", display))
-    setAttr(row.remove, "aria-label", text("delete_label", display))
-    setAttr(row.title, "aria-label", text("name") + ": " + display)
-    setAttr(row.color, "aria-label", text("color") + ": " + display)
-    setAttr(row.form, "aria-busy", String(state.busy))
+    row.save.setAttribute("aria-label", text("save_label", display))
+    row.remove.setAttribute("aria-label", text("delete_label", display))
+    row.title.setAttribute("aria-label", text("name") + ": " + display)
+    row.color.setAttribute("aria-label", text("color") + ": " + display)
+    row.form.setAttribute("aria-busy", String(state.busy))
     row.title.readOnly = state.busy
     row.color.disabled = state.busy
-    setAttr(row.save, "aria-disabled", String(state.busy))
-    setAttr(row.remove, "aria-disabled", String(state.busy))
-    setAttr(row.status, "role", state.error ? "alert" : "status")
+    row.save.setAttribute("aria-disabled", String(state.busy))
+    row.remove.setAttribute("aria-disabled", String(state.busy))
+    row.status.setAttribute("role", state.error ? "alert" : "status")
     row.status.textContent = state.notice
   }
   function paintState(state: LabelState) {
@@ -154,7 +153,7 @@ export function initSettingsLabels(signal: AbortSignal) {
     form.dataset.labelId = String(id)
     const badgeLine = element("div", "label-settings-badge")
     const swatch = element("span", "label-settings-swatch")
-    setAttr(swatch, "aria-hidden", "true")
+    swatch.setAttribute("aria-hidden", "true")
     const badge = element("span")
     badge.dataset.badgeId = String(id)
     badge.dir = "auto"
@@ -189,8 +188,8 @@ export function initSettingsLabels(signal: AbortSignal) {
     actions.append(save, remove)
     fields.append(nameField, colorField, actions)
     const notice = element("p", "label-row-status")
-    setAttr(notice, "role", "status")
-    setAttr(notice, "aria-atomic", "true")
+    notice.setAttribute("role", "status")
+    notice.setAttribute("aria-atomic", "true")
     form.append(badgeLine, fields, notice)
     item.append(form)
     const row: LabelRow = { state, element: item, form, title, color: picker, badge, swatch, status: notice, save, remove }
@@ -341,7 +340,7 @@ export function initSettingsLabels(signal: AbortSignal) {
       confirmText: text("delete"), cancelText: text("cancel"), variant: "danger", signal })
     if (!live(state)) return
     if (!accepted) { state.busy = false; paintState(state); return }
-    const confirmation = byId("meitheal-confirm-overlay")
+    const confirmation = document.getElementById("meitheal-confirm-overlay")
     announce(state, text("deleting"))
     try {
       const result = await request(`/api/labels/${state.label.id}`, "DELETE")
@@ -362,7 +361,7 @@ export function initSettingsLabels(signal: AbortSignal) {
   async function createLabel() {
     if (creating || signal.aborted || !newTitle.value.trim()) return
     creating = true
-    setAttr(createButton, "aria-disabled", "true")
+    createButton.setAttribute("aria-disabled", "true")
     newTitle.readOnly = true
     newColor.disabled = true
     status.textContent = text("creating")
@@ -383,7 +382,7 @@ export function initSettingsLabels(signal: AbortSignal) {
     } finally {
       if (!signal.aborted) {
         creating = false
-        setAttr(createButton, "aria-disabled", "false")
+        createButton.setAttribute("aria-disabled", "false")
         newTitle.readOnly = false
         newColor.disabled = false
       }
@@ -411,7 +410,7 @@ export function initSettingsLabels(signal: AbortSignal) {
     const row = mountedRows.get(Number(input.dataset.id))
     if (!row || row.state.busy || (input !== row.title && input !== row.color)) return
     capture(row)
-    setAttr(row.status, "role", row.state.error ? "alert" : "status")
+    row.status.setAttribute("role", row.state.error ? "alert" : "status")
     row.status.textContent = row.state.notice
   }
   root.addEventListener("input", edit, { signal })

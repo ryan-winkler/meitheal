@@ -1,4 +1,5 @@
 ---
+import { scopePermits } from "@domains/tasks/board-scope"
 import { projectPublicTaskFields } from "@domains/tasks/task-projection"
 import { boardContextHref } from "@lib/board-workspace"
 import { readBoardPagePlacement } from "@lib/board-page-placement"
@@ -12,7 +13,9 @@ import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
 import Icon from "../components/ui/Icon.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
-import LabelBadges from "../components/ui/LabelBadges.astro"
+import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro"
+import KanbanTaskCard from "../components/tasks/KanbanTaskCard.astro"
+import QuickAddHelpPopover from "../components/tasks/QuickAddHelpPopover.astro"
 import Layout from "../layouts/Layout.astro"
 import {
   getStats as getGamificationStats,
@@ -28,25 +31,43 @@ import {
 } from "@domains/tasks/persistence/store"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
-import { getPriorityColor } from "../lib/priority-config"
+import { PRIORITY_CSS_CLASSES as priorityClasses, getPriorityColor } from "../lib/priority-config"
 import { taskSurface } from "../lib/task-surface"
+import { taskDescriptionPreview } from "../lib/task-description-preview"
+import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "../lib/rice-lens"
 import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
-import { calendarDaysFromToday, calendarToday } from "../lib/date"
+import { calendarDaysFromToday, calendarToday, isDueOverdue as isDueTimeOverdue } from "../lib/date"
 import dashboardStyles from "../styles/dashboard.css?url"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
+const canEdit = scopePermits(workScope, { resource: "task", action: "edit" })
+const canCreate = scopePermits(workScope, { resource: "task", action: "create" })
 const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
 if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
 const placement = pagePlacement.placement
 const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
 
-
+const dashboardDateFormat = Astro.locals.dateFormat || "YYYY-MM-DD"
 const dashboardTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+const priorityLabels: Record<number, string> = {
+  1: t("priority.critical", locale),
+  2: t("priority.high", locale),
+  3: t("priority.medium", locale),
+  4: t("priority.low", locale),
+  5: t("priority.minimal", locale),
+}
+const typeColors: Record<string, string> = {
+  epic: "#8b5cf6",
+  story: "#22c55e",
+  task: "#3b82f6",
+  bug: "#ef4444",
+}
 
 let tasks: Record<string, unknown>[] = []
 let favorites: Record<string, unknown>[] = []
@@ -83,9 +104,7 @@ let achievementData: {
   total: number
   unlocked: number
 } = { achievements: [], total: 0, unlocked: 0 }
-let areaMap: Record<string, { name: string; color: string }> = {
-  default: { name: "Default", color: "#146C4E" },
-}
+let areaMap: Record<string, { id: string; name: string; color: string }> = {}
 
 try {
   await ensureSchema()
@@ -117,10 +136,12 @@ try {
   if (overdueRead.status === "fulfilled") overdueCount = overdueRead.value
   if (areaRead.status === "fulfilled") {
     areaMap = Object.fromEntries(
-      Object.entries(areaRead.value).map(([key, value]) => [
-        key,
-        { name: value.name, color: value.color },
-      ]),
+      Object.entries(areaRead.value)
+        .filter(([key, value]) => key && key !== "default" && value?.name)
+        .map(([key, value]) => [
+          key,
+          { id: key, name: value.name, color: value.color },
+        ]),
     )
   }
 } catch {
@@ -204,12 +225,12 @@ function relativeTime(dueDate: string): string {
       {(statsLoaded || overdueCount !== null || gamificationStats.currentStreak > 0) && <div class="stats-grid">
         {gamificationStats.currentStreak > 0 && (
           <a
-            href={contextHref("/progress#achievements")}
+            href={contextHref("/progress#achievements-streaks")}
             class="stat-card stat-card-link"
-            title={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
-            aria-label={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
+            title={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view Streaks & Progress`}
+            aria-label={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view Streaks & Progress`}
           >
-            <StreakBadge streak={gamificationStats.currentStreak} />
+            <StreakBadge streak={gamificationStats.currentStreak} interactive={false} />
             <div>
               <span class="stat-value">{gamificationStats.todayCompleted}</span>
               <span class="stat-label">today</span>
@@ -331,8 +352,9 @@ function relativeTime(dueDate: string): string {
                   const statusLabel =
                     statusLabels[String(favorite.status)] ?? String(favorite.status)
 
+                  const isDueOverdue = favorite.due_date ? relativeTime(String(favorite.due_date)).startsWith("Overdue") : false
                   return (
-                    <div class="task-item cursor-pointer" data-id={String(favorite.id)} {...taskSurface(String(favorite.status), favorite.color)}>
+                    <div class="task-item cursor-pointer" data-id={String(favorite.id)} data-promoted="true" {...taskSurface(String(favorite.status), favorite.color)}>
                       <div class="task-title">
                         <span
                           class="priority-dot"
@@ -341,14 +363,23 @@ function relativeTime(dueDate: string): string {
                         {ticketNumber && (
                           <span class="dashboard-ticket-key">{ticketNumber}</span>
                         )}
-                        <span>{String(favorite.title)}</span>
+                        <TaskTypeIcon
+                          type={String(favorite.task_type ?? "task")}
+                          kind={typeof favorite.task_kind === "string" ? favorite.task_kind : null}
+                          size={14}
+                        />
+                        <span class="truncate">{String(favorite.title)}</span>
                       </div>
                       <div class="dashboard-task-meta">
+                        <span class="task-promoted-pill" title={t("kanban.promoted", locale)}>
+                          <Icon name="star" size={11} sprite />
+                          <span>{t("kanban.promoted", locale)}</span>
+                        </span>
                         <span class={`task-badge badge-${String(favorite.status)}`}>
                           {statusLabel}
                         </span>
                         {favorite.due_date && (
-                          <span class="text-xs text-text-muted">
+                          <span class={`dashboard-task-due text-xs ${isDueOverdue ? "text-danger font-medium" : "text-text-muted"}`}>
                             {relativeTime(String(favorite.due_date))}
                           </span>
                         )}
@@ -382,6 +413,7 @@ function relativeTime(dueDate: string): string {
             minlength="2"
             maxlength="200"
           />
+          <QuickAddHelpPopover targetInputId="quick-title" align="right" />
           <button type="submit" class="btn btn-primary">
             {t("dashboard.add", locale)}
           </button>
@@ -430,6 +462,8 @@ function relativeTime(dueDate: string): string {
               const statusLabel =
                 statusLabels[String(task.status)] ?? String(task.status)
 
+              const isPromoted = Boolean(task.is_promoted)
+              const isDueOverdue = task.due_date ? relativeTime(String(task.due_date)).startsWith("Overdue") : false
               return (
                 <div
                   class="task-item cursor-pointer"
@@ -437,20 +471,32 @@ function relativeTime(dueDate: string): string {
                   data-id={String(task.id)}
                   data-assigned={String(task.assigned_to ?? "")}
                   data-status={String(task.status)}
+                  data-promoted={isPromoted ? "true" : "false"}
                 >
                   <div class="task-title">
                     <span class="priority-dot" style={`background: ${priorityColor}`} />
                     {ticketNumber && (
                       <span class="dashboard-ticket-key">{ticketNumber}</span>
                     )}
-                    {String(task.title)}
+                    <TaskTypeIcon
+                      type={String(task.task_type ?? "task")}
+                      kind={typeof task.task_kind === "string" ? task.task_kind : null}
+                      size={14}
+                    />
+                    <span class="truncate">{String(task.title)}</span>
                   </div>
                   <div class="dashboard-task-meta">
+                    {isPromoted && (
+                      <span class="task-promoted-pill" title={t("kanban.promoted", locale)}>
+                        <Icon name="star" size={11} sprite />
+                        <span>{t("kanban.promoted", locale)}</span>
+                      </span>
+                    )}
                     <span class={`task-badge badge-${String(task.status)}`}>
                       {statusLabel}
                     </span>
                     {task.due_date && (
-                      <span class="text-xs text-text-muted">
+                      <span class={`dashboard-task-due text-xs ${isDueOverdue ? "text-danger font-medium" : "text-text-muted"}`}>
                         {relativeTime(String(task.due_date))}
                       </span>
                     )}
@@ -481,7 +527,7 @@ function relativeTime(dueDate: string): string {
           <a href={contextHref("/tasks")} class="btn btn-ghost">{t("dashboard.view_all", locale)}</a>
         </div>
 
-        <div class="bento-grid" id="task-list">
+        <div class="bento-grid" id="task-list" data-available={String(recentLoaded)}>
           {
             !recentLoaded ? <p role="status" class="m-0 text-text-secondary">Recent tasks couldn’t load. Refresh the page to try again.</p> : tasks.length === 0 ? (
               <div class="bento-empty-state">
@@ -493,97 +539,65 @@ function relativeTime(dueDate: string): string {
             ) : (
               tasks.map((task) => {
                 const priority = Number(task.priority ?? 3)
-                const isDone = String(task.status) === "complete"
-                const taskColor = task.color
-                  ? String(task.color)
-                  : priority === 1
-                    ? "#ef4444"
-                    : priority === 2
-                      ? "#f97316"
-                      : priority === 4
-                        ? "#22c55e"
-                        : priority === 5
-                          ? "#6b7280"
-                          : "#eab308"
-                const areaId = String(task.area_id ?? "default")
-                const area = areaMap[areaId] ?? {
-                  name: "Default",
-                  color: "#146C4E",
-                }
-                const ticketNumber = typeof task.ticket_key === "string" && task.ticket_key
+                const tt = String(task.task_type ?? "task")
+                const rawAreaId = typeof task.area_id === "string" ? task.area_id.trim() : ""
+                const realArea = rawAreaId && rawAreaId !== "default" ? areaMap[rawAreaId] ?? null : null
+                const ticketKey = typeof task.ticket_key === "string" && task.ticket_key
                   ? task.ticket_key
                   : typeof task.ticket_ref === "string" && task.ticket_ref
                     ? task.ticket_ref
                     : task.ticket_number
                       ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
-                      : null
+                      : ""
 
-                const { style: taskColorStyle, ...surface } = taskSurface(String(task.status), task.color)
+                const isPromoted = Boolean(task.is_promoted)
+                const dueDays = task.due_date
+                  ? calendarDaysFromToday(String(task.due_date), dashboardTimeZone)
+                  : null
+                const dueStatus = task.due_date
+                  ? (dueDays !== null
+                      ? (dueDays < 0 || isDueTimeOverdue(String(task.due_date), dashboardTimeZone)
+                          ? "overdue"
+                          : dueDays === 0
+                            ? "today"
+                            : "upcoming")
+                      : (relativeTime(String(task.due_date)).startsWith("Overdue") ? "overdue" : "upcoming"))
+                  : null
+                const dueLabel = task.due_date ? relativeTime(String(task.due_date)) : null
+                let parsedFp: unknown = {}
+                if (typeof task.framework_payload === "string" && task.framework_payload.trim()) {
+                  try { parsedFp = JSON.parse(task.framework_payload) } catch { parsedFp = {} }
+                } else if (task.framework_payload && typeof task.framework_payload === "object") {
+                  parsedFp = task.framework_payload
+                }
+                const riceInputs = readRiceInputs(frameworkPayloadObject(parsedFp))
+                const rice = riceInputs ? riceLensScore(riceInputs) : null
                 return (
-                  <div
-                    class="bento-card dashboard-task-card"
-                    {...surface}
-                    data-id={String(task.id)}
-                    data-area={areaId}
-                    style={`--dashboard-task-accent: ${taskColor};${taskColorStyle ?? ""}`}
-                  >
-                    <div class="bento-card-body">
-                      <div class="bento-card-header">
-                        <div class={`bento-card-title ${isDone ? "done" : ""}`}>
-                          {ticketNumber && (
-                            <span class="bento-ticket-key">{ticketNumber}</span>
-                          )}
-                          {String(task.title)}
-                        </div>
-                      </div>
-
-                      <div class="bento-card-footer">
-                        <span
-                          class={`task-badge badge-${isDone ? "complete" : String(task.status)}`}
-                        >
-                          {statusLabels[String(task.status)] ?? String(task.status)}
-                          {task.deferred_at != null && ` · ${t("deferral.title", locale)}`}
-                        </span>
-                        <span
-                          class="bento-area-badge"
-                          style={`background: ${area.color}20; color: var(--text-secondary); border-color: ${area.color}40;`}
-                        >
-                          {area.name}
-                        </span>
-                        {task.due_date && (
-                          <span class="bento-card-due">
-                            {relativeTime(String(task.due_date))}
-                          </span>
-                        )}
-                      </div>
-
-                      {task.labels && String(task.labels) !== "[]" && (
-                        <LabelBadges labels={String(task.labels)} compact max={2} />
-                      )}
-                    </div>
-
-                    <div class="bento-card-actions">
-                      <button
-                        class="card-action-btn card-edit-btn"
-                        data-id={String(task.id)}
-                        title="Edit task"
-                        aria-label="Edit task"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg>
-                      </button>
-                      <button
-                        class="card-action-btn card-ai-btn"
-                        data-title={String(task.title)}
-                        data-desc={task.description ? String(task.description) : ""}
-                        data-status={String(task.status ?? "pending")}
-                        data-priority={String(priority)}
-                        title="Ask AI"
-                        aria-label="Ask AI"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/></svg>
-                      </button>
-                    </div>
-                  </div>
+                  <KanbanTaskCard
+                    task={task}
+                    boardId={workScope.boardId}
+                    locale={locale}
+                    ticketKey={ticketKey}
+                    priority={priority}
+                    priorityLabel={priorityLabels[priority] ?? "Medium"}
+                    priorityClass={priorityClasses[priority] ?? "priority-medium"}
+                    taskType={tt}
+                    typeColor={typeColors[tt] ?? typeColors.task!}
+                    promoted={isPromoted}
+                    canEdit={canEdit}
+                    canCreate={canCreate}
+                    dateFormat={dashboardDateFormat}
+                    timezone={dashboardTimeZone}
+                    dueStatus={dueStatus}
+                    dueLabel={dueLabel}
+                    description={taskDescriptionPreview(task.description)}
+                    rice={rice}
+                    childCount={Number(task.child_count ?? 0)}
+                    area={realArea}
+                    showAreaBadge={Boolean(realArea)}
+                    showStatusBadge={true}
+                    extraClass="bento-card dashboard-task-card"
+                  />
                 )
               })
             )

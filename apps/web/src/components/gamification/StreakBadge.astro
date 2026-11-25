@@ -5,37 +5,62 @@
  * @domain gamification
  * @bounded-context gamification
  *
- * Server-side rendered badge showing current streak count with fire emoji.
- * Fetches stats from the gamification domain at build/request time.
- *
- * @prop streak - Current streak count
- * @prop compact - Use compact sizing for sidebar
+ * Clickable by default, navigating directly to Progress & Growth (#achievements-streaks).
+ * Pass interactive={false} when wrapped inside a parent anchor link.
  */
 import Icon from "../ui/Icon.astro"
 
 interface Props {
   streak: number
   compact?: boolean
+  href?: string
+  interactive?: boolean
 }
 
-const { streak, compact = false } = Astro.props
+const {
+  streak,
+  compact = false,
+  href = "/progress#achievements-streaks",
+  interactive = true,
+} = Astro.props
+
+const dayWord = streak === 1 ? "day" : "days"
+const badgeTitle = interactive
+  ? `${streak} ${dayWord} streak — click to view Streaks & Progress`
+  : `${streak} ${dayWord} streak`
+const badgeClass = `streak-badge ${compact ? "streak-badge--compact" : ""} ${interactive ? "streak-badge--interactive" : ""}`
 ---
 
 {streak > 0 && (
-  <div
-    class={`streak-badge ${compact ? "streak-badge--compact" : ""}`}
-    title={`${streak} day${streak !== 1 ? "s" : ""} streak`}
-    aria-label={`${streak} day completion streak`}
-  >
-    <span class="streak-badge__icon inline-flex items-center" aria-hidden="true">
-      <Icon name="flame" size={compact ? 13 : 14} sprite={true} />
-    </span>
-    <span class="streak-badge__count">{streak}</span>
-    {!compact && <span class="streak-badge__label">day streak</span>}
-  </div>
+  interactive ? (
+    <a
+      href={href}
+      class={badgeClass}
+      title={badgeTitle}
+      aria-label={`${streak} day completion streak — open Streaks & Progress`}
+    >
+      <span class="streak-badge__icon inline-flex items-center" aria-hidden="true">
+        <Icon name="flame" size={compact ? 13 : 14} sprite={true} />
+      </span>
+      <span class="streak-badge__count">{streak}</span>
+      {!compact && <span class="streak-badge__label">day streak</span>}
+    </a>
+  ) : (
+    <div
+      class={badgeClass}
+      title={badgeTitle}
+      aria-label={`${streak} day completion streak`}
+    >
+      <span class="streak-badge__icon inline-flex items-center" aria-hidden="true">
+        <Icon name="flame" size={compact ? 13 : 14} sprite={true} />
+      </span>
+      <span class="streak-badge__count">{streak}</span>
+      {!compact && <span class="streak-badge__label">day streak</span>}
+    </div>
+  )
 )}
 
-<style>
+<style is:inline>
   .streak-badge {
     display: inline-flex;
     align-items: center;
@@ -46,20 +71,37 @@ const { streak, compact = false } = Astro.props
     font-weight: 600;
     background: linear-gradient(135deg, hsl(38 92% 50% / 0.15), hsl(15 85% 55% / 0.15));
     color: hsl(38 92% 45%);
-    border: 1px solid hsl(38 92% 50% / 0.2);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    border: 1px solid hsl(38 92% 50% / 0.25);
+    text-decoration: none;
+    transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
     cursor: default;
   }
 
-  .streak-badge:hover {
-    transform: scale(1.05);
-    box-shadow: 0 2px 8px hsl(38 92% 50% / 0.15);
+  .streak-badge--interactive {
+    cursor: pointer;
+  }
+
+  .streak-badge--interactive:hover {
+    transform: translateY(-1px);
+    border-color: hsl(38 92% 50% / 0.55);
+    box-shadow: 0 3px 10px hsl(38 92% 50% / 0.2);
+  }
+
+  .streak-badge--interactive:active {
+    transform: scale(0.97);
+  }
+
+  .streak-badge--interactive:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .streak-badge--compact {
-    padding: 0.125rem 0.375rem;
+    padding: 0.175rem 0.5rem;
     font-size: 0.75rem;
-    gap: 0.125rem;
+    gap: 0.2rem;
   }
 
   .streak-badge__icon {
@@ -73,22 +115,23 @@ const { streak, compact = false } = Astro.props
   }
 
   .streak-badge__label {
-    font-weight: 400;
-    opacity: 0.8;
+    font-weight: 500;
+    opacity: 0.88;
     font-size: 0.75em;
   }
 
   :is([data-theme="dark"], [data-theme="knight-rider"]) .streak-badge {
-    background: linear-gradient(135deg, hsl(38 70% 30% / 0.3), hsl(15 70% 35% / 0.3));
+    background: linear-gradient(135deg, hsl(38 70% 30% / 0.32), hsl(15 70% 35% / 0.32));
     color: hsl(38 85% 65%);
-    border-color: hsl(38 70% 50% / 0.25);
+    border-color: hsl(38 70% 50% / 0.3);
   }
 
   @media (prefers-reduced-motion: reduce) {
     .streak-badge {
       transition: none;
     }
-    .streak-badge:hover {
+    .streak-badge--interactive:hover,
+    .streak-badge--interactive:active {
       transform: none;
     }
   }

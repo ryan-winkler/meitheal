@@ -232,64 +232,452 @@
     --danger-text: #FFADB1;
   }
 
-  /* Light theme overrides — Warm Architectural Paper + Forest Emerald */
+  /* Plainspace — Warm matte charcoal grid + terracotta sand accent (Super Productivity inspired) */
+  [data-theme="plainspace"] {
+    color-scheme: dark;
+    --bg-primary-rgb: 26 23 20;
+    --bg-secondary-rgb: 36 32 28;
+    --bg-card-rgb: 44 39 34;
+    --bg-hover-rgb: 58 51 44;
+    --bg-input-rgb: 22 19 16;
+    --text-primary-rgb: 244 237 228;
+    --text-secondary-rgb: 211 200 187;
+    --text-muted-rgb: 168 156 143;
+    --accent-rgb: var(--personal-accent-rgb, 229 154 102);
+    --accent-hover-rgb: 240 173 125;
+    --border-rgb: 68 60 52;
+    --border-focus-rgb: 229 154 102;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgb(var(--bg-secondary-rgb));
+    --bg-card: rgb(var(--bg-card-rgb));
+    --bg-hover: rgb(var(--bg-hover-rgb));
+    --bg-input: rgb(var(--bg-input-rgb));
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #E59A66;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgb(var(--accent-rgb) / 0.16);
+    --palette-on-accent: #1A1714;
+    --accent-text: var(--personal-accent-text-dark, #F2B88F);
+    --border: rgb(var(--border-rgb));
+    --border-focus: rgb(var(--border-focus-rgb));
+    --control-border: #6E6154;
+    --success: #7FD1AE;
+    --success-rgb: 127 209 174;
+    --type-task: #E59A66;
+  }
+
+  [data-theme="plainspace"] body {
+    background-image:
+      linear-gradient(rgba(255, 240, 220, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 240, 220, 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* Velvet — Deep midnight plum-indigo + luminous periwinkle (Super Productivity inspired) */
+  [data-theme="velvet"] {
+    color-scheme: dark;
+    --bg-primary-rgb: 18 18 29;
+    --bg-secondary-rgb: 24 24 38;
+    --bg-card-rgb: 31 31 49;
+    --bg-hover-rgb: 44 44 68;
+    --bg-input-rgb: 14 14 23;
+    --text-primary-rgb: 238 240 250;
+    --text-secondary-rgb: 199 203 224;
+    --text-muted-rgb: 152 157 186;
+    --accent-rgb: var(--personal-accent-rgb, 124 156 255);
+    --accent-hover-rgb: 149 176 255;
+    --border-rgb: 53 53 82;
+    --border-focus-rgb: 124 156 255;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgb(var(--bg-secondary-rgb));
+    --bg-card: rgb(var(--bg-card-rgb));
+    --bg-hover: rgb(var(--bg-hover-rgb));
+    --bg-input: rgb(var(--bg-input-rgb));
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #7C9CFF;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgb(var(--accent-rgb) / 0.16);
+    --palette-on-accent: #101222;
+    --accent-text: var(--personal-accent-text-dark, #A9C0FF);
+    --border: rgb(var(--border-rgb));
+    --border-focus: rgb(var(--border-focus-rgb));
+    --control-border: #5E5E8A;
+    --success: #6EE7B7;
+    --success-rgb: 110 231 183;
+    --type-task: #7C9CFF;
+  }
+
+  /* Liquid Glass — macOS-inspired frosted dark glass surfaces + crisp specular hairlines */
+  [data-theme="liquid-glass"] {
+    color-scheme: dark;
+    --bg-primary-rgb: 11 18 32;
+    --bg-secondary-rgb: 18 28 46;
+    --bg-card-rgb: 24 37 59;
+    --bg-hover-rgb: 34 50 77;
+    --bg-input-rgb: 14 22 38;
+    --text-primary-rgb: 241 245 249;
+    --text-secondary-rgb: 203 213 225;
+    --text-muted-rgb: 156 172 194;
+    --accent-rgb: var(--personal-accent-rgb, 96 165 250);
+    --accent-hover-rgb: 147 197 253;
+    --border-rgb: 84 110 148;
+    --border-focus-rgb: 125 211 252;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgba(18, 28, 46, 0.78);
+    --bg-card: rgba(24, 37, 59, 0.72);
+    --bg-hover: rgba(42, 62, 94, 0.78);
+    --bg-input: rgba(12, 20, 35, 0.78);
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #60A5FA;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgba(96, 165, 250, 0.16);
+    --palette-on-accent: #081221;
+    --accent-text: var(--personal-accent-text-dark, #93C5FD);
+    --border: rgba(255, 255, 255, 0.14);
+    --border-focus: rgba(125, 211, 252, 0.75);
+    --control-border: rgba(255, 255, 255, 0.22);
+    --shadow-sm: 0 2px 10px rgba(3, 8, 20, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --shadow-md: 0 8px 24px rgba(3, 8, 20, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    --success: #5EEAD4;
+    --success-rgb: 94 234 212;
+    --type-task: #7DD3FC;
+  }
+
+  [data-theme="liquid-glass"] body {
+    background-image:
+      radial-gradient(ellipse 70% 55% at 15% 10%, rgba(56, 189, 248, 0.16), transparent 60%),
+      radial-gradient(ellipse 65% 55% at 85% 90%, rgba(129, 140, 248, 0.16), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  [data-theme="liquid-glass"] :is(.settings-panel-card, .card, .modal-content, .sidebar, .unified-bar) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.22));
+  }
+
+  /* Rainbow — Dark prism spectrum inspired by Super Productivity Rainbow */
+  [data-theme="rainbow"] {
+    color-scheme: dark;
+    --bg-primary-rgb: 19 17 28;
+    --bg-secondary-rgb: 27 24 40;
+    --bg-card-rgb: 34 30 51;
+    --bg-hover-rgb: 47 41 70;
+    --bg-input-rgb: 15 13 23;
+    --text-primary-rgb: 244 241 255;
+    --text-secondary-rgb: 207 200 230;
+    --text-muted-rgb: 162 154 191;
+    --accent-rgb: var(--personal-accent-rgb, 192 132 252);
+    --accent-hover-rgb: 216 180 254;
+    --border-rgb: 64 56 94;
+    --border-focus-rgb: 232 121 249;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgb(var(--bg-secondary-rgb));
+    --bg-card: rgb(var(--bg-card-rgb));
+    --bg-hover: rgb(var(--bg-hover-rgb));
+    --bg-input: rgb(var(--bg-input-rgb));
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #C084FC;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgb(var(--accent-rgb) / 0.16);
+    --palette-on-accent: #13111C;
+    --accent-text: var(--personal-accent-text-dark, #E9D5FF);
+    --border: rgb(var(--border-rgb));
+    --border-focus: rgb(var(--border-focus-rgb));
+    --control-border: #6B5E99;
+    --success: #4ADE80;
+    --success-rgb: 74 222 128;
+    --type-task: #38BDF8;
+    --type-story: #F472B6;
+    --type-epic: #FACC15;
+  }
+
+  [data-theme="rainbow"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 3px;
+    z-index: 900;
+    pointer-events: none;
+    background: linear-gradient(90deg, #f43f5e, #f59e0b, #22c55e, #38bdf8, #a855f7, #ec4899);
+  }
+
+  /* Light theme overrides — Paper Emerald (Crisp White-Mint Paper + Vibrant Emerald) */
   :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
     color-scheme: light;
-    --bg-primary: #F6F5F0;
-    --bg-secondary: #ECEBE4;
+    --bg-primary: #F5FAF7;
+    --bg-secondary: #E8F2EC;
     --bg-card: #FFFFFF;
-    --bg-hover: #E2E4DE;
+    --bg-hover: #DCECE3;
     --bg-input: #FFFFFF;
-    --text-primary: #10231B;
-    --text-secondary: #34473F;
-    --text-muted: #4A5E55;
-    --palette-accent: #146C4E;
-    --accent-text: var(--personal-accent-text-light, #0E533B);
-    --palette-accent-hover: #0E533B;
+    --text-primary: #0F2119;
+    --text-secondary: #2F483D;
+    --text-muted: #4A665A;
+    --palette-accent: #059669;
+    --accent-text: var(--personal-accent-text-light, #047857);
+    --palette-accent-hover: #047857;
     --palette-on-accent: #FFFFFF;
-    --palette-accent-light: rgba(20, 108, 78, 0.1);
+    --palette-accent-light: rgba(5, 150, 105, 0.12);
     --warning: #B45309;
     --on-warning: #FFFFFF;
     --warning-text: #92400E;
     --danger: #DC2626;
     --info: #0369A1;
-    --border: #C9D1CB;
-    --border-focus: #0E533B;
-    --shadow-sm: 0 1px 3px rgba(16, 35, 27, 0.07);
-    --shadow-md: 0 4px 12px rgba(16, 35, 27, 0.09);
-    --shadow-lg: 0 8px 24px rgba(16, 35, 27, 0.12);
+    --border: #C4DACD;
+    --border-focus: #047857;
+    --shadow-sm: 0 1px 3px rgba(15, 33, 25, 0.06);
+    --shadow-md: 0 4px 12px rgba(15, 33, 25, 0.08);
+    --shadow-lg: 0 8px 24px rgba(15, 33, 25, 0.11);
     /* RGB channels for Tailwind opacity modifiers */
-    --bg-primary-rgb: 246 245 240;
-    --bg-secondary-rgb: 236 235 228;
+    --bg-primary-rgb: 245 250 247;
+    --bg-secondary-rgb: 232 242 236;
     --bg-card-rgb: 255 255 255;
-    --bg-hover-rgb: 226 228 222;
+    --bg-hover-rgb: 220 236 227;
     --bg-input-rgb: 255 255 255;
-    --text-primary-rgb: 16 35 27;
-    --text-secondary-rgb: 52 71 63;
-    --text-muted-rgb: 74 94 85;
-    --accent-rgb: var(--personal-accent-rgb, 20 108 78);
-    --accent-hover-rgb: 14 83 59;
+    --text-primary-rgb: 15 33 25;
+    --text-secondary-rgb: 47 72 61;
+    --text-muted-rgb: 74 102 90;
+    --accent-rgb: var(--personal-accent-rgb, 5 150 105);
+    --accent-hover-rgb: 4 120 87;
     --warning-rgb: 180 83 9;
     --danger-rgb: 220 38 38;
     --info-rgb: 3 105 161;
-    --border-rgb: 201 209 203;
-    --border-focus-rgb: 14 83 59;
+    --border-rgb: 196 218 205;
+    --border-focus-rgb: 4 120 87;
 
     /* Semantic: task type colors — light adjustments */
     --type-epic: #6d28d9;
     --type-story: #0369a1;
-    --type-task: #146C4E;
+    --type-task: #059669;
 
     /* Semantic: priority colors — light adjustments */
     --prio-critical: #dc2626;
     --prio-high: #b45309;
     --prio-medium: #0369a1;
-    --prio-low: #146c4e;
-    --prio-none: #4a5e55;
+    --prio-low: #059669;
+    --prio-none: #4a665a;
 
     /* Semantic: status colors — light */
-    --success: #146C4E;
-    --success-rgb: 20 108 78;
+    --success: #059669;
+    --success-rgb: 5 150 105;
+  }
+
+  /* Zen Paper — Warm Japanese Washi Parchment + Earthy Matcha Olive */
+  [data-theme="zen-paper"] {
+    color-scheme: light;
+    --bg-primary: #F4ECE0;
+    --bg-secondary: #E9DFCE;
+    --bg-card: #FAF6EE;
+    --bg-hover: #DFD2BD;
+    --bg-input: #FDFBF6;
+    --text-primary: #2B231A;
+    --text-secondary: #4E4234;
+    --text-muted: #6E5F4E;
+    --palette-accent: #5C6F2E;
+    --accent-text: var(--personal-accent-text-light, #43531F);
+    --palette-accent-hover: #43531F;
+    --palette-on-accent: #FFFFFF;
+    --palette-accent-light: rgba(92, 111, 46, 0.13);
+    --warning: #B45309;
+    --on-warning: #FFFFFF;
+    --warning-text: #92400E;
+    --danger: #B9382C;
+    --info: #2F6E7E;
+    --border: #D2C3AB;
+    --border-focus: #43531F;
+    --shadow-sm: 0 1px 3px rgba(43, 35, 26, 0.07);
+    --shadow-md: 0 4px 12px rgba(43, 35, 26, 0.09);
+    --shadow-lg: 0 8px 24px rgba(43, 35, 26, 0.12);
+    --bg-primary-rgb: 244 236 224;
+    --bg-secondary-rgb: 233 223 206;
+    --bg-card-rgb: 250 246 238;
+    --bg-hover-rgb: 223 210 189;
+    --bg-input-rgb: 253 251 246;
+    --text-primary-rgb: 43 35 26;
+    --text-secondary-rgb: 78 66 52;
+    --text-muted-rgb: 110 95 78;
+    --accent-rgb: var(--personal-accent-rgb, 92 111 46);
+    --accent-hover-rgb: 67 83 31;
+    --warning-rgb: 180 83 9;
+    --danger-rgb: 185 56 44;
+    --info-rgb: 47 110 126;
+    --border-rgb: 210 195 171;
+    --border-focus-rgb: 67 83 31;
+    --type-epic: #7C4D8C;
+    --type-story: #2F6E7E;
+    --type-task: #5C6F2E;
+    --prio-critical: #B9382C;
+    --prio-high: #B45309;
+    --prio-medium: #2F6E7E;
+    --prio-low: #5C6F2E;
+    --prio-none: #6E5F4E;
+    --success: #5C6F2E;
+    --success-rgb: 92 111 46;
+  }
+
+  /* Catppuccin Latte — Warm Creamy Latte Surfaces + Signature Catppuccin Mauve */
+  [data-theme="catppuccin-latte"] {
+    color-scheme: light;
+    --bg-primary: #F5F0EC;
+    --bg-secondary: #EBE3DC;
+    --bg-card: #FFFDFB;
+    --bg-hover: #E1D6CC;
+    --bg-input: #FFFFFF;
+    --text-primary: #3A3248;
+    --text-secondary: #584E69;
+    --text-muted: #706682;
+    --palette-accent: #8839EF;
+    --accent-text: var(--personal-accent-text-light, #6D28D9);
+    --palette-accent-hover: #6D28D9;
+    --palette-on-accent: #FFFFFF;
+    --palette-accent-light: rgba(136, 57, 239, 0.12);
+    --warning: #C96408;
+    --on-warning: #FFFFFF;
+    --warning-text: #9A4A04;
+    --danger: #D20F39;
+    --info: #179299;
+    --border: #D9CCC2;
+    --border-focus: #6D28D9;
+    --shadow-sm: 0 1px 3px rgba(58, 50, 72, 0.07);
+    --shadow-md: 0 4px 12px rgba(58, 50, 72, 0.1);
+    --shadow-lg: 0 8px 24px rgba(58, 50, 72, 0.13);
+    --bg-primary-rgb: 245 240 236;
+    --bg-secondary-rgb: 235 227 220;
+    --bg-card-rgb: 255 253 251;
+    --bg-hover-rgb: 225 214 204;
+    --bg-input-rgb: 255 255 255;
+    --text-primary-rgb: 58 50 72;
+    --text-secondary-rgb: 88 78 105;
+    --text-muted-rgb: 112 102 130;
+    --accent-rgb: var(--personal-accent-rgb, 136 57 239);
+    --accent-hover-rgb: 109 40 217;
+    --warning-rgb: 201 100 8;
+    --danger-rgb: 210 15 57;
+    --info-rgb: 23 146 153;
+    --border-rgb: 217 204 194;
+    --border-focus-rgb: 109 40 217;
+    --type-epic: #8839EF;
+    --type-story: #EA76CB;
+    --type-task: #1E66F5;
+    --prio-critical: #D20F39;
+    --prio-high: #C96408;
+    --prio-medium: #8839EF;
+    --prio-low: #40A02B;
+    --prio-none: #706682;
+    --success: #40A02B;
+    --success-rgb: 64 160 43;
+  }
+
+  /* Nordic Frost — Crisp Arctic Glacier Snow-Blue + Fjord Cyan Accent */
+  [data-theme="nordic-frost"] {
+    color-scheme: light;
+    --bg-primary: #EBF3FA;
+    --bg-secondary: #DCE8F4;
+    --bg-card: #F7FBFF;
+    --bg-hover: #CEE0F0;
+    --bg-input: #FFFFFF;
+    --text-primary: #142334;
+    --text-secondary: #2B4159;
+    --text-muted: #46607B;
+    --palette-accent: #0284C7;
+    --accent-text: var(--personal-accent-text-light, #0369A1);
+    --palette-accent-hover: #0369A1;
+    --palette-on-accent: #FFFFFF;
+    --palette-accent-light: rgba(2, 132, 199, 0.12);
+    --warning: #B45309;
+    --on-warning: #FFFFFF;
+    --warning-text: #854D0E;
+    --danger: #C83E4D;
+    --info: #0284C7;
+    --border: #B6CDE3;
+    --border-focus: #0369A1;
+    --shadow-sm: 0 1px 3px rgba(20, 35, 52, 0.07);
+    --shadow-md: 0 4px 12px rgba(20, 35, 52, 0.09);
+    --shadow-lg: 0 8px 24px rgba(20, 35, 52, 0.12);
+    --bg-primary-rgb: 235 243 250;
+    --bg-secondary-rgb: 220 232 244;
+    --bg-card-rgb: 247 251 255;
+    --bg-hover-rgb: 206 224 240;
+    --bg-input-rgb: 255 255 255;
+    --text-primary-rgb: 20 35 52;
+    --text-secondary-rgb: 43 65 89;
+    --text-muted-rgb: 70 96 123;
+    --accent-rgb: var(--personal-accent-rgb, 2 132 199);
+    --accent-hover-rgb: 3 105 161;
+    --warning-rgb: 180 83 9;
+    --danger-rgb: 200 62 77;
+    --info-rgb: 2 132 199;
+    --border-rgb: 182 205 227;
+    --border-focus-rgb: 3 105 161;
+    --type-epic: #5B6BC0;
+    --type-story: #0284C7;
+    --type-task: #0EA5E9;
+    --prio-critical: #C83E4D;
+    --prio-high: #B45309;
+    --prio-medium: #0284C7;
+    --prio-low: #2F855A;
+    --prio-none: #46607B;
+    --success: #2F855A;
+    --success-rgb: 47 133 90;
+  }
+
+  /* Solarized Dawn — Warm parchment tones + deep slate ink for low-glare reading */
+  [data-theme="solarized-dawn"] {
+    color-scheme: light;
+    --bg-primary: #FDF6E3;
+    --bg-secondary: #EEE8D5;
+    --bg-card: #FFFDF6;
+    --bg-hover: #E5DEC9;
+    --bg-input: #FFFDF6;
+    --text-primary: #073642;
+    --text-secondary: #2B525C;
+    --text-muted: #4C6970;
+    --palette-accent: #2075C7;
+    --accent-text: var(--personal-accent-text-light, #14599B);
+    --palette-accent-hover: #14599B;
+    --palette-on-accent: #FFFFFF;
+    --palette-accent-light: rgba(32, 117, 199, 0.11);
+    --warning: #A56400;
+    --on-warning: #FFFFFF;
+    --warning-text: #7F4D00;
+    --danger: #C92A2A;
+    --info: #1B7B74;
+    --border: #D5CCB4;
+    --border-focus: #14599B;
+    --shadow-sm: 0 1px 3px rgba(7, 54, 66, 0.07);
+    --shadow-md: 0 4px 12px rgba(7, 54, 66, 0.1);
+    --shadow-lg: 0 8px 24px rgba(7, 54, 66, 0.13);
+    --bg-primary-rgb: 253 246 227;
+    --bg-secondary-rgb: 238 232 213;
+    --bg-card-rgb: 255 253 246;
+    --bg-hover-rgb: 229 222 201;
+    --bg-input-rgb: 255 253 246;
+    --text-primary-rgb: 7 54 66;
+    --text-secondary-rgb: 43 82 92;
+    --text-muted-rgb: 76 105 112;
+    --accent-rgb: var(--personal-accent-rgb, 32 117 199);
+    --accent-hover-rgb: 20 89 155;
+    --warning-rgb: 165 100 0;
+    --danger-rgb: 201 42 42;
+    --info-rgb: 27 123 116;
+    --border-rgb: 213 204 180;
+    --border-focus-rgb: 20 89 155;
+    --type-epic: #6C5CE7;
+    --type-story: #1B7B74;
+    --type-task: #2075C7;
+    --prio-critical: #C92A2A;
+    --prio-high: #A56400;
+    --prio-medium: #2075C7;
+    --prio-low: #587800;
+    --prio-none: #4C6970;
+    --success: #587800;
+    --success-rgb: 88 120 0;
   }
 
   /* Auto uses the system preference when no Home Assistant appearance is available. */
@@ -383,14 +771,14 @@
       --control-border: #ADADB3;
     }
 
-    :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
-      --text-muted: #34473F;
-      --text-muted-rgb: 52 71 63;
-      --border: #7A8B82;
-      --border-rgb: 122 139 130;
+    :is([data-theme="light"], [data-theme="zen-paper"], [data-theme="catppuccin-latte"], [data-theme="nordic-frost"], [data-theme="solarized-dawn"], [data-theme="auto"][data-ha-theme="light"]) {
+      --text-muted: #2B3934;
+      --text-muted-rgb: 43 57 52;
+      --border: #76847E;
+      --border-rgb: 118 132 126;
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
-      --palette-accent-light: rgba(20, 108, 78, 0.2);
+      --palette-accent-light: rgb(var(--accent-rgb) / 0.2);
     }
   }
 

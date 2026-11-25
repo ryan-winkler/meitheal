@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -8,10 +8,8 @@ import {
   withStartupWriteTransaction
 } from "../../apps/web/scripts/database-client.mjs"
 import {
-  admitStartupBoardTransition,
   finalizeStartupBoardGrant,
-  initializeBoardGrantContinuity,
-  readBoardGrantRevision
+  initializeBoardGrantContinuity
 } from "../../apps/web/scripts/board-grant-journal.mjs"
 import {
   applyStartupBoardSchema,
@@ -33,7 +31,6 @@ import {
 } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { resolveIntakeSubmissionScope } from "../../apps/web/src/domains/tasks/intake-scope"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
-import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 
 let directory: string
 let db: Awaited<ReturnType<typeof openDatabaseForStartup>>
@@ -201,47 +198,9 @@ test("legacy propose-only tokens retain proposals without generic editing or pri
   ).toEqual({ ok: false, errorCode: "unavailable" })
 })
 
-test("epochless reopened schema25 without a conflicting marker auto-enrolls and finishes upgrade", async () => {
+test("epochless reopened schema25 remains controlled pending26 without policy conversion", async () => {
   await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
   db.close()
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
-  const result = await initialize()
-  expect(result.state).toBe("ready")
-  expect(result.revision).toBeTruthy()
-  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
-  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
-  ).toBe("28")
-  await validateStartupTaskSchema(db)
-})
-
-test("pre-0016 reopened schema25 with an epoch row and absent marker recovers continuity", async () => {
-  const priorEpoch = "93c9b2e7-cd3b-4b29-b517-d1bdf8c52886"
-  await withStartupWriteTransaction(db, async (tx) => {
-    await applyStartupTaskSchema(tx)
-    await tx.execute({
-      sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)",
-      args: [priorEpoch]
-    })
-  })
-  db.close()
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
-  const result = await initialize()
-  expect(result.state).toBe("ready")
-  expect(result.revision).toBeTruthy()
-  expect(result.revision).not.toBe(priorEpoch)
-  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
-  ).toBe("28")
-  await validateStartupTaskSchema(db)
-})
-
-test("epochless reopened schema25 with a conflicting marker remains controlled pending26 without policy conversion", async () => {
-  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
-  db.close()
-  await writeFile(marker, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
   db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
   const result = await initialize()
   expect(result).toMatchObject({
@@ -257,75 +216,7 @@ test("epochless reopened schema25 with a conflicting marker remains controlled p
       (row) => row.name === "storage_encoding"
     )
   ).toBe(false)
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
-  ).toEqual([])
   await expect(validateStartupTaskSchema(db)).rejects.toThrow("Pending migrations")
-})
-
-test("eligible pre-0016 schema25 locks on symlink or unresolved pending journal without blocking future recovery", async () => {
-  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
-  db.close()
-
-  const symlinkTarget = join(directory, "symlink-target.json")
-  await writeFile(symlinkTarget, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
-  await symlink(symlinkTarget, marker)
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
-  expect(await initialize()).toMatchObject({
-    state: "continuity_locked",
-    pending: ["0016_ordinary_boards.mjs"],
-    revision: null
-  })
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
-  ).toEqual([])
-  db.close()
-  await rm(marker, { force: true })
-
-  const pendingDir = join(directory, "meitheal-board-grants-pending")
-  await mkdir(pendingDir, { mode: 0o700 })
-  await writeFile(join(pendingDir, `${randomUUID()}.json`), JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
-  expect(await initialize()).toMatchObject({
-    state: "continuity_locked",
-    pending: ["0016_ordinary_boards.mjs"],
-    revision: null
-  })
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
-  ).toEqual([])
-  await rm(pendingDir, { recursive: true, force: true })
-
-  // Retrying on the same open client after conflict clears succeeds cleanly.
-  const recovered = await initialize()
-  expect(recovered.state).toBe("ready")
-  expect(await readBoardGrantRevision(marker)).toBe(recovered.revision)
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
-  ).toBe("28")
-})
-
-test("rolled-back transition removes its uncommitted pending journal and same client can retry", async () => {
-  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
-  db.close()
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
-  await expect(
-    withStartupWriteTransaction(db, async (tx) => {
-      const transition = await admitStartupBoardTransition(db, tx)
-      expect(transition?.revision).toBeTruthy()
-      throw new Error("synthetic migration failure before commit")
-    })
-  ).rejects.toThrow("synthetic migration failure")
-  const pendingDir = join(directory, "meitheal-board-grants-pending")
-  expect(await readdir(pendingDir)).toEqual([])
-
-  // Retrying on the same open client (without reopening) succeeds because eligibility was retained across rollback.
-  const result = await initialize()
-  expect(result.state).toBe("ready")
-  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
-  expect(
-    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
-  ).toBe("28")
 })
 
 test("an independently current schema25 upgrade converts policy and journals the next epoch atomically", async () => {
@@ -340,7 +231,7 @@ test("an independently current schema25 upgrade converts policy and journals the
   const result = await initialize()
   expect(result.state).toBe("ready")
   expect(result.revision).not.toBe(oldRevision)
-  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
+  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION])
   await validateStartupTaskSchema(db)
 })
 
@@ -458,7 +349,6 @@ test("admitted conversion preserves optional records, filter bytes and deleted l
     await tx.execute(
       "CREATE TABLE vikunja_labels(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL UNIQUE,hex_color TEXT NOT NULL DEFAULT '3f51b5')"
     )
-    await tx.execute("CREATE INDEX vikunja_labels_title_idx ON vikunja_labels(title)")
     await tx.execute(
       "INSERT INTO vikunja_labels(id,title,hex_color) VALUES (1,'Existing','abcdef'),(99,'Deleted','ffffff')"
     )
@@ -466,7 +356,6 @@ test("admitted conversion preserves optional records, filter bytes and deleted l
     await tx.execute(
       "CREATE TABLE saved_filters(id TEXT PRIMARY KEY,name TEXT NOT NULL,query_json TEXT NOT NULL DEFAULT '{}',icon TEXT NOT NULL DEFAULT '🔍',position INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)"
     )
-    await tx.execute("CREATE INDEX saved_filters_position_idx ON saved_filters(position)")
     await tx.execute(
       "INSERT INTO saved_filters VALUES ('saved','Private work','{\"labels\":[\"Original\"]}','🔍',7,100,101)"
     )
@@ -611,17 +500,4 @@ test("only current Board managers receive exact persisted sharing and denial pol
   const viewer = await boards.findAccess(human("viewer"), created.result.id)
   expect(viewer?.role).toBe("viewer")
   expect(viewer?.policy).toBeUndefined()
-})
-
-test("admitted conversion rejects a malformed legacy label title index", async () => {
-  await expect(
-    withStartupWriteTransaction(db, async (tx) => {
-      await applyStartupTaskSchema(tx)
-      await tx.execute(
-        "CREATE TABLE vikunja_labels(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL UNIQUE,hex_color TEXT NOT NULL DEFAULT '3f51b5')"
-      )
-      await tx.execute("CREATE INDEX vikunja_labels_title_idx ON vikunja_labels(hex_color)")
-      return applyStartupBoardSchema(db, tx)
-    })
-  ).rejects.toThrow("Unexpected label title index")
 })

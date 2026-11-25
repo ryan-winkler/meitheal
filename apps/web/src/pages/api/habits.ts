@@ -11,17 +11,18 @@ import { isValidTimezone } from "../../lib/date"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 import { logApiError } from "../../lib/api-logger"
 import { sanitize } from "../../lib/sanitize"
+import { isValidRoutineCadence } from "@domains/tasks/recurrence"
 import { readStoredHouseholdTimezone } from "../../lib/task-queries"
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 
 /**
- * Habits API — Routine Template Integration
+ * Routines API (also served at /api/habits for backwards compatibility)
  *
- * Routines (formerly "habits") are task templates with is_routine=1.
- * Completing a routine creates/completes a real task linked via source_template_id.
+ * Routines are task templates with is_routine=1.
+ * Each cadence period spawns a real task linked via source_template_id.
  *
- * GET  /api/habits — Get all routine templates with stats
- * POST /api/habits — Create, complete, update, or delete routines
+ * GET  /api/routines (and /api/habits) — Get all routine templates with stats
+ * POST /api/routines (and /api/habits) — Create, complete, update, or delete routines
  *
  * @domain domain-tasks (routines bounded context)
  * @kcs Routines are NOT isolated — they produce real tasks visible
@@ -29,7 +30,6 @@ import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-const VALID_ROUTINE_CADENCES = new Set(["daily", "weekly"])
 const ALLOWED_TEMPLATE_PATCH_KEYS = new Set([
   "title",
   "description",
@@ -56,7 +56,7 @@ async function resolveRequestTimezone(locals: App.Locals | undefined): Promise<s
 
 export const GET: APIRoute = withBoardScope({ resource: "routine", action: "read" }, async ({ url, locals }, scope) => {
   if (!(await isFeatureEnabled("habits"))) {
-    return apiError("Habit tracker is disabled in settings", 404)
+    return apiError("Routines are disabled in settings", 404)
   }
   try {
     await ensureSchema()
@@ -68,17 +68,21 @@ export const GET: APIRoute = withBoardScope({ resource: "routine", action: "read
     const projectId = url.searchParams.get("project_id")
     if (projectId && !await new HierarchyRepository(client, scope).findProjectById(projectId)) return apiError("Project not found", 404)
     const timezone = await resolveRequestTimezone(locals)
-    const habits = await new TemplateRepository(client, scope).getRoutinesWithStats(
+    const repo = new TemplateRepository(client, scope)
+    if (scopePermits(scope, { resource: "task", action: "create" })) {
+      await repo.ensureDueRoutineTasks(timezone).catch(() => 0)
+    }
+    const routines = await repo.getRoutinesWithStats(
       areaId || undefined,
       projectId || undefined,
       timezone,
     )
-    return apiJson({ habits })
+    return apiJson({ routines, habits: routines })
   } catch (error) {
     const scopeFailure = boardScopeErrorResponse(error)
     if (scopeFailure) return scopeFailure
     logApiError("habits", "GET error", error)
-    return apiError("Failed to get habits")
+    return apiError("Failed to get routines")
   }
 })
 
@@ -86,7 +90,7 @@ const routineBaseOperation = { resource: "routine", action: "read" } as const
 
 const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, locals }, scope) => {
   if (!(await isFeatureEnabled("habits"))) {
-    return apiError("Habit tracker is disabled in settings", 404)
+    return apiError("Routines are disabled in settings", 404)
   }
   try {
     await ensureSchema()
@@ -130,10 +134,10 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
         if (!placement.ok) return apiError(placement.message, 400)
 
         const rawCadence = body.cadence ?? body.frequency
-        if (rawCadence !== undefined && (typeof rawCadence !== "string" || !VALID_ROUTINE_CADENCES.has(rawCadence))) {
-          return apiError("cadence must be daily or weekly", 400)
+        if (rawCadence !== undefined && !isValidRoutineCadence(rawCadence)) {
+          return apiError("cadence must be a supported cadence or RFC 5545 recurrence rule", 400)
         }
-        const cadence = rawCadence === "weekly" ? "weekly" : "daily"
+        const cadence = typeof rawCadence === "string" && rawCadence.trim() ? rawCadence.trim() : "daily"
         let icon = "check"
         if (body.icon !== undefined && body.icon !== null && !(typeof body.icon === "string" && !body.icon.trim())) {
           const resolvedIcon = resolveRoutineIcon(body.icon)
@@ -177,7 +181,13 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
         })
         if (!inserted) return apiError("Choose an existing Area", 400)
 
-        return apiJson({ id, name, icon, cadence, position }, 201)
+        let spawnedTaskId: string | null = null
+        if (scopePermits(scope, { resource: "task", action: "create" })) {
+          const spawned = await repo.instantiateRoutineTask(id, timezone).catch(() => null)
+          if (spawned?.taskId) spawnedTaskId = spawned.taskId
+        }
+
+        return apiJson({ id, name, icon, cadence, position, taskId: spawnedTaskId }, 201)
       }
 
       case "complete": {
@@ -245,10 +255,10 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
         }
         const rawCadence = body.cadence !== undefined ? body.cadence : body.frequency
         if (rawCadence !== undefined) {
-          if (typeof rawCadence !== "string" || !VALID_ROUTINE_CADENCES.has(rawCadence)) {
-            return apiError("cadence must be daily or weekly", 400)
+          if (typeof rawCadence !== "string" || !isValidRoutineCadence(rawCadence.trim())) {
+            return apiError("cadence must be daily, weekly, or a valid RRULE", 400)
           }
-          updates.cadence = rawCadence
+          updates.cadence = rawCadence.trim()
         }
 
         // Rebuild template JSON with full validation for whitelisted template fields
@@ -355,8 +365,8 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
   } catch (error) {
     const scopeFailure = boardScopeErrorResponse(error)
     if (scopeFailure) return scopeFailure
-    logApiError("habits", "POST error", error)
-    return apiError("Failed to manage habit")
+    logApiError("routines", "POST error", error)
+    return apiError("Failed to manage routine")
   }
 }
 

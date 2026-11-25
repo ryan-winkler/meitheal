@@ -38,7 +38,9 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     expect((await page.goto(appUrl + "/planning#spaces"))?.ok()).toBe(true)
     await expect(page).toHaveURL(appUrl + "/boards")
     const board = page.locator('[data-board-card="household"]')
-    const boardLink = board.getByRole("link", { name: "Household", exact: true }).first()
+    // The card identity link also names the ticket prefix and role.
+    const boardLink = board.locator("a.board-card-identity")
+    await expect(boardLink.locator(".board-name")).toHaveText("Household")
     await expect(boardLink).toBeVisible()
     await boardLink.press("Enter")
     await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household")

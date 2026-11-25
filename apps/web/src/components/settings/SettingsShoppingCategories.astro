@@ -1,0 +1,175 @@
+---
+import Icon from "../ui/Icon.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+---
+
+<SettingsPanelCard
+  title="Shopping Categories"
+  subtitle="Customize aisles and Grocy-compatible product groups used in Shopping List tickets. Add, edit, or upload a CSV, JSON, or text list."
+>
+  <div class="shopping-cat-actions" slot="actions">
+    <label class="btn btn-secondary btn-sm shopping-cat-upload-label">
+      <Icon name="upload" size={14} sprite={true} />
+      <span>Upload file</span>
+      <input
+        type="file"
+        id="shopping-cat-file-input"
+        accept=".csv,.txt,.json,text/csv,text/plain,application/json"
+        class="sr-only"
+      />
+    </label>
+    <button type="button" class="btn btn-ghost btn-sm" id="shopping-cat-reset-btn">
+      <Icon name="rotate" size={14} sprite={true} />
+      <span>Reset defaults</span>
+    </button>
+  </div>
+
+  <div class="settings-stack" id="shopping-categories-editor">
+    <form id="shopping-cat-add-form" class="shopping-cat-add-row">
+      <input
+        type="text"
+        id="shopping-cat-new-input"
+        class="form-input flex-1"
+        maxlength="48"
+        placeholder="Add category (e.g. Spices, Pet Food, Deli)…"
+        aria-label="New shopping category name"
+      />
+      <button type="submit" class="btn btn-primary btn-sm">
+        <Icon name="plus" size={14} sprite={true} />
+        <span>Add</span>
+      </button>
+    </form>
+
+    <div id="shopping-cat-list" class="shopping-cat-list" role="list" aria-label="Configured shopping categories"></div>
+
+    <details class="shopping-cat-import-details" id="shopping-cat-import-details">
+      <summary class="shopping-cat-import-summary">
+        <Icon name="file-import" size={15} sprite={true} />
+        <span>Paste categories or Grocy product groups</span>
+      </summary>
+      <div class="shopping-cat-import-body">
+        <p class="settings-hint">
+          Paste one category per line, comma-separated names, CSV with a <code>name</code> column, or a Grocy <code>/api/objects/product_groups</code> JSON export.
+        </p>
+        <textarea
+          id="shopping-cat-paste-input"
+          class="form-input"
+          rows="4"
+          placeholder="Produce&#10;Dairy&#10;Meat & Fish&#10;Bakery&#10;Pantry"
+          aria-label="Paste shopping categories"
+        ></textarea>
+        <div class="shopping-cat-import-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="shopping-cat-merge-btn">
+            <Icon name="plus" size={14} sprite={true} />
+            <span>Merge into list</span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="shopping-cat-replace-btn">
+            <span>Replace all</span>
+          </button>
+        </div>
+      </div>
+    </details>
+
+    <p id="shopping-cat-status" class="settings-hint" role="status" aria-live="polite"></p>
+  </div>
+</SettingsPanelCard>
+
+<style is:inline>
+  .shopping-cat-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .shopping-cat-upload-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .shopping-cat-add-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .shopping-cat-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .shopping-cat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 10px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .shopping-cat-chip__label {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shopping-cat-chip__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .shopping-cat-chip__remove:hover {
+    background: color-mix(in srgb, var(--danger, #ef4444) 16%, transparent);
+    color: var(--danger, #ef4444);
+  }
+
+  .shopping-cat-import-details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--bg-secondary) 55%, var(--bg-card));
+    padding: 8px 12px;
+  }
+
+  .shopping-cat-import-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .shopping-cat-import-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .shopping-cat-import-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+</style>

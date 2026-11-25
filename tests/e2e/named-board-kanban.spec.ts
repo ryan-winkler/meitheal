@@ -10,7 +10,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable built app")
 
 test("named Boards use the common Kanban with paged capture, version conflicts, child restrictions and private inspector revocation", async () => {
-  test.setTimeout(150_000)
+  test.setTimeout(90_000)
   const work = await mkdtemp(join(tmpdir(), "named-kanban-"))
   const fixtureProcess = startCoreFixture(work, false, undefined, undefined, work)
   fixtureProcess.stdout?.resume()

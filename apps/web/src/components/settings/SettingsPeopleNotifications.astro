@@ -24,6 +24,105 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 >
   <SettingsSectionIntro section={peopleNotificationsSection} />
   <div class="settings-grid">
+    <!-- Personal Browser Notification Preferences (prominent above-the-fold card) -->
+    <div style="grid-column: 1 / -1;">
+      <SettingsPanelCard
+        id="user-notif-prefs-card"
+        icon="bell"
+        tone="accent"
+        title="Your Notification Preferences (This Browser)"
+        subtitle="Control in-app toasts, desktop alerts, display duration, and sound locally on this device."
+      >
+        <div class="settings-stack">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 20px;">
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="user-notif-toasts-toggle" aria-labelledby="user-notif-toasts-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="user-notif-toasts-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="message-circle" size={14} sprite /> Show in-app notifications
+                </div>
+                <div class="settings-hint--sm">
+                  Mute routine confirmations while keeping errors, Undo actions, and persistent notices visible.
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="user-notif-browser-toggle" aria-labelledby="user-notif-browser-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="user-notif-browser-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="bell" size={14} sprite /> Browser desktop alerts
+                </div>
+                <div class="settings-hint--sm">
+                  Allow due-date and overdue reminders through this browser&apos;s notification center.
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="user-notif-sound-toggle" aria-labelledby="user-notif-sound-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="user-notif-sound-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="volume" size={14} sprite /> Play notification chime
+                </div>
+                <div class="settings-hint--sm">
+                  Play a soft local-first audio chime when new notifications appear.
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="user-notif-swipe-toggle" aria-labelledby="user-notif-swipe-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="user-notif-swipe-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="arrows-left-right" size={14} sprite /> Swipe to dismiss toasts
+                </div>
+                <div class="settings-hint--sm">
+                  Dismiss in-app notifications by swiping them away on touch or trackpad devices.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-divider" style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px;">
+            <div style="min-width: 220px;">
+              <label for="user-notif-duration-select" class="settings-label">
+                Notification display duration
+              </label>
+              <select id="user-notif-duration-select" class="form-select settings-input-narrow">
+                <option value="3000">Brief (3 seconds)</option>
+                <option value="5000" selected>Standard (5 seconds)</option>
+                <option value="8000">Extended (8 seconds)</option>
+                <option value="0">Stay until dismissed</option>
+              </select>
+            </div>
+
+            <SettingsActionRow>
+              <button type="button" id="user-notif-test-btn" class="btn btn-secondary settings-text-sm">
+                <Icon name="bell" size={14} sprite /> Test notification
+              </button>
+              <button type="button" id="user-notif-reset-btn" class="btn btn-ghost settings-text-sm">
+                Reset defaults
+              </button>
+            </SettingsActionRow>
+          </div>
+          <p id="user-notif-status" class="settings-hint" role="status" aria-live="polite"></p>
+        </div>
+      </SettingsPanelCard>
+    </div>
+
     <!-- Users & Assignment -->
     <SettingsPanelCard
       title={t("settings.people_assignment_title", locale)}

@@ -68,7 +68,7 @@ import Icon from "../ui/Icon.astro"
 </div>
 </div>
 
-<style>
+<style is:inline>
   .pomodoro-hidden {
     display: none !important;
   }
@@ -278,8 +278,8 @@ import Icon from "../ui/Icon.astro"
   }
 
   /* HA ingress: adjust positioning */
-  :global(body.ha-ingress) .pomodoro-pill,
-  :global(body.ha-ingress) .pomodoro-panel {
+  body.ha-ingress .pomodoro-pill,
+  body.ha-ingress .pomodoro-panel {
     bottom: 16px;
     right: 16px;
   }
@@ -287,8 +287,8 @@ import Icon from "../ui/Icon.astro"
   @media (max-width: 768px) {
     .pomodoro-pill,
     .pomodoro-panel,
-    :global(body.ha-ingress) .pomodoro-pill,
-    :global(body.ha-ingress) .pomodoro-panel {
+    body.ha-ingress .pomodoro-pill,
+    body.ha-ingress .pomodoro-panel {
       bottom: var(--floating-action-bottom);
       right: calc(12px + env(safe-area-inset-right, 0px));
     }

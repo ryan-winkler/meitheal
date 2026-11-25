@@ -1,7 +1,8 @@
 /**
  * Lightweight native vertical list drag-reorder helper.
  * Replaces external sortablejs (~36 KB) for simple handle-based vertical lists
- * while preserving accessibility, reduced-motion respect, and AbortSignal cleanup.
+ * while preserving pointer/touch reordering, accessibility, reduced-motion respect,
+ * and AbortSignal cleanup.
  */
 
 export interface VerticalListDragOptions {
@@ -44,34 +45,32 @@ export function attachVerticalListDragReorder(
 
   const reorderToY = (clientY: number) => {
     if (!dragged) return
-    const siblings = items()
-    const draggedIdx = siblings.indexOf(dragged)
-    const draggedHeight = dragged.getBoundingClientRect().height || 36
-    for (let targetIdx = 0; targetIdx < siblings.length; targetIdx++) {
-      if (targetIdx === draggedIdx) continue
-      const target = siblings[targetIdx]!
-      if (canSwap && !canSwap(dragged, target)) continue
+    const siblings = items().filter(el => el !== dragged)
+    for (const target of siblings) {
       const box = target.getBoundingClientRect()
-      const threshold = Math.min(box.height, draggedHeight, 56) / 2
-      if (draggedIdx < targetIdx && clientY > box.top + threshold) {
-        if (moveItem) moveItem(dragged, target, "after")
-        else list.insertBefore(dragged, target.nextElementSibling)
-        break
+      if (clientY < box.top || clientY > box.bottom) continue
+      if (canSwap && !canSwap(dragged, target)) return
+      const direction: "before" | "after" = clientY < box.top + box.height / 2 ? "before" : "after"
+      if (moveItem) {
+        moveItem(dragged, target, direction)
+      } else {
+        list.insertBefore(dragged, direction === "before" ? target : target.nextElementSibling)
       }
-      if (draggedIdx > targetIdx && clientY < box.bottom - threshold) {
-        if (moveItem) moveItem(dragged, target, "before")
-        else list.insertBefore(dragged, target)
-        break
-      }
+      return
     }
   }
 
-  const startDrag = (target: EventTarget | null, mode: "pointer" | "touch", pointerId: number | null): boolean => {
+  const startDrag = (
+    target: EventTarget | null,
+    mode: "pointer" | "touch",
+    pointerId: number | null,
+  ): boolean => {
     if (dragged) return false
     const el = target instanceof Element ? target : null
     const grip = el?.closest<HTMLElement>(handle)
     const row = grip?.closest<HTMLElement>(itemSelector)
     if (!grip || !row || row.parentElement !== list) return false
+    grip.style.touchAction = "none"
     dragged = row
     oldIndex = items().indexOf(row)
     activeMode = mode
@@ -81,7 +80,7 @@ export function attachVerticalListDragReorder(
     return true
   }
 
-  const finishDrag = () => {
+  const finishDrag = (cancelled = false) => {
     if (!dragged) return
     const moved = dragged
     const startIdx = oldIndex
@@ -90,6 +89,12 @@ export function attachVerticalListDragReorder(
     activeMode = null
     activePointerId = null
     moved.classList.remove(ghostClass)
+    if (cancelled && startIdx >= 0) {
+      const rest = items().filter(row => row !== moved)
+      list.insertBefore(moved, rest[startIdx] ?? null)
+      onEnd?.({ item: moved, oldIndex: startIdx, newIndex: startIdx })
+      return
+    }
     const newIndex = items().indexOf(moved)
     onEnd?.({ item: moved, oldIndex: startIdx, newIndex })
   }
@@ -127,19 +132,25 @@ export function attachVerticalListDragReorder(
     if (touch) reorderToY(touch.clientY)
   }, { passive: false, signal })
 
-  const endPointer = (event: PointerEvent) => {
+  window.addEventListener("pointerup", event => {
     if (!dragged || activeMode !== "pointer" || event.pointerId !== activePointerId) return
-    finishDrag()
-  }
-  const endTouch = () => {
-    if (!dragged || activeMode !== "touch") return
-    finishDrag()
-  }
+    finishDrag(false)
+  }, { signal })
 
-  window.addEventListener("pointerup", endPointer, { signal })
-  window.addEventListener("pointercancel", endPointer, { signal })
-  window.addEventListener("touchend", endTouch, { signal })
-  window.addEventListener("touchcancel", endTouch, { signal })
+  window.addEventListener("pointercancel", event => {
+    if (!dragged || activeMode !== "pointer" || event.pointerId !== activePointerId) return
+    finishDrag(true)
+  }, { signal })
+
+  window.addEventListener("touchend", () => {
+    if (!dragged || activeMode !== "touch") return
+    finishDrag(false)
+  }, { signal })
+
+  window.addEventListener("touchcancel", () => {
+    if (!dragged || activeMode !== "touch") return
+    finishDrag(true)
+  }, { signal })
 
   signal.addEventListener("abort", () => {
     if (dragged) dragged.classList.remove(ghostClass)

@@ -48,9 +48,9 @@ let CACHES = buildCacheNames();
 
 /** Eviction limits per cache bucket, keyed by bucket so they follow version changes. */
 const EVICTION_POLICY = {
-  static: { maxEntries: 100, maxAgeMs: 7  * 24 * 60 * 60 * 1000 },
-  api:    { maxEntries: 50,  maxAgeMs: 1  * 60 * 60 * 1000 },
-  nav:    { maxEntries: 20,  maxAgeMs: 24 * 60 * 60 * 1000 },
+  static: { maxEntries: 120, maxAgeMs: 14 * 24 * 60 * 60 * 1000 },
+  api:    { maxEntries: 60,  maxAgeMs: 24 * 60 * 60 * 1000 },
+  nav:    { maxEntries: 25,  maxAgeMs: 72 * 60 * 60 * 1000 },
   // precache: no eviction policy — cleaned entirely on version bump
 };
 
@@ -64,6 +64,7 @@ const PRECACHE_PATHS = [
   "/offline.html",
   "/manifest.webmanifest",
   "/icon-192.png",
+  "/apple-touch-icon.png",
 ];
 
 /**
@@ -80,9 +81,21 @@ function hasNoStore(response) {
   );
 }
 
+/** Strictly allow only same-origin 200 OK non-redirected responses into Cache Storage (never 401/403/5xx). */
+function isCacheableResponse(response) {
+  return Boolean(
+    response &&
+    response.ok &&
+    response.status === 200 &&
+    !response.redirected &&
+    response.type === "basic" &&
+    !hasNoStore(response)
+  );
+}
+
 async function matchCacheable(request, cacheName) {
   const response = await caches.match(request, { cacheName });
-  return response && !hasNoStore(response) ? response : undefined;
+  return response && isCacheableResponse(response) ? response : undefined;
 }
 
 // --- Cache Eviction ---
@@ -179,7 +192,7 @@ self.addEventListener("install", (event) => {
             try {
               const request = new Request(url, { redirect: "error" });
               const response = await fetch(request);
-              if (response.ok && !hasNoStore(response)) await cache.put(request, response);
+              if (isCacheableResponse(response)) await cache.put(request, response);
               else await response.body?.cancel();
             } catch {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
@@ -354,7 +367,7 @@ self.addEventListener("fetch", (event) => {
     return
   }
   if (privatePath || isDevModuleRequest(routePath, url.searchParams) ||
-      /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|plugins|webserver|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+      /^\/api\/(?:auth|hassio|health|settings|ha\/connection|feedback|agent-tokens|plugins|webserver|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return
@@ -398,7 +411,7 @@ async function cacheFirst(request) {
 
   try {
     const response = await fetch(request);
-    if (response.ok && !hasNoStore(response)) {
+    if (isCacheableResponse(response)) {
       const cache = await caches.open(CACHES.static);
       cache.put(request, response.clone());
     }
@@ -415,7 +428,7 @@ async function cacheFirst(request) {
 async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
-    if (response.ok && !hasNoStore(response)) {
+    if (isCacheableResponse(response)) {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
@@ -440,7 +453,7 @@ function offlineApiResponse(headers = {}) {
 async function navigationHandler(request) {
   try {
     const response = await fetch(request);
-    if (response.ok && !hasNoStore(response)) {
+    if (isCacheableResponse(response)) {
       const cache = await caches.open(CACHES.nav);
       cache.put(request, response.clone());
     }

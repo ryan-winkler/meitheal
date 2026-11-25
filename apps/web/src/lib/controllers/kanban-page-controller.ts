@@ -47,6 +47,11 @@ function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): vo
   }
 }
 
+let kanbanMutationEpoch = 0
+export function bumpKanbanMutationEpoch(): number {
+  return ++kanbanMutationEpoch
+}
+
 export function initKanbanPage(signal: AbortSignal): void {
   const shell = document.getElementById("kanban-shell")
   const initialBoard = shell?.querySelector<HTMLElement>("#kanban-board")
@@ -114,7 +119,8 @@ export function initKanbanPage(signal: AbortSignal): void {
 
   function queueMoveRefresh(focus?: KanbanRefreshFocus) {
     if (signal.aborted || (!focus && queuedBackgroundRead?.focus?.taskId)) return
-    queueBackgroundRead({ ...focus, afterSave: "lane-move" })
+    // Silent background reconciliation: optimistic DOM is already settled with zero jarring loading flash.
+    queueBackgroundRead({ ...focus, afterSave: "lane-move" }, true)
   }
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
@@ -136,8 +142,11 @@ export function initKanbanPage(signal: AbortSignal): void {
     document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
     document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
-    board.setAttribute("aria-busy", "true")
-    if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    const loadEpoch = kanbanMutationEpoch
+    if (!dataOnly) {
+      board.setAttribute("aria-busy", "true")
+      renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    }
 
     try {
       const requestUrl = new URL(url)
@@ -154,7 +163,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
       if (request.signal.aborted || signal.aborted) return
-      if (dataOnly && location.href !== origin) {
+      if (dataOnly && (location.href !== origin || loadEpoch !== kanbanMutationEpoch)) {
         renderStatus("")
         return
       }
@@ -321,9 +330,24 @@ export function initKanbanPage(signal: AbortSignal): void {
   }
   scrollLeftBtn?.addEventListener("click", () => scrollStep(-1), { signal })
   scrollRightBtn?.addEventListener("click", () => scrollStep(1), { signal })
-  window.addEventListener("resize", syncHorizontalScrollState, { passive: true, signal })
-  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(syncHorizontalScrollState) : null
+  let scrollSyncRaf = 0
+  const scheduleHorizontalScrollSync = () => {
+    if (scrollSyncRaf !== 0) return
+    scrollSyncRaf = requestAnimationFrame(() => {
+      scrollSyncRaf = 0
+      if (!signal.aborted) syncHorizontalScrollState()
+    })
+  }
+  window.addEventListener("resize", scheduleHorizontalScrollSync, { passive: true, signal })
+  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleHorizontalScrollSync) : null
   if (scrollWrap) resizeObserver?.observe(scrollWrap)
+  signal.addEventListener("abort", () => {
+    if (scrollSyncRaf !== 0) {
+      cancelAnimationFrame(scrollSyncRaf)
+      scrollSyncRaf = 0
+    }
+    resizeObserver?.disconnect()
+  }, { once: true })
 
   const toolsToggle = document.getElementById("kanban-tools-toggle")
   toolsToggle?.addEventListener("click", () => {

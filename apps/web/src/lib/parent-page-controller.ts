@@ -69,8 +69,9 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     updateActiveTab(sectionId)
 
     if (updateHash) {
+      const onTicketOverlay = /\/(?:tickets|task)\/[^/]+/.test(window.location.pathname)
       const currentHash = window.location.hash.replace("#", "")
-      if (currentHash !== sectionId) {
+      if (!onTicketOverlay && currentHash !== sectionId) {
         history.pushState({ section: sectionId, shell: config.shellId }, "", `#${sectionId}`)
       }
     }

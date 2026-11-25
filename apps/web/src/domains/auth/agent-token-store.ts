@@ -238,6 +238,45 @@ export async function updateAgentTokenLastUsed(id: string): Promise<void> {
   })
 }
 
+/**
+ * Extend or clear the expiry of a non-revoked token without changing its secret.
+ * Works on expired tokens too so admins can immediately restore an integration without re-pasting.
+ */
+export async function renewAgentToken(
+  id: string,
+  expiresAt: string | null,
+): Promise<AgentTokenRecord | null> {
+  const db = getPersistenceClient()
+  const result = await db.execute({
+    sql: `UPDATE agent_tokens SET expires_at = ? WHERE id = ? AND revoked = 0`,
+    args: [expiresAt, id],
+  })
+  if ((result.rowsAffected ?? 0) === 0) return null
+  return getAgentTokenById(id)
+}
+
+/**
+ * Rotate a non-revoked token's secret hash and prefix in place, preserving its ID,
+ * scopes, assignee, and all Board access grants.
+ */
+export async function rotateAgentToken(
+  id: string,
+  input: { tokenHash: string; tokenPrefix: string; expiresAt?: string | null },
+): Promise<AgentTokenRecord | null> {
+  const db = getPersistenceClient()
+  const setExpiry = input.expiresAt !== undefined
+  const result = await db.execute({
+    sql: setExpiry
+      ? `UPDATE agent_tokens SET token_hash = ?, token_prefix = ?, expires_at = ? WHERE id = ? AND revoked = 0`
+      : `UPDATE agent_tokens SET token_hash = ?, token_prefix = ? WHERE id = ? AND revoked = 0`,
+    args: setExpiry
+      ? [input.tokenHash, input.tokenPrefix, input.expiresAt ?? null, id]
+      : [input.tokenHash, input.tokenPrefix, id],
+  })
+  if ((result.rowsAffected ?? 0) === 0) return null
+  return getAgentTokenById(id)
+}
+
 // ── Row Mapping ──────────────────────────────────────────────────────────────
 
 function rowToRecord(row: Record<string, unknown>): AgentTokenRecord {

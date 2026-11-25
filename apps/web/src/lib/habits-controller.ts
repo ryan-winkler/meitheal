@@ -6,6 +6,10 @@ import { safeIngressHref } from "@lib/ingress-navigation"
 import { createClientLogger } from "@lib/client-logger"
 import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { initHabitsShellNav } from "@lib/controllers/habits-shell-nav"
+import { CUSTOM_RECURRENCE_SENTINEL, enhanceRecurrenceSelect } from "@lib/recurrence-picker"
+import { applyTimeToRRule, extractTimeFromRRule } from "@domains/tasks/recurrence"
+import { enhanceDescriptionEditor } from "@lib/task-description-editor"
+import { initEntityFormLayout } from "@lib/task-detail-layout-controller"
 import {
   renderHabits,
   updateStats,
@@ -14,7 +18,7 @@ import {
   type HabitChecklistItem,
 } from "@lib/controllers/habits-card-renderer"
 
-const log = createClientLogger("habits-shell")
+const log = createClientLogger("routines-shell")
 let habits: HabitData[] = []
 
 // ───── Data Parsing ─────
@@ -77,16 +81,13 @@ function normalizeHabitData(raw: unknown): HabitData | null {
   const record = raw as Record<string, unknown>
   const templatePayload = parseTemplatePayload(record.template_json)
   const topLevelChecklists = normalizeChecklistItems(record.checklists)
-  const cadenceValue =
-    record.cadence === "weekly" || record.frequency === "weekly"
-      ? "weekly"
-      : "daily"
+  const rawCadence = String(record.cadence ?? record.frequency ?? "FREQ=DAILY").trim() || "FREQ=DAILY"
 
   return {
     id: String(record.id ?? ""),
     name: String(record.name ?? "Untitled routine").trim() || "Untitled routine",
     icon: String(record.icon ?? "check").trim() || "check",
-    cadence: cadenceValue,
+    cadence: rawCadence,
     todayCompleted: Boolean(record.todayCompleted),
     todayTaskId:
       record.todayTaskId === null || record.todayTaskId === undefined
@@ -113,14 +114,15 @@ function parseBootstrapHabits(): HabitData[] {
   if (!script?.textContent) return []
 
   try {
-    const data = JSON.parse(script.textContent) as { habits?: unknown[] }
-    if (!Array.isArray(data.habits)) return []
+    const data = JSON.parse(script.textContent) as { routines?: unknown[]; habits?: unknown[] }
+    const list = Array.isArray(data.routines) ? data.routines : data.habits
+    if (!Array.isArray(list)) return []
 
-    return data.habits
+    return list
       .map(normalizeHabitData)
       .filter((habit): habit is HabitData => Boolean(habit))
   } catch (error) {
-    log.error("Failed to parse habits bootstrap payload", error)
+    log.error("Failed to parse routines bootstrap payload", error)
     return []
   }
 }
@@ -142,16 +144,17 @@ async function refreshHabits(): Promise<void> {
   if (shell?.dataset.boardId) query.set("board_id", shell.dataset.boardId)
   if (shell?.dataset.areaId) query.set("area_id", shell.dataset.areaId)
   if (shell?.dataset.projectId) query.set("project_id", shell.dataset.projectId)
-  const response = await fetch("/api/habits?" + query, {
+  const response = await fetch("/api/routines?" + query, {
     signal: pageLifecycle.signal,
   })
   if (!response.ok) {
     throw new Error(await readErrorMessage(response))
   }
 
-  const data = (await response.json()) as { habits?: unknown[] }
-  habits = Array.isArray(data.habits)
-    ? data.habits
+  const data = (await response.json()) as { routines?: unknown[]; habits?: unknown[] }
+  const rawList = Array.isArray(data.routines) ? data.routines : data.habits
+  habits = Array.isArray(rawList)
+    ? rawList
         .map(normalizeHabitData)
         .filter((habit): habit is HabitData => Boolean(habit))
     : []
@@ -165,7 +168,7 @@ async function completeHabit(habitId: string): Promise<void> {
   try {
     card?.classList.add("just-completed")
 
-    const response = await fetch("/api/habits", {
+    const response = await fetch("/api/routines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "complete", templateId: habitId }),
@@ -194,13 +197,17 @@ async function completeHabit(habitId: string): Promise<void> {
 }
 
 async function deleteHabit(habitId: string): Promise<void> {
-  const confirmed = await confirmDialog({ message: "Delete this routine? Associated tasks stay in your task history.", variant: "danger", confirmText: "Delete" })
+  const confirmed = await confirmDialog({
+    message: "Delete this routine? Associated tasks stay in your task history.",
+    variant: "danger",
+    confirmText: "Delete",
+  })
   if (!confirmed) {
     return
   }
 
   try {
-    const response = await fetch("/api/habits", {
+    const response = await fetch("/api/routines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", templateId: habitId }),
@@ -229,6 +236,8 @@ function initHabitsCrud(): void {
   const nameInput = document.getElementById("habit-name") as HTMLInputElement | null
   const iconInput = document.getElementById("habit-icon") as HTMLInputElement | null
   const cadenceSelect = document.getElementById("habit-cadence") as HTMLSelectElement | null
+  const timeInput = document.getElementById("habit-time") as HTMLInputElement | null
+  const timeClearBtn = document.getElementById("habit-time-clear") as HTMLButtonElement | null
   const prioritySelect = document.getElementById("habit-priority") as HTMLSelectElement | null
   const areaSelect = document.querySelector<HTMLSelectElement>("#habit-area")
   const projectSelect = document.querySelector<HTMLSelectElement>("#habit-project")
@@ -261,6 +270,45 @@ function initHabitsCrud(): void {
   ) {
     return
   }
+
+  function syncTimeFieldFromRule(rule: string): void {
+    if (!timeInput) return
+    const extracted = extractTimeFromRRule(rule) ?? ""
+    timeInput.value = extracted
+    if (timeClearBtn) timeClearBtn.hidden = !extracted
+  }
+
+  const cadencePicker = enhanceRecurrenceSelect(cadenceSelect, {
+    allowNone: false,
+    signal: pageLifecycle.signal,
+    onCommit: (committed) => {
+      syncTimeFieldFromRule(committed)
+    },
+  })
+
+  if (timeInput) {
+    const syncRuleFromTimeField = () => {
+      const currentRule =
+        cadenceSelect.value === CUSTOM_RECURRENCE_SENTINEL
+          ? cadenceSelect.dataset.lastRecurrenceValue || "FREQ=DAILY"
+          : cadenceSelect.value || "FREQ=DAILY"
+      const nextTime = timeInput.value.trim()
+      if (timeClearBtn) timeClearBtn.hidden = !nextTime
+      const updated = applyTimeToRRule(currentRule, nextTime || null)
+      cadencePicker.syncValue(updated)
+    }
+    pageLifecycle.on(timeInput, "change", syncRuleFromTimeField)
+    if (timeClearBtn) {
+      pageLifecycle.on(timeClearBtn, "click", () => {
+        timeInput.value = ""
+        syncRuleFromTimeField()
+      })
+    }
+  }
+
+  const descEditor = enhanceDescriptionEditor(descInput, { signal: pageLifecycle.signal })
+  initEntityFormLayout(form, "routine_form", pageLifecycle.signal)
+
   const trap = createFocusTrap(dialog)
   pageLifecycle.signal.addEventListener("abort", () => trap.deactivate(false), { once: true })
   let initialArea = ""
@@ -269,7 +317,10 @@ function initHabitsCrud(): void {
   const returnQuery = new URLSearchParams({ board_id: shell?.dataset.boardId ?? "" })
   if (initialScope) returnQuery.set("area_id", initialScope)
   if (shell?.dataset.projectId) returnQuery.set("project_id", shell.dataset.projectId)
-  const returnPath = shell?.dataset.openNew ? "/progress?" + returnQuery + "#routines" : undefined
+  const returnPath =
+    shell?.dataset.openNew && shell?.dataset.embedded !== "true"
+      ? "/progress?" + returnQuery + "#routines"
+      : undefined
 
   function resetChecklistBuilder(): void {
     checklistContainer!.replaceChildren()
@@ -320,7 +371,8 @@ function initHabitsCrud(): void {
     modalTitle!.textContent = modalTitle!.dataset.createTitle ?? "New Routine"
     nameInput!.value = ""
     syncIconPicker("check")
-    cadenceSelect!.value = "daily"
+    cadencePicker.syncValue("FREQ=DAILY")
+    syncTimeFieldFromRule("FREQ=DAILY")
     prioritySelect!.value = "3"
     areaSelect!.value = shell?.dataset.areaId ?? ""
     filterProjectsByArea(areaSelect!.value)
@@ -328,6 +380,7 @@ function initHabitsCrud(): void {
     projectSelect!.disabled = Boolean(shell?.dataset.projectId)
     areaSelect!.disabled = Boolean(shell?.dataset.areaId)
     descInput!.value = ""
+    descEditor?.syncFromTextarea()
     resetChecklistBuilder()
     overlay!.classList.remove("hidden")
     trap.activate()
@@ -342,7 +395,8 @@ function initHabitsCrud(): void {
     modalTitle!.textContent = modalTitle!.dataset.editTitle ?? "Edit Routine"
     nameInput!.value = habit.name
     syncIconPicker(habit.icon)
-    cadenceSelect!.value = habit.cadence
+    cadencePicker.syncValue(habit.cadence)
+    syncTimeFieldFromRule(habit.cadence)
     prioritySelect!.value = String(habit.priority)
     areaSelect!.value = habit.areaId ?? ""
     initialArea = habit.areaId ?? ""
@@ -352,6 +406,7 @@ function initHabitsCrud(): void {
     projectSelect!.disabled = false
     areaSelect!.disabled = false
     descInput!.value = habit.description
+    descEditor?.syncFromTextarea()
 
     resetChecklistBuilder()
     habit.checklists.forEach((item) => addChecklistItem(item.text))
@@ -418,7 +473,8 @@ function initHabitsCrud(): void {
 
   pageLifecycle.on(document, "keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key === "Escape" && !overlay!.classList.contains("hidden")) {
+    const customRecurrenceOpen = !document.getElementById("custom-recurrence-overlay")?.hidden
+    if (keyboardEvent.key === "Escape" && !overlay!.classList.contains("hidden") && !customRecurrenceOpen) {
       keyboardEvent.preventDefault()
       closeModal()
     }
@@ -427,12 +483,21 @@ function initHabitsCrud(): void {
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
     if (save.disabled) return
+    descEditor?.flushToTextarea()
 
     const name = nameInput!.value.trim()
     if (!name) {
       showToast("Routine name is required", "warning")
       return
     }
+
+    const rawCadenceValue =
+      cadenceSelect!.value === CUSTOM_RECURRENCE_SENTINEL
+        ? cadenceSelect!.dataset.lastRecurrenceValue || "FREQ=DAILY"
+        : cadenceSelect!.value || "FREQ=DAILY"
+    const cadenceValue = timeInput
+      ? applyTimeToRRule(rawCadenceValue, timeInput.value.trim() || null)
+      : rawCadenceValue
 
     const checklists = Array.from(
       checklistContainer!.querySelectorAll<HTMLInputElement>(".checklist-text"),
@@ -455,7 +520,7 @@ function initHabitsCrud(): void {
           checklists,
         }
 
-        const response = await fetch("/api/habits", {
+        const response = await fetch("/api/routines", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -463,7 +528,7 @@ function initHabitsCrud(): void {
             templateId: editId,
             name,
             icon: iconInput!.value.trim() || "check",
-            cadence: cadenceSelect!.value,
+            cadence: cadenceValue,
             templateJson,
           }),
           signal: pageLifecycle.signal,
@@ -475,14 +540,14 @@ function initHabitsCrud(): void {
 
         showToast("Routine updated")
       } else {
-        const response = await fetch("/api/habits", {
+        const response = await fetch("/api/routines", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "create",
             name,
             icon: iconInput!.value.trim() || "check",
-            cadence: cadenceSelect!.value,
+            cadence: cadenceValue,
             priority: Number(prioritySelect!.value),
             description: descInput!.value.trim(),
             area_id: areaSelect.value || null,
@@ -496,7 +561,7 @@ function initHabitsCrud(): void {
           throw new Error(await readErrorMessage(response))
         }
 
-        showToast("Routine created")
+        showToast("Routine created and scheduled on your task list")
       }
 
       save.disabled = false
@@ -546,7 +611,9 @@ function bootHabitsPage(): void {
   shell.dataset.habitsBooted = "true"
   habits = parseBootstrapHabits()
 
-  initHabitsShellNav()
+  if (shell.dataset.embedded !== "true") {
+    initHabitsShellNav()
+  }
   if (shell.dataset.boardActive === "false" || shell.dataset.householdActive === "false") return
   initHabitsCrud()
   updateStats(habits)
@@ -555,5 +622,9 @@ function bootHabitsPage(): void {
 bootHabitsPage()
 
 pageLifecycle.onPageLoad(() => {
-  try { bootHabitsPage() } catch (e) { console.error("[Meitheal][habits] Boot failed", e) }
+  try {
+    bootHabitsPage()
+  } catch (e) {
+    console.error("[Meitheal][routines] Boot failed", e)
+  }
 })

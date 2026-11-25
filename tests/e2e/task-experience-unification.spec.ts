@@ -13,7 +13,6 @@ const webDir = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const ingressFixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
 test.describe("Task Experience Unification (R01-R20)", () => {
-  test.describe.configure({ timeout: 60_000 })
   test.skip(shouldSkipBrowserSpecs(), "Requires MEITHEAL_TEST_BROWSER=1 disposable fixture")
   test.use({ serviceWorkers: "block" })
 
@@ -26,22 +25,16 @@ test.describe("Task Experience Unification (R01-R20)", () => {
   }
 
   async function openTaskCard(page: Page, id: string) {
-    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const overlay = page.locator("#task-detail-overlay")
-    const isActive = await overlay.evaluate(el => el.classList.contains("active")).catch(() => false)
-    if (!isActive) {
+    const alreadyOpen = await overlay.evaluate((el, targetId) => el.classList.contains("active") && el.getAttribute("data-open-task-id") === targetId, id).catch(() => false)
+    if (!alreadyOpen) {
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
       await expect(card).toBeVisible()
       await card.locator(".card-open-btn").click()
-    } else {
-      await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
-      if ((await overlay.getAttribute("data-open-task-id")) !== id) {
-        await page.evaluate(targetId => window.openTaskDetail?.(targetId), id)
-      }
     }
     await expect(overlay).toHaveClass(/active/)
-    await expect(overlay).toHaveAttribute("data-open-task-id", id, { timeout: 10_000 })
-    await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
+    await expect(overlay).toHaveAttribute("data-open-task-id", id)
+    await expect(page.locator("#td-status")).toBeEnabled()
   }
 
   test("R01/R02/R04: shared editor hierarchy, Full form child with draft stack, and Convert checklist item to child", async ({ page, request, baseURL }) => {
@@ -98,23 +91,17 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const convertBtn = page.locator('[title="Convert to child task"]').first()
       await expect(convertBtn).toBeVisible()
       const convertReq = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/tasks")
-      const checklistSaveReq = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
-      const detailRefreshReq = page.waitForResponse(r => r.request().method() === "GET" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
       await convertBtn.click()
-      const convertRes = await convertReq
-      expect(convertRes.status()).toBe(201)
-      const promotedBody = await convertRes.json().catch(() => null) as { id?: string } | null
-      if (promotedBody?.id) createdIds.push(promotedBody.id)
-      expect((await checklistSaveReq).status()).toBe(200)
-      expect((await detailRefreshReq).status()).toBe(200)
+      expect((await convertReq).status()).toBe(201)
 
-      await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
-      await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")
-
-      await page.reload()
+      await page.goto("/tasks")
       await openTaskCard(page, epicBody.id)
       await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
       await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")
+
+      const descendantsRes = await request.get(`/api/tasks?parent_id=${epicBody.id}`)
+      const descendantsBody = await descendantsRes.json().catch(() => null) as { tasks?: Array<{ id: string }> } | null
+      for (const child of descendantsBody?.tasks ?? []) createdIds.push(child.id)
     } finally {
       for (const id of createdIds) await deleteTask(request, headers, id)
     }

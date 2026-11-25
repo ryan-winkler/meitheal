@@ -28,10 +28,10 @@ import Layout from "../layouts/Layout.astro"
 import CachedHtmlSlot from "../components/ui/CachedHtmlSlot.astro"
 import { readCachedBoardName } from "@lib/shell-settings-cache"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
-import { readRequestOrganizationLabels } from "@lib/organization-labels"
 import EmptyState from "../components/ui/EmptyState.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
+import QuickAddHelpPopover from "../components/tasks/QuickAddHelpPopover.astro"
 import StatusBadge from "../components/ui/StatusBadge.astro"
 import { taskSurface } from "../lib/task-surface"
 import { taskDetailPath } from "../lib/task-page-url"
@@ -91,6 +91,9 @@ function focusDueLabel(task: TaskViewItem): string | undefined {
 }
 
 try {
+  if (canCompleteRoutine && (await isFeatureEnabled("habits").catch(() => false))) {
+    await new TemplateRepository(getPersistenceClient(), workScope).ensureDueRoutineTasks(todayTimeZone).catch(() => 0)
+  }
   const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
   const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate, workScope, placement)
@@ -214,52 +217,36 @@ const todayHeroSignal = `${todayTasks.length} due today · ${carriedForwardTasks
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
 const todayDateLabel = formatDayHeading(todayDate, locale, todayTimeZone)
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
-const orgState = await readRequestOrganizationLabels(Astro).catch(() => null)
-const orgLabelsKey = orgState ? `${orgState.revision}:${JSON.stringify(orgState.forms)}` : ""
-const todayBarCacheKey = JSON.stringify([
-  "today-bar-v1",
-  locale === "ga-IE" ? "ga" : "en",
-  todayIsoDate,
-  todayBoardName,
-  orgLabelsKey,
-])
-const todayFlowCacheKey = JSON.stringify([
-  "today-flow-v1",
-  workScope.boardId,
-  pagePlacement.area?.id ?? null,
-  pagePlacement.project?.id ?? null,
-])
 ---
 
 <Layout title="Meitheal — Today" workNavigation={{ scope: workScope, placement: pagePlacement,
   ...(dailyStreak !== undefined ? { dailyStreak } : {}),
 }}>
-  <CachedHtmlSlot slot="custom-header" cacheKey={todayBarCacheKey}>
-    <UnifiedBar
-      title="Today"
-      titleIcon="today"
-      tabs={TODAY_SECTIONS.map((section) => ({
-        id: section.id,
-        label: section.label,
-        icon: section.icon,
-      }))}
-      searchPlaceholder="Search Meitheal…"
-      searchScope="all"
-      barId="today-bar"
+  <UnifiedBar
+    title="Today"
+    titleIcon="today"
+    tabs={TODAY_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="today-bar"
+    slot="custom-header"
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="unified-bar__new-task-btn today-shell__clear-btn"
+      id="clear-completed-btn"
+      data-today-archive={todayIsoDate}
+      title={`Archive Complete ${todayBoardName} tasks last updated today`}
+      aria-label="Archive completed"
     >
-      <button
-        slot="actions"
-        type="button"
-        class="unified-bar__new-task-btn today-shell__clear-btn"
-        id="clear-completed-btn"
-        data-today-archive={todayIsoDate}
-        title={`Archive Complete ${todayBoardName} tasks last updated today`}
-        aria-label="Archive completed"
-      >
-        <span class="unified-bar__new-task-label">Archive completed</span>
-      </button>
-    </UnifiedBar>
-  </CachedHtmlSlot>
+      <span class="unified-bar__new-task-label">Archive completed</span>
+    </button>
+  </UnifiedBar>
 
   <div id="page-shell" class="page-shell" data-today-day={todayIsoDate} data-today-timezone={todayTimeZone} data-today-board={workScope.boardId} data-today-area={placement.areaId ?? undefined} data-today-project={placement.projectId ?? undefined}>
     <div id="today-rollover" class="alert alert-warning" role="status" hidden>
@@ -298,7 +285,7 @@ const todayFlowCacheKey = JSON.stringify([
           </div>
           {currentStreak > 0 && (
             <div class="stat-item stat-streak">
-              <span class="stat-value"><Icon name="flame" size={16} sprite={true} />{currentStreak}</span>
+              <span class="stat-value"><Icon name="flame" size={16} />{currentStreak}</span>
               <span class="stat-label">Streak</span>
             </div>
           )}
@@ -327,6 +314,7 @@ const todayFlowCacheKey = JSON.stringify([
             placeholder="Add a task for today…"
             autocomplete="off"
           />
+          <QuickAddHelpPopover targetInputId="quick-add-input" align="right" />
           <button type="submit" class="btn btn-primary quick-add-submit">
             Add
           </button>
@@ -339,160 +327,162 @@ const todayFlowCacheKey = JSON.stringify([
       </div>
     </section>
 
-    <CachedHtmlSlot cacheKey={focusStackTasks.length === 0 ? "today-focus-empty-v1" : null}>
-      <section id="today-focus" class="page-shell__section" data-today-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">Focus</div>
-            <h2 class="page-shell__title">Priority tasks</h2>
-          </div>
+    <section id="today-focus" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Focus</div>
+          <h2 class="page-shell__title">Priority tasks</h2>
         </div>
+      </div>
 
-        {focusStackTasks.length > 0 ? (
-          <div class="focus-stack" id="section-focus-stack">
-            <div class="focus-stack__header">
-              <span class="focus-stack__title">Next tasks</span>
-              <span class="focus-stack__subtitle">
-                {focusStackTasks.length} to focus on
-              </span>
-            </div>
-            <div class="focus-stack__cards">
-              {focusStackTasks.map((task, i) => (
-                <div
-                  class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
+      {focusStackTasks.length > 0 ? (
+        <div class="focus-stack" id="section-focus-stack">
+          <div class="focus-stack__header">
+            <span class="focus-stack__title">Next tasks</span>
+            <span class="focus-stack__subtitle">
+              {focusStackTasks.length} to focus on
+            </span>
+          </div>
+          <div class="focus-stack__cards">
+            {focusStackTasks.map((task, i) => (
+              <div
+                class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
+                data-id={task.id}
+                data-promoted={task.is_promoted ? "true" : "false"}
+                {...taskSurface(task.status, task.color)}
+                data-focus-index={i}
+              >
+                <span class="focus-card__step">{i + 1}</span>
+                <a class="focus-card__body" href={taskDetailPath(task)} data-task-detail-link={task.id}>
+                  <span class="focus-card__title">{task.title}</span>
+                  <div class="focus-card__meta">
+                    {task.is_promoted && (
+                      <span class="task-promoted-pill">
+                        <Icon name="star" size={11} sprite /> Promoted
+                      </span>
+                    )}
+                    {task.priority && task.priority <= 2 && (
+                      <span class="focus-card__priority" data-pri={task.priority}>
+                        {task.priority === 1 ? "▲ Critical" : "↑ High"}
+                      </span>
+                    )}
+                    <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
+                    {effectiveTaskScheduledDate(task) && (
+                      <span class="focus-card__due">
+                        <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
+                        {focusDueLabel(task)}
+                      </span>
+                    )}
+                  </div>
+                </a>
+                <button
+                  type="button"
+                  class="focus-card__complete btn btn-sm"
                   data-id={task.id}
-                  {...taskSurface(task.status, task.color)}
-                  data-focus-index={i}
+                  title="Complete this task"
+                  aria-label={`Complete ${task.title}`}
                 >
-                  <span class="focus-card__step">{i + 1}</span>
-                  <a class="focus-card__body" href={taskDetailPath(task)} data-task-detail-link={task.id}>
-                    <span class="focus-card__title">{task.title}</span>
-                    <div class="focus-card__meta">
-                      {task.priority && task.priority <= 2 && (
-                        <span class="focus-card__priority" data-pri={task.priority}>
-                          {task.priority === 1 ? "▲ Critical" : "↑ High"}
-                        </span>
-                      )}
-                      <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
-                      {effectiveTaskScheduledDate(task) && (
-                        <span class="focus-card__due">
-                          <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} sprite={true} />
-                          {focusDueLabel(task)}
-                        </span>
-                      )}
-                    </div>
-                  </a>
-                  <button
-                    type="button"
-                    class="focus-card__complete btn btn-sm"
-                    data-id={task.id}
-                    title="Complete this task"
-                    aria-label={`Complete ${task.title}`}
-                  >
-                    <Icon name="check" size={14} sprite />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div class="today-shell__empty card">
-            No urgent focus items are competing for attention right now.
-          </div>
-        )}
-
-        <div class="today-filter-bar" id="today-filter-bar">
-          <input
-            type="text"
-            id="today-search"
-            class="form-input"
-            placeholder="Search tasks..."
-            autocomplete="off"
-          />
-          <select id="today-filter-status" class="form-select" aria-label="Filter by status">
-            <option value="">All Status</option>
-            <option value="pending">Todo</option>
-            <option value="active">Active</option>
-            <option value="complete">Done</option>
-            <option value="overdue">Overdue</option>
-          </select>
-          <select id="today-filter-priority" class="form-select" aria-label="Filter by priority">
-            <option value="">All Priority</option>
-            <option value="1">▲ Critical</option>
-            <option value="2">↑ High</option>
-            <option value="3">→ Medium</option>
-            <option value="4">↓ Low</option>
-            <option value="5">· Minimal</option>
-          </select>
-          <select id="today-filter-rice" class="form-select" aria-label="Filter by RICE score">
-            <option value="">All RICE</option>
-            <option value="high">High (≥15)</option>
-            <option value="medium">Medium (8-14)</option>
-            <option value="low">Low (&lt;8)</option>
-          </select>
-          <select id="today-sort" class="form-select" aria-label="Sort tasks">
-            <option value="priority-asc">Priority ↑</option>
-            <option value="priority-desc">Priority ↓</option>
-            <option value="rice-desc">RICE ↓</option>
-            <option value="rice-asc">RICE ↑</option>
-            <option value="due_date-asc">Due Soonest</option>
-            <option value="due_date-desc">Due Latest</option>
-            <option value="title-asc">Title A-Z</option>
-            <option value="title-desc">Title Z-A</option>
-          </select>
-          <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
-            <Icon name="x" size={16} sprite={true} />
-          </button>
-          <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} sprite={true} /></button>
-        </div>
-      </section>
-    </CachedHtmlSlot>
-
-    <CachedHtmlSlot cacheKey={carriedForwardTasks.length === 0 && suggestedTasks.length === 0 ? "today-triage-empty-v1" : null}>
-      <section id="today-triage" class="page-shell__section" data-today-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">Triage</div>
-            <h2 class="page-shell__title">Overdue and suggested tasks</h2>
-          </div>
-        </div>
-
-        <div id="migration-prompt" class="today-section" style="display: none;"></div>
-
-        <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-carried-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
-            <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
-              <Icon name="refresh" size={16} sprite={true} /> Carried Forward
-            </span>
-            <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-carried-list" data-today-task-list>
-            {carriedForwardTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Carried Forward" />
+                  <Icon name="check" size={14} sprite />
+                </button>
+              </div>
             ))}
           </div>
         </div>
-        <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
-
-        <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-suggested-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
-            <span class="today-section__title" style="color: var(--accent-text);">
-              <Icon name="sparkles" size={16} sprite={true} /> Suggested
-            </span>
-            <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-suggested-list" data-today-task-list>
-            {suggestedTasks.map(task => (
-              <TaskListItem task={task} showFocusToday showActions section="Suggested" />
-            ))}
-          </div>
+      ) : (
+        <div class="today-shell__empty card">
+          No urgent focus items are competing for attention right now.
         </div>
-      </section>
-    </CachedHtmlSlot>
+      )}
+
+      <div class="today-filter-bar" id="today-filter-bar">
+        <input
+          type="text"
+          id="today-search"
+          class="form-input"
+          placeholder="Search tasks..."
+          autocomplete="off"
+        />
+        <select id="today-filter-status" class="form-select" aria-label="Filter by status">
+          <option value="">All Status</option>
+          <option value="pending">Todo</option>
+          <option value="active">Active</option>
+          <option value="complete">Done</option>
+          <option value="overdue">Overdue</option>
+        </select>
+        <select id="today-filter-priority" class="form-select" aria-label="Filter by priority">
+          <option value="">All Priority</option>
+          <option value="1">▲ Critical</option>
+          <option value="2">↑ High</option>
+          <option value="3">→ Medium</option>
+          <option value="4">↓ Low</option>
+          <option value="5">· Minimal</option>
+        </select>
+        <select id="today-filter-rice" class="form-select" aria-label="Filter by RICE score">
+          <option value="">All RICE</option>
+          <option value="high">High (≥15)</option>
+          <option value="medium">Medium (8-14)</option>
+          <option value="low">Low (&lt;8)</option>
+        </select>
+        <select id="today-sort" class="form-select" aria-label="Sort tasks">
+          <option value="priority-asc">Priority ↑</option>
+          <option value="priority-desc">Priority ↓</option>
+          <option value="rice-desc">RICE ↓</option>
+          <option value="rice-asc">RICE ↑</option>
+          <option value="due_date-asc">Due Soonest</option>
+          <option value="due_date-desc">Due Latest</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+        </select>
+        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
+          <Icon name="x" size={16} />
+        </button>
+        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} /></button>
+      </div>
+    </section>
+
+    <section id="today-triage" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Triage</div>
+          <h2 class="page-shell__title">Overdue and suggested tasks</h2>
+        </div>
+      </div>
+
+      <div id="migration-prompt" class="today-section" style="display: none;"></div>
+
+      <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-carried-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
+            <Icon name="refresh" size={16} /> Carried Forward
+          </span>
+          <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-carried-list" data-today-task-list>
+          {carriedForwardTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Carried Forward" />
+          ))}
+        </div>
+      </div>
+      <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
+
+      <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-suggested-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--accent-text);">
+            <Icon name="sparkles" size={16} /> Suggested
+          </span>
+          <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-suggested-list" data-today-task-list>
+          {suggestedTasks.map(task => (
+            <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+          ))}
+        </div>
+      </div>
+    </section>
 
     <section id="today-work" class="page-shell__section" data-today-section>
       <div class="page-shell__intro">
@@ -508,9 +498,9 @@ const todayFlowCacheKey = JSON.stringify([
       <div class="today-section" id="section-calendar-events" style="display: none;">
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="calendar-events-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title" style="color: var(--info, #60a5fa);">
-            <Icon name="calendar-event" size={16} sprite={true} /> Calendar Events
+            <Icon name="calendar-event" size={16} /> Calendar Events
           </span>
           <span class="today-section__count" id="calendar-events-count">0</span>
         </button>
@@ -524,9 +514,9 @@ const todayFlowCacheKey = JSON.stringify([
       <div class="today-section" id="section-pinned" hidden={pinnedTasks.length === 0}>
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="today-pinned-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title">
-            <Icon name="star" size={16} sprite={true} /> Promoted
+            <Icon name="star" size={16} /> Promoted
           </span>
           <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
         </button>
@@ -540,9 +530,9 @@ const todayFlowCacheKey = JSON.stringify([
       <div class="today-section" id="section-today">
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="today-due-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title">
-            <Icon name="sun" size={16} sprite={true} /> Due Today
+            <Icon name="sun" size={16} /> Due Today
           </span>
           <span class="today-section__count" id="today-due-list-count">{todayTasks.length}</span>
         </button>
@@ -573,7 +563,7 @@ const todayFlowCacheKey = JSON.stringify([
           {completedTaskSummaries.map(task => (
             <li>
               <a href={taskDetailPath(task)} data-task-detail-link={task.id} data-today-completion>
-                <Icon name="checkbox" size={17} sprite={true} />
+                <Icon name="checkbox" size={17} />
                 <span>{task.title}</span>
               </a>
             </li>
@@ -581,7 +571,7 @@ const todayFlowCacheKey = JSON.stringify([
         </ul>
         <div class="today-completed-tasks__actions">
           <button type="button" class="btn btn-outline" data-today-archive={todayIsoDate}>
-            <Icon name="check" size={16} sprite={true} /> Archive completed
+            <Icon name="check" size={16} /> Archive completed
           </button>
         </div>
       </details>
@@ -589,9 +579,9 @@ const todayFlowCacheKey = JSON.stringify([
       <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled" hidden={!unscheduled && unscheduledCount <= 0}>
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
-          <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title">
-            <Icon name="pin" size={16} sprite={true} /> Unscheduled
+            <Icon name="pin" size={16} /> Unscheduled
           </span>
           <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
         </button>
@@ -622,126 +612,126 @@ const todayFlowCacheKey = JSON.stringify([
       </div>
     </section>
 
-    <CachedHtmlSlot cacheKey={habits.length === 0 ? `today-habits-empty-v1:${habitsEnabled}` : null}>
-      <section id="today-habits" class="page-shell__section" data-today-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">Habits</div>
-            <h2 class="page-shell__title">Your routines</h2>
-          </div>
+    <section id="today-habits" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Routines</div>
+          <h2 class="page-shell__title">Your routines</h2>
         </div>
+      </div>
 
-        <div class="today-section" id="section-habits">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-habits-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
-            <span class="today-section__title" style="color: var(--accent-text);">
-              <Icon name="repeat" size={16} sprite={true} /> Habits / Routines
-            </span>
-            <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
-          </button>
-          <div class="today-section__list" id="today-habits-list">
-            {habitsEnabled && habits.length > 0 ? (
-              habits.map(habit => {
-                const routineIcon = mapEntityEmojiToTabler(habit.icon)
-                return (
-                <div
-                  class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
-                  data-habit-id={habit.id}
-                  data-today-task-id={habit.todayTaskId ?? ""}
-                >
-                  <span class="habit-card__icon" aria-hidden="true">
-                    {routineIcon ? <Icon name={routineIcon} size={18} sprite /> : habit.icon}
+      <div class="today-section" id="section-habits">
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-habits-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--accent-text);">
+            <Icon name="repeat" size={16} /> Routines
+          </span>
+          <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
+        </button>
+        <div class="today-section__list" id="today-habits-list">
+          {habitsEnabled && habits.length > 0 ? (
+            habits.map(habit => {
+              const routineIcon = mapEntityEmojiToTabler(habit.icon)
+              return (
+              <div
+                class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
+                data-habit-id={habit.id}
+                data-today-task-id={habit.todayTaskId ?? ""}
+              >
+                <span class="habit-card__icon" aria-hidden="true">
+                  {routineIcon ? <Icon name={routineIcon} size={18} sprite /> : habit.icon}
+                </span>
+                <div class="habit-card__info">
+                  <span class="habit-card__name">{habit.name}</span>
+                  <span class="habit-card__meta">
+                    {habit.currentStreak > 0 && <span class="habit-card__streak"><Icon name="flame" size={14} sprite />{habit.currentStreak}</span>}
+                    <span class="habit-card__total">{habit.totalCompletions} total</span>
+                    {!habit.projectActive && <span class="habit-card__inactive">Paused project</span>}
+                    {habit.todayTaskId && <a class="habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>View task</a>}
                   </span>
-                  <div class="habit-card__info">
-                    <span class="habit-card__name">{habit.name}</span>
-                    <span class="habit-card__meta">
-                      {habit.currentStreak > 0 && <span class="habit-card__streak"><Icon name="flame" size={14} sprite />{habit.currentStreak}</span>}
-                      <span class="habit-card__total">{habit.totalCompletions} total</span>
-                      {!habit.projectActive && <span class="habit-card__inactive">Paused project</span>}
-                      {habit.todayTaskId && <a class="habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>View task</a>}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    class="habit-card__complete btn btn-sm"
-                    disabled={habit.todayCompleted || !canCompleteRoutine || !habit.projectActive}
-                    aria-pressed={habit.todayCompleted ? "true" : "false"}
-                  >
-                    {habit.todayCompleted ? <><Icon name="check" size={14} sprite /> Done</> : "Complete"}
-                  </button>
                 </div>
-                )
-              })
-            ) : (
-              <div class="today-shell__empty card">
-                {habitsEnabled
-                  ? "No active routines are feeding into Today yet."
-                  : "Routines are currently disabled for this workspace."}
+                <button
+                  type="button"
+                  class="habit-card__complete btn btn-sm"
+                  disabled={habit.todayCompleted || !canCompleteRoutine || !habit.projectActive}
+                  aria-pressed={habit.todayCompleted ? "true" : "false"}
+                >
+                  {habit.todayCompleted ? <><Icon name="check" size={14} sprite /> Done</> : "Complete"}
+                </button>
               </div>
-            )}
-          </div>
+              )
+            })
+          ) : (
+            <div class="today-shell__empty card">
+              {habitsEnabled
+                ? "No active routines are feeding into Today yet."
+                : "Routines are currently disabled for this workspace."}
+            </div>
+          )}
         </div>
-      </section>
-    </CachedHtmlSlot>
+      </div>
+    </section>
 
-    <CachedHtmlSlot cacheKey={todayFlowCacheKey}>
-      <section id="today-flow" class="page-shell__section" data-today-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">Flow</div>
-            <h2 class="page-shell__title">Other views</h2>
-          </div>
+    <section id="today-flow" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Flow</div>
+          <h2 class="page-shell__title">Other views</h2>
         </div>
+      </div>
 
-        <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="inbox" variant="tip">
-          <p>Open <strong>Tasks Hub</strong> for Kanban, Calendar, Table or Timeline. Use <strong>Planning</strong> to prioritise and <strong>Progress</strong> to review routines and goals.</p>
-        </InlineHelper>
+      <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="inbox" variant="tip">
+        <p>Open <strong>Tasks Hub</strong> for Kanban, Calendar, Table or Timeline. Use <strong>Planning</strong> to prioritise and <strong>Progress</strong> to review routines and goals.</p>
+      </InlineHelper>
 
-        <div class="page-flow-grid">
-          <a class="card page-flow-card" href={contextHref("/upcoming")}>
-            <strong><Icon name="calendar-event" size={14} sprite={true} /> Upcoming</strong>
-            <p>See what’s due in the next seven days.</p>
-          </a>
-          <a class="card page-flow-card" href={contextHref("/tasks?view=calendar#calendar")}>
-            <strong><Icon name="calendar" size={14} sprite={true} /> Calendar</strong>
-            <p>See tasks and events by date.</p>
-          </a>
-          <a class="card page-flow-card" href={contextHref("/planning#eisenhower")}>
-            <strong><Icon name="eisenhower" size={14} sprite={true} /> Eisenhower</strong>
-            <p>Sort tasks by urgency and importance.</p>
-          </a>
-          <a class="card page-flow-card" href={contextHref("/tasks#kanban")}>
-            <strong><Icon name="kanban" size={14} sprite={true} /> Kanban</strong>
-            <p>Move tasks between status columns.</p>
-          </a>
-          <a class="card page-flow-card" href={contextHref("/progress#routines")}>
-            <strong><Icon name="trophy" size={14} sprite={true} /> Progress</strong>
-            <p>Track routines, goals, and achievements in one place.</p>
-          </a>
-        </div>
-      </section>
-    </CachedHtmlSlot>
+      <div class="page-flow-grid">
+        <a class="card page-flow-card" href={contextHref("/upcoming")}>
+          <strong><Icon name="calendar-event" size={14} /> Upcoming</strong>
+          <p>See what’s due in the next seven days.</p>
+        </a>
+        <a class="card page-flow-card" href={contextHref("/tasks?view=calendar#calendar")}>
+          <strong><Icon name="calendar" size={14} /> Calendar</strong>
+          <p>See tasks and events by date.</p>
+        </a>
+        <a class="card page-flow-card" href={contextHref("/planning#eisenhower")}>
+          <strong><Icon name="eisenhower" size={14} /> Eisenhower</strong>
+          <p>Sort tasks by urgency and importance.</p>
+        </a>
+        <a class="card page-flow-card" href={contextHref("/tasks#kanban")}>
+          <strong><Icon name="kanban" size={14} /> Kanban</strong>
+          <p>Move tasks between status columns.</p>
+        </a>
+        <a class="card page-flow-card" href={contextHref("/progress#routines")}>
+          <strong><Icon name="trophy" size={14} /> Progress</strong>
+          <p>Track routines, goals, and achievements in one place.</p>
+        </a>
+      </div>
+    </section>
   </div>
   <div id="batch-action-bar" hidden>
     <span></span>
     <button type="button" class="btn btn-sm" value="complete"><Icon name="check" size={14} sprite /> Complete</button>
-    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day"><Icon name="clock" size={14} sprite={true} /> Snooze</button>
-    <button type="button" class="btn btn-sm" value="delete"><Icon name="trash" size={14} sprite={true} /> Delete</button>
+    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day"><Icon name="clock" size={14} /> Snooze</button>
+    <button type="button" class="btn btn-sm" value="delete"><Icon name="trash" size={14} /> Delete</button>
     <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
   </div>
 </Layout>
 
-<style>
+<style is:inline>
   /* Shared section and flow styles are in _page-shell.css. */
   #page-shell {
     gap: 1.5rem;
     padding-block-start: 12px;
   }
 
-  :global([data-theme="knight-rider"][data-appearance-width="default"]) #page-shell {
+  [data-theme="knight-rider"][data-appearance-width="default"] #page-shell {
     max-width: 960px;
     margin-inline: auto;
+  }
+
+  .focus-card[data-promoted="true"]:not([data-task-color]) {
+    box-shadow: inset 3px 0 0 var(--tblr-yellow, #f59f00);
   }
 
   .today-summary {
@@ -790,7 +780,7 @@ const todayFlowCacheKey = JSON.stringify([
     flex-wrap: wrap;
     gap: 4px 12px;
   }
-  :global(.quick-add-feedback-part) {
+  .quick-add-feedback-part {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -812,12 +802,22 @@ const todayFlowCacheKey = JSON.stringify([
   }
 
   .today-shell__clear-btn {
-    min-height: 40px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
-    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    min-height: 34px;
+    height: 34px;
+    padding: 0 11px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
     color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 550;
+    line-height: 1;
+    white-space: nowrap;
+    transition:
+      background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   [data-today-archive][aria-disabled="true"] {
@@ -825,8 +825,12 @@ const todayFlowCacheKey = JSON.stringify([
     cursor: not-allowed;
   }
   .today-shell__clear-btn:hover {
-    background: color-mix(in srgb, var(--warning) 18%, transparent);
-    border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-hover));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--text-primary);
+  }
+  .today-shell__clear-btn:active {
+    transform: scale(0.97);
   }
 
   .today-shell__empty {
@@ -925,26 +929,26 @@ const todayFlowCacheKey = JSON.stringify([
     background: rgba(255, 255, 255, 0.05);
   }
 
-  :global([data-theme="knight-rider"]) .today-section {
+  [data-theme="knight-rider"] .today-section {
     background: transparent;
     border: 0;
     border-block-start: 1px solid var(--border);
     border-radius: 0;
   }
-  :global([data-theme="knight-rider"]) .today-section__header:not(:hover) {
+  [data-theme="knight-rider"] .today-section__header:not(:hover) {
     background: transparent;
   }
 
-  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state) {
+  [data-theme="knight-rider"] #today-due-list .empty-state {
     border: 0;
     background: transparent;
     margin-block: 12px;
     padding-block: 24px;
   }
-  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state-icon) {
+  [data-theme="knight-rider"] #today-due-list .empty-state-icon {
     margin-block-end: 10px;
   }
-  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state-actions .btn-primary:not(:hover)) {
+  [data-theme="knight-rider"] #today-due-list .empty-state-actions .btn-primary:not(:hover) {
     background: transparent;
     border-color: var(--control-border);
     color: var(--text-primary);
@@ -953,7 +957,7 @@ const todayFlowCacheKey = JSON.stringify([
   .today-completed-tasks {
     display: none;
   }
-  :global([data-theme="knight-rider"]) .today-completed-tasks:not([hidden]) {
+  [data-theme="knight-rider"] .today-completed-tasks:not([hidden]) {
     display: block;
     color: var(--text-muted);
   }
@@ -968,10 +972,10 @@ const todayFlowCacheKey = JSON.stringify([
     padding: 0;
     list-style: none;
   }
-  .today-completed-tasks :global(li) {
+  .today-completed-tasks li {
     border-block-start: 1px solid var(--border);
   }
-  :global([data-theme="knight-rider"]:has(.today-completed-tasks[open]:not([hidden]))) .today-shell__clear-btn {
+  [data-theme="knight-rider"]:has(.today-completed-tasks[open]:not([hidden])) .today-shell__clear-btn {
     display: none;
   }
   .today-completed-tasks__actions {
@@ -983,7 +987,7 @@ const todayFlowCacheKey = JSON.stringify([
   .today-completed-tasks__actions button {
     min-block-size: 44px;
   }
-  .today-completed-tasks :global(a) {
+  .today-completed-tasks a {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -993,7 +997,7 @@ const todayFlowCacheKey = JSON.stringify([
     text-decoration: line-through;
     overflow-wrap: anywhere;
   }
-  .today-completed-tasks :global(a > svg) { flex: none; }
+  .today-completed-tasks a > svg { flex: none; }
 
   .today-section__header:focus-visible {
     outline-offset: -3px;
@@ -1113,7 +1117,7 @@ const todayFlowCacheKey = JSON.stringify([
   }
 
   /* ── Snooze popover ──────────────────────────────────────────── */
-  :global(.snooze-option) {
+  .snooze-option {
     padding: 6px 12px;
     font-size: 13px;
     text-align: left;
@@ -1124,28 +1128,28 @@ const todayFlowCacheKey = JSON.stringify([
     border-radius: var(--radius-sm, 4px);
     transition: background 0.15s;
   }
-  :global(.snooze-option:hover),
-  :global(.snooze-option:focus-visible) {
+  .snooze-option:hover,
+  .snooze-option:focus-visible {
     background: var(--bg-hover);
   }
 
   /* ── G30: Batch mode ────────────────────────────────── */
-  :global(#batch-mode-toggle) {
+  #batch-mode-toggle {
     flex-shrink: 0;
     font-size: 14px;
   }
-  :global(#batch-mode-toggle[aria-pressed="true"]) {
+  #batch-mode-toggle[aria-pressed="true"] {
     background: var(--accent);
     color: var(--bg);
   }
-  :global(.batch-mode .tli) {
+  .batch-mode .tli {
     padding-left: 8px;
   }
-  :global(.tli__batch-cb) {
+  .tli__batch-cb {
     margin-right: 6px;
     accent-color: var(--accent);
   }
-  :global(#batch-action-bar:not([hidden])) {
+  #batch-action-bar:not([hidden]) {
     display: flex;
     position: fixed;
     bottom: 20px;
@@ -1160,25 +1164,25 @@ const todayFlowCacheKey = JSON.stringify([
     border-radius: var(--radius-md);
     box-shadow: 0 8px 32px rgb(0 0 0 / 0.4);
   }
-  :global(#batch-action-bar span) {
+  #batch-action-bar span {
     font-size: 13px;
     color: var(--text-muted);
     white-space: nowrap;
   }
-  :global(#batch-action-bar [value="delete"]) {
+  #batch-action-bar [value="delete"] {
     color: var(--danger);
   }
 
   /* ── G31: Drag reorder — premium drag feedback ──────── */
-  :global(.tli[draggable="true"]) {
+  .tli[draggable="true"] {
     cursor: grab;
   }
-  :global(.tli--dragging) {
+  .tli--dragging {
     opacity: 0.4;
     cursor: grabbing;
     transform: scale(0.98);
   }
-  :global(.tli--drag-over) {
+  .tli--drag-over {
     border-top: 2px solid var(--accent);
     box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent) 30%, transparent);
     transition: box-shadow 0.15s ease;
@@ -1197,7 +1201,7 @@ const todayFlowCacheKey = JSON.stringify([
   }
 
   /* ── G38: Habit Cards — Premium (match habits.astro) ── */
-  :global(.habit-card) {
+  .habit-card {
     display: flex;
     align-items: center;
     gap: 14px;
@@ -1206,7 +1210,7 @@ const todayFlowCacheKey = JSON.stringify([
     transition: background 0.15s ease, transform 0.15s ease;
     position: relative;
   }
-  :global(.habit-card::after) {
+  .habit-card::after {
     content: "";
     position: absolute;
     left: 0;
@@ -1218,20 +1222,20 @@ const todayFlowCacheKey = JSON.stringify([
     opacity: 0;
     transition: opacity 0.2s ease;
   }
-  :global(.habit-card:hover) {
+  .habit-card:hover {
     background: rgba(255, 255, 255, 0.03);
   }
-  :global(.habit-card:hover::after) {
+  .habit-card:hover::after {
     opacity: 1;
   }
-  :global(.habit-card--done) {
+  .habit-card--done {
     opacity: 0.6;
   }
-  :global(.habit-card--done::after) {
+  .habit-card--done::after {
     background: var(--success, #22c55e);
     opacity: 1;
   }
-  :global(.habit-card__icon) {
+  .habit-card__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1239,19 +1243,19 @@ const todayFlowCacheKey = JSON.stringify([
     font-size: 1.3rem;
     flex-shrink: 0;
   }
-  :global(.habit-card__info) {
+  .habit-card__info {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
-  :global(.habit-card__name) {
+  .habit-card__name {
     font-size: 14px;
     font-weight: 600;
     color: var(--text);
     letter-spacing: -0.01em;
   }
-  :global(.habit-card__meta) {
+  .habit-card__meta {
     font-size: 11px;
     color: var(--text-muted);
     display: flex;
@@ -1259,7 +1263,7 @@ const todayFlowCacheKey = JSON.stringify([
     gap: 8px;
     align-items: center;
   }
-  :global(.habit-card__streak) {
+  .habit-card__streak {
     display: inline-flex;
     align-items: center;
     gap: 3px;
@@ -1270,36 +1274,36 @@ const todayFlowCacheKey = JSON.stringify([
     border-radius: 10px;
     font-size: 0.7rem;
   }
-  :global(:is([data-theme="dark"], [data-theme="knight-rider"])) :global(.habit-card__streak) {
+  :is([data-theme="dark"], [data-theme="knight-rider"]) .habit-card__streak {
     color: #fbbf24;
   }
-  :global(.habit-card__task-link) {
+  .habit-card__task-link {
     color: var(--accent);
     font-weight: 600;
     text-decoration: none;
   }
-  :global(.habit-card__task-link:hover) {
+  .habit-card__task-link:hover {
     text-decoration: underline;
   }
-  :global(.habit-card__inactive) {
+  .habit-card__inactive {
     color: var(--danger, #dc2626);
     font-weight: 600;
   }
-  :global(.habit-card__complete) {
+  .habit-card__complete {
     flex-shrink: 0;
     min-height: 44px;
     transition: transform 0.15s ease;
   }
-  :global(.habit-card__complete:hover:not(:disabled)) {
+  .habit-card__complete:hover:not(:disabled) {
     transform: scale(1.05);
   }
-  :global(.habit-card__complete:disabled) {
+  .habit-card__complete:disabled {
     opacity: 0.7;
     cursor: default;
   }
 
   /* ── W2: Loading skeleton shimmer ────────────────────── */
-  :global(.skeleton-line) {
+  .skeleton-line {
     height: 14px;
     background: linear-gradient(
       90deg,
@@ -1318,7 +1322,7 @@ const todayFlowCacheKey = JSON.stringify([
   }
 
   /* ── G27: Migration Prompt ────────────────────────────── */
-  :global(.migration-banner) {
+  .migration-banner {
     background: rgba(245, 158, 11, 0.08);
     border: 1px solid rgba(245, 158, 11, 0.25);
     border-radius: 12px;
@@ -1328,17 +1332,17 @@ const todayFlowCacheKey = JSON.stringify([
     align-items: center;
     gap: 12px;
   }
-  :global(.migration-banner__text) {
+  .migration-banner__text {
     flex: 1;
     font-size: 13px;
     color: var(--text);
   }
-  :global(.migration-banner__action) {
+  .migration-banner__action {
     flex-shrink: 0;
   }
 
   /* ── G29: Context Group Headers ──────────────────────── */
-  :global(.context-group-header) {
+  .context-group-header {
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
@@ -1423,41 +1427,41 @@ const todayFlowCacheKey = JSON.stringify([
   .focus-card__work-status {
     display: none;
   }
-  :global([data-theme="knight-rider"]) .focus-card[data-work-active] .focus-card__work-status {
+  [data-theme="knight-rider"] .focus-card[data-work-active] .focus-card__work-status {
     display: inline-flex;
   }
-  :global([data-theme="knight-rider"]) .focus-stack {
+  [data-theme="knight-rider"] .focus-stack {
     background: transparent;
     border: 0;
     border-block-start: 1px solid var(--border);
     padding-inline: 0;
     border-radius: 0;
   }
-  :global([data-theme="knight-rider"]) .focus-stack::before {
+  [data-theme="knight-rider"] .focus-stack::before {
     content: none;
   }
-  :global([data-theme="knight-rider"]) .focus-stack__cards {
+  [data-theme="knight-rider"] .focus-stack__cards {
     gap: 0;
   }
-  :global([data-theme="knight-rider"]) .focus-card {
+  [data-theme="knight-rider"] .focus-card {
     background: transparent;
     border: 0;
     border-bottom: 1px solid var(--border);
     border-radius: 0;
   }
-  :global([data-theme="knight-rider"]) .focus-card:hover {
+  [data-theme="knight-rider"] .focus-card:hover {
     transform: none;
     box-shadow: none;
   }
-  :global([data-theme="knight-rider"]) .focus-card__step {
+  [data-theme="knight-rider"] .focus-card__step {
     background: var(--bg-hover);
     color: var(--accent-text);
     box-shadow: none;
   }
-  :global([data-theme="knight-rider"]) :is(.focus-card--overdue .focus-card__due, .focus-card__priority[data-pri="1"]) {
+  [data-theme="knight-rider"] :is(.focus-card--overdue .focus-card__due, .focus-card__priority[data-pri="1"]) {
     color: var(--danger-text);
   }
-  :global([data-theme="knight-rider"]) .focus-card__complete {
+  [data-theme="knight-rider"] .focus-card__complete {
     border-color: var(--text-muted);
   }
 
@@ -1577,17 +1581,17 @@ const todayFlowCacheKey = JSON.stringify([
     .today-filter-bar .form-input {
       transition: none !important;
     }
-    :global(.tli--dragging) {
+    .tli--dragging {
       transform: none !important;
     }
-    :global(.tli--drag-over) {
+    .tli--drag-over {
       box-shadow: none !important;
     }
-    :global(.skeleton-line) {
+    .skeleton-line {
       animation: none !important;
     }
-    :global(.habit-card),
-    :global(.habit-card__complete) {
+    .habit-card,
+    .habit-card__complete {
       transition: none !important;
     }
   }

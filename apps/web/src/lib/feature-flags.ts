@@ -34,6 +34,8 @@ export interface FeatureDefinition {
   description: string
   /** Icon for settings UI (emoji) */
   icon: string
+  /** Optional documentation link in the repository */
+  docsUrl?: string
 }
 
 /** All toggleable features — single source of truth */
@@ -55,9 +57,10 @@ export const FEATURE_DEFAULTS: Record<string, FeatureDefinition> = {
   habits: {
     default: true,
     category: "productivity",
-    label: "Habit Tracker",
-    description: "Daily habit tracking with streaks and completion history",
+    label: "Routines",
+    description: "Recurring household routines with streaks, scheduled task generation, and completion history",
     icon: "🔁",
+    docsUrl: "https://github.com/ryan-winkler/meitheal/blob/dev/docs/index.md#tasks-and-planning",
   },
   nfc: {
     default: true,

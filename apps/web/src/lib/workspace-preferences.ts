@@ -3,9 +3,12 @@ export const DASHBOARD_LAYOUT_PREFIX = "meitheal:dashboard-layout:v1:"
 export const WORKSPACE_THEMES = ["auto", "light", "dark"] as const
 export type WorkspaceTheme = (typeof WORKSPACE_THEMES)[number]
 
+export type AfterTaskCreateAction = "board" | "open"
+
 export interface WorkspacePreferences {
   firstPage?: "dashboard" | "tasks"
   capture?: "quick" | "form"
+  afterTaskCreate?: AfterTaskCreateAction
   theme?: WorkspaceTheme
   acknowledged?: true
 }
@@ -19,10 +22,11 @@ export function parseWorkspacePreferences(raw: string | null): WorkspacePreferen
   try {
     const value: unknown = JSON.parse(raw ?? "null")
     if (!value || typeof value !== "object") return {}
-    const { firstPage, capture, theme, acknowledged } = value as Record<string, unknown>
+    const { firstPage, capture, afterTaskCreate, theme, acknowledged } = value as Record<string, unknown>
     return {
       ...(firstPage === "dashboard" || firstPage === "tasks" ? { firstPage } : {}),
       ...(capture === "quick" || capture === "form" ? { capture } : {}),
+      ...(afterTaskCreate === "board" || afterTaskCreate === "open" ? { afterTaskCreate } : {}),
       ...(theme === "auto" || theme === "light" || theme === "dark" ? { theme } : {}),
       ...(acknowledged === true ? { acknowledged } : {}),
     }

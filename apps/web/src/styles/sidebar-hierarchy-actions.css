@@ -20,9 +20,6 @@
     font-size: 13px;
     position: relative;
   }
-  .stree :is(a[href], button, summary, input),
-  .stree__dropdown :is(a[href], button, input),
-  .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }
   /* ── Area row — P1-7: unified padding, P1-8: stronger hover ── */
   .stree__area-row {
     display: flex;

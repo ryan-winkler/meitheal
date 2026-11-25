@@ -1,5 +1,5 @@
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
-import { domEl, qs, setAttr } from "@lib/dom-helpers"
+import { createSpriteIconElement } from "../../generated/icon-registry"
 
 interface Reaction {
   id: number
@@ -26,62 +26,134 @@ export function mountReactions(host: HTMLElement, url: string, signal: AbortSign
   const template = document.querySelector<HTMLTemplateElement>("#td-reaction-controls")
   if (!template || signal.aborted) return
 
-  const panel = domEl("details", `${taskId === undefined ? "mt-2 " : ""}rounded-md border border-border px-3`)
-  panel.dataset.reactionPanel = taskId === undefined ? "comment" : "task"
-  const summary = domEl("summary", "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent", (taskId === undefined ? template.dataset.commentLabel : template.dataset.taskLabel) ?? "")
-  panel.append(summary)
-  host.append(panel)
+  const isTaskLevel = taskId !== undefined
+  const bar = document.createElement("div")
+  bar.className = isTaskLevel ? "td-reaction-bar td-reaction-bar--task" : "td-reaction-bar td-reaction-bar--comment"
 
-  const openPanel = () => {
-    if (!panel.open || !panel.isConnected) return
-    panel.removeEventListener("toggle", openPanel)
-    initReactionPanel(panel, summary, template, url, signal, taskId)
+  const inlineGroups = document.createElement("div")
+  inlineGroups.dataset.reactionGroups = ""
+  inlineGroups.className = "td-reaction-chips"
+  inlineGroups.hidden = true
+
+  const panel = document.createElement("details")
+  panel.className = isTaskLevel ? "td-reaction-details td-reaction-details--task" : "td-reaction-details td-reaction-details--comment"
+  panel.dataset.reactionPanel = isTaskLevel ? "task" : "comment"
+
+  const summary = document.createElement("summary")
+  summary.className = "td-reaction-trigger"
+  summary.title = isTaskLevel ? "Add or change your reaction (1 per person)" : "React to comment (1 per person)"
+  const icon = createSpriteIconElement("mood-smile", { size: 15 })
+  const label = document.createElement("span")
+  label.className = "td-reaction-trigger__label"
+  label.textContent = (isTaskLevel ? template.dataset.taskLabel : template.dataset.commentLabel) ?? (isTaskLevel ? "React" : "React")
+  summary.append(icon, label)
+  panel.append(summary)
+
+  bar.append(inlineGroups, panel)
+  host.append(bar)
+
+  let initialized = false
+  let controller: ReturnType<typeof initReactionPanel> | null = null
+  const ensureInit = (fetchNow = true) => {
+    if (initialized || !panel.isConnected) return controller
+    initialized = true
+    controller = initReactionPanel(panel, summary, inlineGroups, template, url, signal, taskId, fetchNow)
+    return controller
   }
-  panel.addEventListener("toggle", openPanel, { signal })
+
+  panel.addEventListener("toggle", () => {
+    if (!panel.open || !panel.isConnected) return
+    if (!initialized) ensureInit(true)
+    else controller?.reload()
+  }, { signal })
+
+  // Close popover when clicking outside so reactions feel lightweight and native.
+  document.addEventListener("click", (event) => {
+    if (!panel.open || !panel.isConnected) return
+    if (!bar.contains(event.target as Node)) panel.open = false
+  }, { signal })
+
+  if (isTaskLevel) {
+    // Eagerly hydrate task reactions so active chips appear directly in the conversation header.
+    ensureInit(true)
+
+    const emojiBtn = document.getElementById("td-chat-emoji-btn")
+    emojiBtn?.addEventListener("click", () => {
+      panel.open = !panel.open
+      if (panel.open) {
+        ensureInit(true)
+        panel.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      }
+    }, { signal })
+
+    const attachBtn = document.getElementById("td-chat-attach-btn")
+    attachBtn?.addEventListener("click", () => {
+      document.getElementById("td-attachment-input")?.click()
+    }, { signal })
+  }
 }
 
 function initReactionPanel(
-  panel: HTMLDetailsElement, summary: HTMLElement, template: HTMLTemplateElement,
-  url: string, signal: AbortSignal, taskId?: string,
-): void {
+  panel: HTMLDetailsElement,
+  summary: HTMLElement,
+  groupsBar: HTMLElement,
+  template: HTMLTemplateElement,
+  url: string,
+  signal: AbortSignal,
+  taskId: string | undefined,
+  fetchNow: boolean,
+) {
   panel.append(template.content.cloneNode(true))
   const labels = template.dataset
-  const status = qs<HTMLElement>(panel, "[data-reaction-status]")!
-  const error = qs<HTMLElement>(panel, "[data-reaction-error]")!
-  const groupsBar = qs<HTMLElement>(panel, "[data-reaction-groups]")
-  const list = qs<HTMLUListElement>(panel, "[data-reaction-list]")!
-  const retry = qs<HTMLButtonElement>(panel, "[data-reaction-retry]")!
-  const newest = qs<HTMLButtonElement>(panel, "[data-reaction-newest]")!
-  const older = qs<HTMLButtonElement>(panel, "[data-reaction-older]")!
-  const form = qs<HTMLFormElement>(panel, "[data-reaction-form]")!
-  const input = qs<HTMLInputElement>(form, "input")!
+  const status = panel.querySelector<HTMLElement>("[data-reaction-status]")!
+  const error = panel.querySelector<HTMLElement>("[data-reaction-error]")!
+  const list = panel.querySelector<HTMLUListElement>("[data-reaction-list]")!
+  const retry = panel.querySelector<HTMLButtonElement>("[data-reaction-retry]")!
+  const newest = panel.querySelector<HTMLButtonElement>("[data-reaction-newest]")!
+  const older = panel.querySelector<HTMLButtonElement>("[data-reaction-older]")!
+  const form = panel.querySelector<HTMLFormElement>("[data-reaction-form]")!
+  const input = form.querySelector<HTMLInputElement>("input")!
+  const quickEmojiBtns = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-reaction-emoji]"))
   let busy = false
   let pageCursor: string | null = null
   let retryCursor: string | null = null
   let nextCursor: string | null = null
+  let myReaction: { id: number; content: string } | null = null
 
   const isCurrent = () => !signal.aborted && panel.isConnected
 
   function setBusy(value: boolean): void {
     busy = value
-    setAttr(list, "aria-busy", String(value))
+    list.setAttribute("aria-busy", String(value))
     input.readOnly = value
   }
 
+  function syncQuickEmojiHighlights(): void {
+    for (const btn of quickEmojiBtns) {
+      const emoji = btn.dataset.reactionEmoji ?? ""
+      const isMine = myReaction !== null && myReaction.content === emoji
+      btn.setAttribute("aria-pressed", String(isMine))
+      btn.classList.toggle("is-active", isMine)
+    }
+  }
+
   function render(reaction: Reaction): HTMLLIElement {
-    const row = domEl("li", "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md bg-bg-input px-2 text-sm wrap-anywhere")
-    const content = domEl("bdi", "font-medium text-text-primary")
+    const row = document.createElement("li")
+    row.className = "td-reaction-row"
+    const content = document.createElement("bdi")
+    content.className = "td-reaction-row__emoji"
     content.textContent = reaction.content
-    const author = domEl("bdi", "text-text-secondary")
+    const author = document.createElement("bdi")
+    author.className = "td-reaction-row__author"
     author.textContent = reaction.author
     row.append(content, author)
     if (reaction.can_manage) {
-      const remove = domEl("button")
+      const remove = document.createElement("button")
       remove.type = "button"
-      remove.className = "btn btn-ghost ms-auto min-h-11"
+      remove.className = "td-reaction-row__remove"
       remove.dataset.reactionRemove = String(reaction.id)
-      remove.textContent = labels.remove ?? ""
-      setAttr(remove, "aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? "")
+      remove.textContent = labels.remove ?? "Remove"
+      remove.setAttribute("aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? `Remove reaction: ${reaction.content}`)
       row.append(remove)
     }
     return row
@@ -95,7 +167,7 @@ function initReactionPanel(
     retryCursor = cursor
     retry.hidden = true
     error.textContent = ""
-    status.textContent = labels.loading ?? ""
+    if (panel.open) status.textContent = labels.loading ?? ""
     try {
       const response = await fetch(cursor ? `${url}?cursor=${encodeURIComponent(cursor)}` : url, { // nosemgrep
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -106,6 +178,10 @@ function initReactionPanel(
         const participantDenied = await isActiveParticipantProblem(response)
         if (!isCurrent()) return
         list.replaceChildren()
+        groupsBar.replaceChildren()
+        groupsBar.hidden = true
+        myReaction = null
+        syncQuickEmojiHighlights()
         form.hidden = newest.hidden = older.hidden = true
         status.textContent = (participantDenied ? labels.participantRequired : labels.unavailable) ?? ""
         return
@@ -114,21 +190,46 @@ function initReactionPanel(
       const data: ReactionPage = await response.json()
       if (!isCurrent()) return
       list.replaceChildren(...data.reactions.map(render))
-      if (groupsBar) {
-        const groups = Array.isArray(data.groups) ? data.groups : []
-        groupsBar.hidden = groups.length === 0
-        groupsBar.replaceChildren(...groups.map(group => {
-          const pill = domEl("button")
-          pill.type = "button"
-          pill.className = "btn btn-sm border border-border rounded-full px-2.5 py-0.5 text-xs aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
-          pill.dataset.reactionGroup = group.content
-          setAttr(pill, "aria-pressed", String(Boolean(group.reacted)))
-          pill.disabled = !data.can_react && !group.reacted
-          if (group.my_reaction_id != null) pill.dataset.myReactionId = String(group.my_reaction_id)
-          pill.textContent = `${group.content} (${group.count})`
-          return pill
-        }))
+      list.hidden = data.reactions.length === 0
+
+      const groups = Array.isArray(data.groups) ? data.groups : []
+      const mineGroup = groups.find(g => g.reacted && g.my_reaction_id != null)
+      myReaction = mineGroup && mineGroup.my_reaction_id != null
+        ? { id: mineGroup.my_reaction_id, content: mineGroup.content }
+        : null
+      syncQuickEmojiHighlights()
+
+      // Build author tooltips from loaded reactions so hovering a chip reveals who reacted.
+      const authorsByContent = new Map<string, string[]>()
+      for (const r of data.reactions) {
+        const arr = authorsByContent.get(r.content) ?? []
+        if (!arr.includes(r.author)) arr.push(r.author)
+        authorsByContent.set(r.content, arr)
       }
+
+      groupsBar.hidden = groups.length === 0
+      groupsBar.replaceChildren(...groups.map(group => {
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "td-reaction-chip"
+        chip.dataset.reactionGroup = group.content
+        chip.setAttribute("aria-pressed", String(Boolean(group.reacted)))
+        chip.disabled = !data.can_react && !group.reacted
+        if (group.my_reaction_id != null) chip.dataset.myReactionId = String(group.my_reaction_id)
+        const authors = authorsByContent.get(group.content)
+        const actionHint = group.reacted ? "Click to remove your reaction" : myReaction ? "Click to switch your reaction" : "Click to react"
+        chip.title = authors?.length ? `${authors.join(", ")} — ${actionHint}` : actionHint
+
+        const emojiSpan = document.createElement("span")
+        emojiSpan.className = "td-reaction-chip__emoji"
+        emojiSpan.textContent = group.content
+        const countSpan = document.createElement("span")
+        countSpan.className = "td-reaction-chip__count"
+        countSpan.textContent = String(group.count)
+        chip.append(emojiSpan, countSpan)
+        return chip
+      }))
+
       pageCursor = cursor
       nextCursor = data.next_cursor
       form.hidden = !data.can_react
@@ -138,8 +239,10 @@ function initReactionPanel(
     } catch {
       if (!isCurrent()) return
       status.textContent = notice ?? ""
-      error.textContent = labels.loadFailed ?? ""
-      retry.hidden = false
+      if (panel.open) {
+        error.textContent = labels.loadFailed ?? ""
+        retry.hidden = false
+      }
     } finally {
       if (isCurrent()) {
         setBusy(false)
@@ -202,7 +305,7 @@ function initReactionPanel(
   retry.addEventListener("click", () => void load(retryCursor), { signal })
   newest.addEventListener("click", () => void load(null), { signal })
   older.addEventListener("click", () => { if (nextCursor) void load(nextCursor) }, { signal })
-  groupsBar?.addEventListener("click", event => {
+  groupsBar.addEventListener("click", event => {
     const pill = (event.target as Element).closest<HTMLButtonElement>("[data-reaction-group]")
     if (!pill || pill.disabled) return
     if (pill.getAttribute("aria-pressed") === "true" && pill.dataset.myReactionId) {
@@ -218,13 +321,20 @@ function initReactionPanel(
   form.addEventListener("click", event => {
     const emoji = (event.target as Element).closest<HTMLButtonElement>("[data-reaction-emoji]")
     if (busy || !emoji?.dataset.reactionEmoji) return
-    input.value = emoji.dataset.reactionEmoji
-    input.focus()
+    const chosen = emoji.dataset.reactionEmoji
+    // Clicking your already-active quick emoji toggles it off; clicking another switches to it (1 user = 1 reaction).
+    if (myReaction && myReaction.content === chosen) {
+      void mutate(String(myReaction.id))
+    } else {
+      void mutate(undefined, chosen)
+    }
   }, { signal })
   form.addEventListener("submit", event => {
     event.preventDefault()
     void mutate()
   }, { signal })
-  panel.addEventListener("toggle", () => { if (panel.open) void load(pageCursor) }, { signal })
-  void load(null)
+  if (fetchNow) void load(null)
+  return {
+    reload: () => { void load(pageCursor) },
+  }
 }

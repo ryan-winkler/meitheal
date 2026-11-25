@@ -234,6 +234,18 @@ export function bindSidebarUserMenu(sidebar: HTMLElement, pageSignal: AbortSigna
   }
 
   if (trigger && modal && form && modalPortal) {
+    let handleManuallyEdited = false
+
+    const deriveHandleFromDisplayName = (rawName: string): string => {
+      const slug = rawName
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "")
+        .slice(0, 32)
+      return slug
+    }
+
     function syncModalPreview() {
       const nameInput = form!.querySelector<HTMLInputElement>("#profile-display-name")
       const userInput = form!.querySelector<HTMLInputElement>("#profile-handle")
@@ -288,6 +300,8 @@ export function bindSidebarUserMenu(sidebar: HTMLElement, pageSignal: AbortSigna
       if (userInput) userInput.value = currentProfile.username
       if (roleInput) roleInput.value = currentProfile.role
       if (colorInput) colorInput.value = currentProfile.avatarColor
+      // Auto-sync handle on display name edits until user explicitly edits handle
+      handleManuallyEdited = false
       if (errorEl) {
         errorEl.hidden = true
         errorEl.textContent = ""
@@ -324,7 +338,17 @@ export function bindSidebarUserMenu(sidebar: HTMLElement, pageSignal: AbortSigna
       }
     }, { signal })
 
-    form.addEventListener("input", syncModalPreview, { signal })
+    form.addEventListener("input", event => {
+      const target = event.target instanceof HTMLInputElement ? event.target : null
+      const userInput = form.querySelector<HTMLInputElement>("#profile-handle")
+      if (target?.id === "profile-handle") {
+        handleManuallyEdited = target.value.trim().length > 0
+      } else if (target?.id === "profile-display-name" && userInput && !handleManuallyEdited) {
+        const derived = deriveHandleFromDisplayName(target.value)
+        if (derived) userInput.value = derived
+      }
+      syncModalPreview()
+    }, { signal })
 
     form.addEventListener("submit", async event => {
       event.preventDefault()

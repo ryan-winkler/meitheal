@@ -96,7 +96,8 @@ function reactionRoute(
     const actor = resolveTaskAuthor(locals)
     const token = locals.agentToken
     if (!actor) return activeParticipantRequired()
-    if (!actor.owner || (token && !hasScope(token.scopes, tokenScope))) {
+    const owner = actor.owner ?? (!locals.behindIngress && !token ? "local:standalone" : null)
+    if (!owner || (token && !hasScope(token.scopes, tokenScope))) {
       return reactionProblem(403, "Use a verified Home Assistant session or an automation credential with the required task permission")
     }
     const canReact = !token || hasScope(token.scopes, "tasks:write")
@@ -104,7 +105,7 @@ function reactionRoute(
     try {
       if (tokenScope === "tasks:read" && !await hasCurrentTaskParticipant(locals, request.signal)) return activeParticipantRequired()
       await ensureSchema()
-      return await handler(context, new TaskReactionRepository(getPersistenceClient(), workScope), { ...actor, owner: actor.owner }, canReact)
+      return await handler(context, new TaskReactionRepository(getPersistenceClient(), workScope), { ...actor, owner }, canReact)
     } catch {
       logger.log("error", {
         event: "api.reactions.error",

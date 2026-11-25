@@ -26,7 +26,7 @@ Choose **Group by → By Area** to group the current page of cards within each l
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
-Quick actions sit below the task details and wrap within the card.
+On desktop pointers, quick actions float in a frosted-glass bar at the bottom corner of the card when hovered or keyboard-focused so idle cards use their full height; on touch devices they remain directly tappable below the task details.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
@@ -38,7 +38,7 @@ Closing Details while a task is still loading also clears its pending launch lin
 
 Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
 
-Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority and favorite setting intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
+Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
 
 ### React to a task or comment
 
@@ -52,12 +52,12 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 1. Open `Kanban`.
 2. Open **Lanes**. On a phone, open **Board actions** first.
-3. Keep the board visible while editing lane structure and WIP limits.
+3. Keep the board visible while renaming/aliasing built-in or custom lanes, changing lane accent colors, reordering lanes, and editing WIP limits.
 
 ### Change card density without fighting the shell
 
 1. Open **Fields**. On a phone, open **Board actions** first.
-2. Use the card customizer there instead of expecting field toggles in the shell.
+2. Use the card customizer search input there to find any built-in or board custom field without expecting field toggles in the shell.
 3. Compact density hides secondary card rows such as description, metadata, labels, progress, and custom fields so dense boards stay scannable.
 4. Close **Fields** to return to the board.
 

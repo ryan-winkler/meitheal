@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { saveAppearance } from "../helpers/appearance-settings"
 import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers";
 
 test.describe("Responsive Navigation", () => {
@@ -311,7 +312,7 @@ test.describe("Responsive Navigation", () => {
       const pinBtn = page.locator('#tasks-nav-submenu [data-task-view-pin="calendar"]');
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator('.nav-item--tasks + [data-task-view-pinned-item="calendar"]')).toBeVisible();
+      await expect(page.locator('.nav-item--tasks ~ [data-sidebar-group="view-calendar"]')).toBeVisible();
     } finally {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs")).catch(() => {});
       await request.put("/api/settings", {
@@ -384,8 +385,11 @@ test.describe("Responsive Navigation", () => {
     await taskTypesDetails.locator(":scope > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
     const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
+    // Task type pins live in the collapsed Task types accordion.
+    const taskTypes = page.locator("#nav-task-types-section > summary");
 
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
+    await taskTypes.click();
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
@@ -399,6 +403,7 @@ test.describe("Responsive Navigation", () => {
     await expect(pinnedRow).toBeVisible();
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
+    if (!(await pinBtn.isVisible())) await taskTypes.click();
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await expect(pinnedRow).toBeHidden();
@@ -412,19 +417,16 @@ test.describe("Responsive Navigation", () => {
     await navSection.locator("#nav-task-types-section > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="shopping_item"]');
     const pinnedRow = page.locator('#sidebar [data-task-nav-pinned-item="shopping_item"]');
-    const lookFeelSection = page.locator("#look-and-feel-settings");
-
+    // Navigation layout is part of the Look & Feel draft.
     const setNavigationLayout = async (mode: "navbar" | "sidebar") => {
-      if (await lookFeelSection.isHidden()) {
-        await page.locator('[data-settings-nav="look-and-feel-settings"]').first().click();
-      }
-      await lookFeelSection.locator(`#navigation-appearance-form [data-visual-field="navigation"][data-visual-option="${mode}"]`).click();
-      await page.locator("#appearance-save-btn").click();
-      await expect(page.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.");
+      await page.goto("/settings#look-and-feel-settings");
+      await page.locator('#appearance-preferences-form [name="navigation"]').selectOption(mode);
+      await saveAppearance(page);
     };
 
     try {
       await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
+      await page.locator("#nav-task-types-section > summary").click();
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
       await expect(pinnedRow).toBeVisible();

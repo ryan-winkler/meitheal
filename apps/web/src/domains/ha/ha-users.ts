@@ -12,6 +12,7 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 import { readConfiguredHACoreUsers, readCurrentHACoreUsers } from "./core-user-lookup"
 import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { getHAConfiguration, matchesCurrentHAConnection } from "./ha-connection"
+import { getCachedHAUserDisplayNameSync } from "./ha-user-cache"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -153,13 +154,17 @@ export function invalidateUserCache(): void {
   cachedRoster = undefined
 }
 
-/** Resolve an ingress author's display name from the Supervisor roster. */
+/** Resolve an ingress author's display name from the Supervisor roster or local cache. */
 export function getCachedHAUserName(userId: string): string | undefined {
-  if (!cachedRoster || !process.env.SUPERVISOR_TOKEN) return
-  const configuration = resolveHAConfiguration(process.env)
-  if (configuration && cachedRoster.fingerprint === fingerprintHAConfiguration(configuration)) {
-    return cachedRoster.users.find(user => user.id === userId)?.name
+  if (!userId) return
+  if (cachedRoster && process.env.SUPERVISOR_TOKEN) {
+    const configuration = resolveHAConfiguration(process.env)
+    if (configuration && cachedRoster.fingerprint === fingerprintHAConfiguration(configuration)) {
+      const found = cachedRoster.users.find(user => user.id === userId)?.name
+      if (found) return found
+    }
   }
+  return getCachedHAUserDisplayNameSync(userId)
 }
 
 /**

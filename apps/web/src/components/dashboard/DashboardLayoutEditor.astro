@@ -3,55 +3,145 @@ import TablerModal from "../ui/TablerModal.astro"
 import Icon from "../ui/Icon.astro"
 import { DASHBOARD_SECTIONS } from "@lib/dashboard-registry"
 import { isIconName } from "../../generated/icon-registry"
+
+const WIDGET_DESCRIPTIONS: Record<string, string> = {
+  "dashboard-overview": "Key counts across active, overdue, and completed tasks.",
+  "dashboard-momentum": "Daily streak, completions, and progress pulse.",
+  "dashboard-capture": "Fast natural-language entry for new tasks and lists.",
+  "dashboard-open": "Promoted work and open priority tasks due next.",
+  "dashboard-recent": "Latest updated tasks with quick status and promotion controls.",
+}
 ---
 
 <TablerModal id="dashboard-layout-editor" title="Customize dashboard" descriptionId="dashboard-layout-help" size="lg">
-  <p id="dashboard-layout-help">
-    Drag widgets or use the arrows to reorder them. This layout is saved in this browser for your profile.
-  </p>
+  <div class="dashboard-layout-intro">
+    <p id="dashboard-layout-help" class="dashboard-layout-help">
+      Drag the grip or use the arrows to reorder widgets. Saved locally in this browser for your profile.
+    </p>
+    <div class="dashboard-layout-summary">
+      <span class="dashboard-layout-summary__count" data-dashboard-visible-count>
+        {DASHBOARD_SECTIONS.length} of {DASHBOARD_SECTIONS.length} widgets visible
+      </span>
+      <span class="dashboard-layout-dirty" data-dashboard-dirty hidden>Unsaved changes</span>
+      <button type="button" class="btn btn-sm btn-ghost dashboard-layout-show-all" data-dashboard-show-all hidden>
+        <Icon name="eye" size={14} sprite />
+        Show all
+      </button>
+    </div>
+  </div>
   <ol class="dashboard-layout-list" data-dashboard-editor-list aria-label="Dashboard widgets">
     {DASHBOARD_SECTIONS.map(section => (
       <li class="card dashboard-layout-row" data-dashboard-editor-widget={section.id}>
         <div class="dashboard-layout-row__heading">
-          <span class="dashboard-layout-grip" data-dashboard-drag aria-hidden="true"><Icon name="grip-vertical" size={20} sprite /></span>
-          {isIconName(section.icon) && <Icon name={section.icon} size={18} sprite />}
-          <strong>{section.label}</strong>
+          <span class="dashboard-layout-grip" data-dashboard-drag title="Drag to reorder" aria-hidden="true">
+            <Icon name="grip-vertical" size={18} sprite />
+          </span>
+          <span class="dashboard-layout-row__icon" aria-hidden="true">
+            {isIconName(section.icon) && <Icon name={section.icon} size={18} sprite />}
+          </span>
+          <div class="dashboard-layout-row__meta">
+            <strong>{section.label}</strong>
+            {WIDGET_DESCRIPTIONS[section.id] && (
+              <span class="dashboard-layout-row__desc">{WIDGET_DESCRIPTIONS[section.id]}</span>
+            )}
+          </div>
           <span class="dashboard-layout-row__moves">
-            <button type="button" class="btn btn-ghost" aria-label={`Move ${section.label} up`} data-dashboard-move="up">
-              <Icon name="arrow-up" size={18} sprite />
+            <button type="button" class="btn btn-ghost dashboard-layout-move-btn" aria-label={`Move ${section.label} up`} title={`Move ${section.label} up`} data-dashboard-move="up">
+              <Icon name="arrow-up" size={16} sprite />
             </button>
-            <button type="button" class="btn btn-ghost" aria-label={`Move ${section.label} down`} data-dashboard-move="down">
-              <Icon name="arrow-down" size={18} sprite />
+            <button type="button" class="btn btn-ghost dashboard-layout-move-btn" aria-label={`Move ${section.label} down`} title={`Move ${section.label} down`} data-dashboard-move="down">
+              <Icon name="arrow-down" size={16} sprite />
             </button>
           </span>
         </div>
         <div class="dashboard-layout-row__options">
-          <label>
-            <input type="checkbox" data-dashboard-visible checked aria-label={`Show ${section.label}`} />
-            Show widget
+          <label class="form-check form-switch dashboard-layout-switch">
+            <input type="checkbox" class="form-check-input" data-dashboard-visible checked aria-label={`Show ${section.label}`} />
+            <span class="form-check-label">Show widget</span>
           </label>
-          <label>
-            Width
-            <select class="form-select" data-dashboard-width aria-label={`${section.label} width`}>
-              <option value="full">Full</option>
-              <option value="half">Half</option>
-            </select>
-          </label>
-          <label>
-            State
-            <select class="form-select" data-dashboard-state aria-label={`${section.label} state`}>
-              <option value="expanded">Keep expanded</option>
-              <option value="collapsed">Keep collapsed</option>
-            </select>
-          </label>
+          <div class="dashboard-layout-row__selects">
+            <label class="dashboard-layout-field">
+              <span class="dashboard-layout-field__label">Width</span>
+              <select class="form-select" data-dashboard-width aria-label={`${section.label} width`}>
+                <option value="full">Full</option>
+                <option value="half">Half</option>
+              </select>
+            </label>
+            <label class="dashboard-layout-field">
+              <span class="dashboard-layout-field__label">State</span>
+              <select class="form-select" data-dashboard-state aria-label={`${section.label} state`}>
+                <option value="expanded">Keep expanded</option>
+                <option value="collapsed">Keep collapsed</option>
+              </select>
+            </label>
+          </div>
         </div>
       </li>
     ))}
   </ol>
-  <p class="text-text-secondary" data-dashboard-editor-message role="status" hidden></p>
-  <button type="button" class="btn btn-ghost" data-dashboard-reset>Restore defaults</button>
+  <p class="dashboard-layout-message" data-dashboard-editor-message role="status" hidden></p>
   <Fragment slot="footer">
+    <button type="button" class="btn btn-ghost dashboard-layout-reset-btn" data-dashboard-reset>
+      <Icon name="refresh" size={15} sprite />
+      Restore defaults
+    </button>
     <button type="button" class="btn btn-ghost" data-dashboard-cancel data-tabler-initial-focus>Cancel</button>
     <button type="button" class="btn btn-primary" data-dashboard-save>Save dashboard</button>
   </Fragment>
 </TablerModal>
+
+<style is:inline>
+  .dashboard-layout-intro { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .dashboard-layout-help { margin: 0; font-size: 0.875rem; color: var(--text-secondary); line-height: 1.45; }
+  .dashboard-layout-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-radius: var(--radius-md, 10px); background: var(--bg-secondary); border: 1px solid var(--border); font-size: 0.8125rem; }
+  .dashboard-layout-summary__count { font-weight: 600; color: var(--text-primary); }
+  .dashboard-layout-dirty { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text, var(--accent)); }
+  .dashboard-layout-show-all { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; min-height: 30px; padding: 2px 10px; }
+  .dashboard-layout-list { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 10px; }
+  .dashboard-layout-row { margin: 0; padding: 12px 14px; border-radius: var(--radius-md, 10px); border: 1px solid var(--border); background: var(--bg-card); display: flex; flex-direction: column; gap: 10px; transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease, opacity 180ms ease; }
+  .dashboard-layout-row:hover { transform: none; border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+  .dashboard-layout-row.is-hidden-widget { border-style: dashed; background: color-mix(in srgb, var(--bg-secondary) 70%, transparent); opacity: 0.74; }
+  .dashboard-layout-row.is-hidden-widget .dashboard-layout-row__selects { opacity: 0.5; }
+  .dashboard-layout-row__heading { display: flex; align-items: center; gap: 10px; }
+  .dashboard-layout-row__icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary)); color: var(--accent-text, var(--accent)); flex: none; }
+  .dashboard-layout-row__meta { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; flex: 1 1 auto; }
+  .dashboard-layout-row__meta strong { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+  .dashboard-layout-row__desc { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; }
+  .dashboard-layout-row__moves { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; flex: none; }
+  .dashboard-layout-move-btn { min-inline-size: 36px; min-block-size: 36px; padding: 0; justify-content: center; border: 1px solid var(--border); border-radius: 8px; transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .dashboard-layout-move-btn:active:not([aria-disabled="true"]) { transform: scale(0.94); }
+  .dashboard-layout-move-btn[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+  .dashboard-layout-grip { visibility: hidden; display: grid; place-items: center; min-inline-size: 28px; min-block-size: 36px; color: var(--text-muted); cursor: grab; touch-action: none; flex: none; border-radius: 6px; }
+  .dashboard-layout-grip:hover { color: var(--text-primary); background: var(--bg-hover); }
+  [data-dashboard-drag-ready] .dashboard-layout-grip { visibility: visible; }
+  .dashboard-layout-row__options { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+  .dashboard-layout-switch { display: inline-flex; align-items: center; gap: 10px; min-block-size: 36px; margin: 0; padding-inline-start: 0; cursor: pointer; font-size: 0.85rem; font-weight: 550; color: var(--text-primary); }
+  .dashboard-layout-switch .form-check-input { appearance: none; -webkit-appearance: none; position: relative; width: 38px; height: 22px; margin: 0; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-secondary); cursor: pointer; flex: none; transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease; }
+  .dashboard-layout-switch .form-check-input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-muted); transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease; }
+  .dashboard-layout-switch .form-check-input:checked { background: var(--accent); border-color: var(--accent); }
+  .dashboard-layout-switch .form-check-input:checked::after { transform: translateX(16px); background: var(--personal-accent-foreground, #ffffff); }
+  .dashboard-layout-switch .form-check-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dashboard-layout-row__selects { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+  .dashboard-layout-field { display: inline-flex; align-items: center; gap: 6px; min-block-size: 36px; margin: 0; }
+  .dashboard-layout-field__label { font-size: 0.78rem; font-weight: 550; color: var(--text-secondary); }
+  .dashboard-layout-field select { inline-size: auto; max-inline-size: 100%; min-block-size: 36px; padding-block: 4px; font-size: 0.82rem; }
+  .dashboard-layout-message { margin: 6px 0 4px; font-size: 0.8125rem; color: var(--text-secondary); }
+  .dashboard-layout-reset-btn { margin-inline-end: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .dashboard-layout-row.dashboard-widget-drag-ghost { outline: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+  @media (pointer: coarse) {
+    .dashboard-layout-grip, .dashboard-layout-move-btn { min-inline-size: 42px; min-block-size: 42px; }
+    .dashboard-layout-field select { min-block-size: 42px; }
+  }
+  @media (max-width: 540px) {
+    .dashboard-layout-row { padding: 10px 12px; }
+    .dashboard-layout-row__icon { display: none; }
+    .dashboard-layout-row__options { flex-direction: column; align-items: stretch; }
+    .dashboard-layout-row__selects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .dashboard-layout-field { flex-direction: column; align-items: stretch; gap: 4px; }
+    .dashboard-layout-field select { inline-size: 100%; }
+    .dashboard-layout-reset-btn { width: 100%; justify-content: center; margin-inline-end: 0; order: 3; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard-layout-row, .dashboard-layout-move-btn, .dashboard-layout-switch .form-check-input, .dashboard-layout-switch .form-check-input::after { transition: none; }
+  }
+</style>

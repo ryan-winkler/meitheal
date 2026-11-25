@@ -105,7 +105,7 @@
   --border: rgb(var(--border-rgb));
 }
 
-:is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"])[data-appearance-base]:not([data-appearance-base="slate"]) {
+:is(html.light, [data-theme="light"], [data-theme="auto"][data-ha-theme="light"])[data-appearance-base]:not([data-appearance-base="slate"]) {
   --bg-primary-rgb: var(--appearance-50);
   --bg-secondary-rgb: var(--appearance-100);
   --bg-card-rgb: 255 255 255;
@@ -137,7 +137,7 @@
     --border-rgb: var(--appearance-600);
   }
 
-  :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"])[data-appearance-base]:not([data-appearance-base="slate"]) {
+  :is(html.light, [data-theme="light"], [data-theme="auto"][data-ha-theme="light"])[data-appearance-base]:not([data-appearance-base="slate"]) {
     --text-muted-rgb: var(--appearance-700);
     --border-rgb: var(--appearance-400);
   }
@@ -283,7 +283,7 @@
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-edge-toggle, .sidebar-ipa, .sidebar-compact-areas, .sidebar-gamification-wrapper) { display: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-edge-toggle, .sidebar-ipa, .sidebar-gamification-wrapper) { display: none; }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-cta-wrap { padding: 0; }
   :root[data-appearance-navigation="navbar"]:has(#taskbar-task-types) #sidebar .sidebar-cta-wrap { display: none; }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-rail-cta {
@@ -374,61 +374,6 @@
     margin: 0;
     padding: 0;
     border: 0;
-  }
-  :root[data-appearance-navigation="navbar"] #sidebar-hierarchy-panel {
-    position: relative;
-    flex: none;
-    min-inline-size: 0;
-    max-inline-size: min(12rem, 34%);
-  }
-  :root[data-appearance-navigation="navbar"] #project-nav {
-    --stree-block-padding: 0px;
-    --stree-inline-padding: 0px;
-    --stree-header-height: 40px;
-    overflow: visible;
-    max-height: none;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-  :root[data-appearance-navigation="navbar"] #project-nav-group-toggle {
-    min-inline-size: 0;
-    padding: 8px;
-    padding-inline-end: calc(var(--stree-manage-size) + 6px);
-    color: var(--text-primary);
-  }
-  :root[data-appearance-navigation="navbar"] #project-nav-group-toggle .stree__group-heading { flex: 1; }
-  :root[data-appearance-navigation="navbar"] #sidebar-areas-group[open] #project-nav-content {
-    position: absolute;
-    inset-block-start: calc(100% + 8px);
-    inset-inline-start: 50%;
-    transform: translateX(-50%);
-    width: min(22rem, calc(100vw - 32px));
-    max-height: min(32rem, 70dvh);
-    overflow: auto;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-lg);
-  }
-  /* The Boards dropdown or More owns scrolling for its complete hierarchy. */
-  :root[data-appearance-navigation="navbar"] #sidebar-board-children #sidebar-hierarchy-panel {
-    max-inline-size: none;
-  }
-  :root[data-appearance-navigation="navbar"] #sidebar-board-children #sidebar-areas-group[open] #project-nav-content {
-    position: static;
-    inset: auto;
-    transform: none;
-    width: auto;
-    max-height: none;
-    overflow: visible;
-  }
-  :root[data-appearance-navigation="navbar"] #sidebar-board-children #project-nav-content .stree__list,
-  :root[data-appearance-navigation="navbar"] #sidebar-board-children #project-nav-content .stree__children:not([data-collapsed="true"]) {
-    max-height: none;
-    overflow: visible;
   }
   :root[data-appearance-navigation="navbar"]:not([data-appearance-header="default"]) :is(.topbar, .unified-bar, #settings-bar) {
     top: var(--appearance-navbar-offset);

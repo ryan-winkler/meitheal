@@ -23,9 +23,26 @@ export function parseTaskView(value: string | null): TaskView | undefined {
   return TASK_VIEWS.find(view => view === value)
 }
 
+/** Detect phone/handheld mobile User-Agents (excludes tablets/iPads). */
+export function isMobileUserAgent(userAgent: string): boolean {
+  if (!userAgent) return false
+  if (/iPad|Tablet|PlayBook|Silk/i.test(userAgent)) return false
+  if (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent)) return false
+  return /iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+}
+
 export function requestedTaskView(params: URLSearchParams, hash = ""): TaskView | undefined {
   return parseTaskView(params.get("view")) ?? parseTaskView(hash.slice(1)) ??
     (readTableTaskTypeParam(params) ? "table" : undefined)
+}
+
+/** Default to Table view on mobile devices unless an explicit view was requested. */
+export function resolveDefaultTaskView(
+  params: URLSearchParams,
+  hash = "",
+  userAgent = "",
+): TaskView {
+  return requestedTaskView(params, hash) ?? (isMobileUserAgent(userAgent) ? "table" : "kanban")
 }
 
 export function appliedTaskRules(params: URLSearchParams, view: TaskView) {
@@ -64,12 +81,7 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
       else url.searchParams.delete("advancedFilter")
     }
   }
-  if (view === "kanban" && url.searchParams.get("view") !== "kanban" &&
-    !readTableTaskTypeParam(url.searchParams)) {
-    url.searchParams.delete("view")
-  } else {
-    url.searchParams.set("view", view)
-  }
+  url.searchParams.set("view", view)
   if (view !== "table") {
     const params = url.searchParams
     const groupBy = params.get("groupBy")

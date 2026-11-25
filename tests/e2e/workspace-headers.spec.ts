@@ -237,7 +237,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       if (path.startsWith("/habits")) {
         await failed.waitForLoadState("networkidle")
         await expect(failed.locator("#habits-library-count")).toHaveCount(0)
-        await expect(failed.locator("#habits-library").getByText("Routines couldn’t load right now")).toBeVisible()
+        await expect(failed.locator("#habits-library").getByText("Habits couldn’t load right now")).toBeVisible()
         await expect(failed.locator("#habits-library").getByRole("button", { name: "New " + alias, exact: true })).toBeDisabled()
         const toolbarCreate = failed.locator("#habits-bar-new-habit")
         await expect(toolbarCreate).toBeDisabled()

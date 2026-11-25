@@ -7,6 +7,14 @@ import { safeFetch } from "./safe-fetch"
 import { updateBoardCustomFieldDefs, type CustomFieldDef } from "./custom-field-defs"
 import { showToast } from "./toast"
 import { normalizeBoardKey, suggestBoardKey, validateBoardKey } from "@domains/tasks/board-key"
+import {
+  DEFAULT_BACKGROUND_POLL_INTERVAL_MS,
+  DEFAULT_VISIBILITY_RETURN_GAP_MS,
+  describeVerificationPause,
+  shouldRunBackgroundRecheck,
+  type VerificationPauseReason,
+} from "./board-verification-policy"
+import { createSpriteIconElement } from "../generated/icon-registry"
 
 class BoardRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
@@ -20,26 +28,58 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   if (!boardKey || !boardVerify || !boardSession) return
   root.dataset.bound = "true"
 
-  const stale = document.createElement("p")
+  const stale = document.createElement("div")
   stale.dataset.boardStale = ""
   stale.className = "alert alert-warning board-verification-banner"
   stale.setAttribute("role", "status")
   stale.hidden = true
   root.prepend(stale)
-  const recovery = document.createElement("p")
+
+  const recovery = document.createElement("div")
   recovery.dataset.boardVerification = ""
   recovery.className = "alert alert-warning board-verification-banner"
   recovery.setAttribute("role", "status")
   recovery.hidden = true
+
+  const recoveryIcon = document.createElement("span")
+  recoveryIcon.className = "board-verification-banner__icon"
+  recoveryIcon.setAttribute("aria-hidden", "true")
+  recoveryIcon.appendChild(createSpriteIconElement("alert-triangle", { size: 18 }))
+
+  const recoveryBody = document.createElement("div")
+  recoveryBody.className = "board-verification-banner__body"
+  const recoveryTitle = document.createElement("p")
+  recoveryTitle.className = "board-verification-banner__title"
+  const recoveryDetail = document.createElement("p")
+  recoveryDetail.className = "board-verification-banner__detail"
+  recoveryDetail.dataset.boardVerificationDetail = ""
+  recoveryBody.append(recoveryTitle, recoveryDetail)
+
+  const recoveryActions = document.createElement("div")
+  recoveryActions.className = "board-verification-banner__actions"
   const retry = document.createElement("button")
   retry.type = "button"
-  retry.className = "btn btn-ghost btn-sm"
+  retry.className = "btn btn-primary btn-sm"
   retry.textContent = "Retry verification"
-  recovery.append("This Board is hidden until access can be verified. Your input is kept on this page. ", retry)
+  const refreshPage = document.createElement("button")
+  refreshPage.type = "button"
+  refreshPage.className = "btn btn-ghost btn-sm"
+  refreshPage.textContent = "Refresh page"
+  recoveryActions.append(retry, refreshPage)
+
+  const updateRecoveryReason = (reason: VerificationPauseReason, statusCode?: number) => {
+    const copy = describeVerificationPause(reason, statusCode)
+    recoveryTitle.textContent = copy.title
+    recoveryDetail.textContent = copy.detail
+    recovery.dataset.boardVerificationReason = reason
+  }
+  updateRecoveryReason("session")
+  recovery.append(recoveryIcon, recoveryBody, recoveryActions)
   status.before(recovery)
   let expired = false
   let navigating = false
   let checking: AbortController | undefined
+  let lastVerifiedAt = Date.now()
   const placeholder = document.createComment("")
   let retainedFocus: { element: HTMLElement; boardId: string; actorKey: string | undefined; moved: boolean } | undefined
   let movingToRecovery = false
@@ -65,18 +105,20 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     target?.focus({ preventScroll: true })
     movingToRecovery = false
   }
-  const detach = (owned = holdsFocus()) => {
+  const detach = (owned = holdsFocus(), reason: VerificationPauseReason = "session", statusCode?: number) => {
     const active = document.activeElement
     const context = currentTaskApiContext()
     if (root.isConnected && owned && active instanceof HTMLElement && context && !recovery.contains(active)) {
       retainedFocus = { element: active, boardId: context.boardId, actorKey: context.actorKey, moved: false }
     }
+    if (!expired) updateRecoveryReason(reason, statusCode)
     root.dispatchEvent(new Event("meitheal:board-hidden", { bubbles: true }))
     if (root.isConnected) root.replaceWith(placeholder)
     recovery.hidden = expired
     if (!expired) focusRecovery(owned)
   }
   const restore = () => {
+    lastVerifiedAt = Date.now()
     if (placeholder.isConnected) placeholder.replaceWith(root)
     recovery.hidden = true
     root.dispatchEvent(new Event("meitheal:board-verified", { bubbles: true }))
@@ -103,19 +145,20 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   async function recheck(beforeRevealing = false) {
     if (expired || signal.aborted) return
     checking?.abort()
-    if (beforeRevealing || document.hidden) detach()
+    if (beforeRevealing) detach(holdsFocus(), "session")
     if (document.hidden) return
     const active = new AbortController()
     checking = active
     try {
       const verifyUrl = new URL(boardVerify!, location.origin)
       if (verifyUrl.origin !== location.origin || !stripIngressPrefix(verifyUrl.pathname).startsWith("/api/boards")) {
-        detach()
+        detach(holdsFocus(), "session")
         return
       }
+      const timeoutSignal = AbortSignal.timeout(4_000)
       const response = await fetch(verifyUrl.pathname + verifyUrl.search, { // nosemgrep
         method: "HEAD", cache: "no-store",
-        signal: AbortSignal.any([signal, active.signal, AbortSignal.timeout(4_000)]),
+        signal: AbortSignal.any([signal, active.signal, timeoutSignal]),
       })
       if (active.signal.aborted || signal.aborted || document.hidden) return
       if (response.ok && boardAuthority && response.headers.get("x-meitheal-board-authority") === boardAuthority) {
@@ -131,37 +174,50 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
         stale.textContent = stale.hidden ? "" : "This Board changed. Your input is kept on this page. Refresh when ready to load the latest versions."
       } else if (response.ok && !boardAuthority && response.headers.get("x-meitheal-board-view") === boardKey) restore()
       else if (response.ok || response.status === 403 || response.status === 404) expire()
-      else detach()
-    } catch {
-      if (!active.signal.aborted && !signal.aborted) detach()
+      else detach(holdsFocus(), "server", response.status)
+    } catch (error) {
+      if (!active.signal.aborted && !signal.aborted) {
+        const isTimeout = error instanceof DOMException && error.name === "TimeoutError"
+        const reason: VerificationPauseReason = !navigator.onLine ? "offline" : isTimeout ? "timeout" : "server"
+        detach(holdsFocus(), reason)
+      }
     }
   }
-  const timer = setInterval(() => { void recheck() }, 10_000)
+  const timer = setInterval(() => {
+    if (!shouldRunBackgroundRecheck({
+      now: Date.now(),
+      lastVerifiedAt,
+      isHidden: document.hidden,
+      isDetached: placeholder.isConnected,
+    })) return
+    void recheck()
+  }, DEFAULT_BACKGROUND_POLL_INTERVAL_MS)
   retry.addEventListener("click", () => { void recheck(true) }, { signal })
+  refreshPage.addEventListener("click", () => window.location.reload(), { signal })
   signal.addEventListener("abort", () => {
     clearInterval(timer)
     recovery.remove()
     delete root.dataset.bound
   }, { once: true })
-  const isEditorIframe = (el: Element | null): el is HTMLIFrameElement =>
-    el instanceof HTMLIFrameElement && el.classList.contains("tox-edit-area__iframe") && el.isConnected
-  let inEditorIframe = false
-  document.addEventListener("pointerdown", event => {
-    inEditorIframe = event.isTrusted && !document.hidden && document.hasFocus() && isEditorIframe(document.activeElement)
-  }, { capture: true, signal })
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) inEditorIframe = false
-    void recheck(true)
+    if (document.hidden) {
+      checking?.abort()
+      return
+    }
+    if (placeholder.isConnected || Date.now() - lastVerifiedAt >= DEFAULT_VISIBILITY_RETURN_GAP_MS) {
+      void recheck(placeholder.isConnected)
+    }
   }, { signal })
-  window.addEventListener("blur", () => { inEditorIframe = false }, { signal })
-  window.addEventListener("focus", event => {
-    const fromEditor = event.isTrusted && inEditorIframe && !document.hidden && document.hasFocus()
-    inEditorIframe = false
-    void recheck(!fromEditor)
+  window.addEventListener("focus", () => {
+    if (!placeholder.isConnected && !document.hidden && Date.now() - lastVerifiedAt < 1500) return
+    void recheck(placeholder.isConnected)
   }, { signal })
-  window.addEventListener("offline", () => { checking?.abort(); detach() }, { signal })
-  window.addEventListener("online", () => { void recheck(true) }, { signal })
-  window.addEventListener("pagehide", () => { checking?.abort(); detach() }, { signal })
+  window.addEventListener("offline", () => { checking?.abort(); detach(holdsFocus(), "offline") }, { signal })
+  window.addEventListener("online", () => { void recheck(placeholder.isConnected) }, { signal })
+  window.addEventListener("pagehide", event => {
+    checking?.abort()
+    if (event.persisted) detach(holdsFocus(), "session")
+  }, { signal })
   window.addEventListener("pageshow", event => { if (event.persisted) void recheck(true) }, { signal })
   status.querySelector("[data-board-refresh]")?.addEventListener("click", () => window.location.reload(), { signal })
 

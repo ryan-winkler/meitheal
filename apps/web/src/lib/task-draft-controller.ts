@@ -457,21 +457,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
       void renew(lease)
     }
   }
-  window.addEventListener("blur", event => {
-    const active = document.activeElement
-    if (event.isTrusted && !document.hidden && document.hasFocus() &&
-        active instanceof HTMLIFrameElement && active.classList.contains("tox-edit-area__iframe")) {
-      active.contentWindow?.addEventListener("blur", () => {
-        queueMicrotask(() => {
-          if ((!document.hasFocus() || document.hidden) && opened && (bound || marker || lease)) {
-            withdraw(false, taskDraftText("paused_inactive"))
-          }
-        })
-      }, { once: true, signal })
-      return
-    }
-    if (opened && (bound || marker || lease)) withdraw(false, taskDraftText("paused_inactive"))
-  }, { signal })
+  window.addEventListener("blur", () => { if (opened && (bound || marker || lease)) withdraw(false, taskDraftText("paused_inactive")) }, { signal })
   window.addEventListener("focus", resumeForeground, { signal })
   window.addEventListener("offline", () => { if (opened) withdraw(false, taskDraftText("reconnect")) }, { signal })
   window.addEventListener("online", resumeForeground, { signal })

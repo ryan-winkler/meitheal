@@ -2,7 +2,6 @@ import { isDeferralTerminalStatus } from "@domains/tasks/persistence/task-deferr
 import {
   allowsDeferral, DEFERRAL_RECONCILED, notifyTaskCountsChanged, readFreshDeferral, writeDeferral, type DeferralState,
 } from "@lib/deferral-client"
-import { qs } from "@lib/dom-helpers"
 
 interface CurrentTask {
   id: string
@@ -15,10 +14,10 @@ interface CurrentTask {
 }
 
 export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
-  const action = qs<HTMLButtonElement>(overlay, "#td-deferral-action")
-  const badge = qs<HTMLElement>(overlay, "#td-deferred-badge")
-  const status = qs<HTMLElement>(overlay, "#td-deferral-status")
-  const retry = qs<HTMLButtonElement>(overlay, "#td-deferral-refresh")
+  const action = overlay.querySelector<HTMLButtonElement>("#td-deferral-action")
+  const badge = overlay.querySelector<HTMLElement>("#td-deferred-badge")
+  const status = overlay.querySelector<HTMLElement>("#td-deferral-status")
+  const retry = overlay.querySelector<HTMLButtonElement>("#td-deferral-refresh")
   let task: CurrentTask | undefined
   let originId: string | undefined
   let changed = new Set<string>()
@@ -53,7 +52,11 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
     if (action) {
       action.hidden = isDeferralTerminalStatus(state.status)
       action.disabled = false
-      action.textContent = selected.deferred ? action.dataset.resumeLabel ?? "Resume" : action.dataset.deferLabel ?? "Defer"
+      const nextLabel = selected.deferred ? action.dataset.resumeLabel ?? "Resume" : action.dataset.deferLabel ?? "Defer"
+      const labelEl = action.querySelector<HTMLElement>("#td-deferral-action-label")
+      if (labelEl) labelEl.textContent = nextLabel
+      else action.textContent = nextLabel
+      action.dataset.deferredState = selected.deferred ? "deferred" : "active"
     }
   }
   async function refresh(selected = task, checkMembership = false, requested = false) {
@@ -70,7 +73,7 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
       render(selected, state)
       showStatus("")
       if (requested) {
-        const focus = action && !action.hidden ? action : qs<HTMLElement>(overlay, "#td-close")
+        const focus = action && !action.hidden ? action : overlay.querySelector<HTMLElement>("#td-close")
         focus?.focus()
       }
     } catch {

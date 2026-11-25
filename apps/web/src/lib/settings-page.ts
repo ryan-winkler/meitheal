@@ -11,6 +11,8 @@ import { initSettingsTaskNav } from "@lib/settings-task-nav-controller"
 import { initOrganizationLabels } from "@lib/settings-organization-labels"
 import { initSettingsHomeAssistantArea } from "@lib/settings-home-assistant-area"
 import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
+import { initSettingsShoppingCategories } from "@lib/settings-shopping-categories-controller"
+import { initNotificationPrefsSettings } from "@lib/settings-notification-prefs-controller"
 
 function initPwaNotificationTest(): void {
   const button = document.querySelector<HTMLButtonElement>("#pwa-test-notification")
@@ -65,6 +67,8 @@ function bootSettingsPage(): void {
   initSettingsWorkspace(pageLifecycle.signal)
   initOrganizationLabels(pageLifecycle.signal)
   initSettingsHomeAssistantArea(pageLifecycle.signal)
+  initSettingsShoppingCategories(pageLifecycle.signal)
+  initNotificationPrefsSettings(pageLifecycle.signal)
   const taskLayout = document.querySelector<HTMLElement>("#settings-task-detail-layout [data-task-layout-editor]")
   if (taskLayout) initTaskDetailLayoutEditor(taskLayout, pageLifecycle.signal)
   initPwaNotificationTest()

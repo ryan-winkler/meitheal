@@ -20,7 +20,6 @@ import {
 import { type DomainEvent, type WebhookSubscriberConfig, emitWebhook } from "@meitheal/integration-core";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import { fireHAEvent, type MeithealTaskEventData, type MeithealEventType } from "@domains/ha/ha-events";
-import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -78,24 +77,15 @@ async function getN8nAutoEvents(): Promise<string[]> {
   } catch { return [] }
 }
 
-const webhookSettingsCache = new WeakMap<object, { token: string; settings: Record<string, unknown> }>()
-
-/** Read transport configuration fresh; reuse parsed settings only while the SQLite snapshot is unchanged. */
+/** Read transport configuration fresh; a TTL cannot establish receiver authority. */
 async function getCurrentWebhookSettings(): Promise<Record<string, unknown>> {
-  const db = getPersistenceClient()
-  const state = localReaderCacheToken(db)
-  const cached = state ? webhookSettingsCache.get(state.owner) : undefined
-  if (state && cached?.token === state.token) return cached.settings
-  const result = await db.execute(
+  const result = await getPersistenceClient().execute(
     "SELECT key,value FROM settings WHERE key IN ('webhook_endpoint','webhook_secret','n8n_webhook_url','n8n_events','n8n_api_key','n8n_signing_secret') ORDER BY key"
   )
   const settings: Record<string, unknown> = {}
   for (const row of result.rows) {
     try { settings[String(row.key)] = JSON.parse(String(row.value)) }
     catch { settings[String(row.key)] = String(row.value) }
-  }
-  if (state && localReaderCacheToken(db)?.token === state.token) {
-    webhookSettingsCache.set(state.owner, { token: state.token, settings })
   }
   return settings
 }

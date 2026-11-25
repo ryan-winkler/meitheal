@@ -148,8 +148,10 @@ export function updateBulkBar(): void {
   const selectedCountEl = document.getElementById("selected-count")
   const boxes = tableCheckboxes()
   const visible = boxes.filter(box => {
-    const selectable = isSelectableTableRow(box.closest(".table-row"))
+    const row = box.closest<HTMLElement>(".table-row")
+    const selectable = isSelectableTableRow(row)
     if (!selectable) box.checked = false
+    row?.classList.toggle("is-selected", selectable && box.checked)
     return selectable
   })
   const selected = visible.filter(box => box.checked)

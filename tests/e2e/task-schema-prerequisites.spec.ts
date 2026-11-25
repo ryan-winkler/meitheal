@@ -17,11 +17,10 @@ import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migration
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../apps/web/drizzle/migrations/task-schema-prerequisites.mjs"
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
-import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
-import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
@@ -46,8 +45,14 @@ function migrate(databasePath: string, ...args: string[]) {
 }
 
 async function qualifyOwnedPredecessor(databasePath: string) {
-  await migrate(databasePath, "--check")
-  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
+  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations:.*0016_ordinary_boards/)
+  const proof = await enrollCurrentOwnedLegacyFixture({ database: databasePath, markerPath: databasePath + ".board-grants.json",
+    provenance: "created-in-this-test-and-never-restored" })
+  try {
+    await migrate(databasePath, "--check")
+  } finally {
+    await rm(proof.custodyDirectory, { recursive: true, force: true })
+  }
 }
 
 async function bootstrapRuntime(databasePath: string) {
@@ -235,7 +240,7 @@ test("CLI check detects missing predecessor prerequisites without writing", asyn
   await migrate(databasePath)
   await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION))
+    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION))
       .toEqual(ledger)
     expect(lanes(database).map(lane => lane.key)).toEqual(["backlog", "pending", "active", "complete"])
   })

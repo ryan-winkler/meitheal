@@ -27,6 +27,12 @@ function toReaction(row: Row, canManage: boolean): TaskReaction {
   }
 }
 
+function reactionOwnerKey(scope: BoardScope): string | null {
+  const scoped = scopeCommentOwnerKey(scope)
+  if (scoped) return scoped
+  return scope.principal.kind === "local_operator" ? "local:standalone" : null
+}
+
 export class TaskReactionRepository {
   constructor(
     private readonly client: Client,
@@ -35,7 +41,7 @@ export class TaskReactionRepository {
     requireBoardScope(scope)
   }
   async list({ taskId, commentId }: ReactionTarget, cursor: number, owner: string | null) {
-    if (owner !== null && owner !== scopeCommentOwnerKey(this.scope)) return null
+    if (owner !== null && owner !== reactionOwnerKey(this.scope)) return null
     const { rows } = await boardOperationClient(
       this.client,
       this.scope,
@@ -77,19 +83,25 @@ export class TaskReactionRepository {
     }
   }
   async add({ taskId, commentId }: ReactionTarget, content: string, author: string, owner: string) {
-    if (owner !== scopeCommentOwnerKey(this.scope)) return null
+    if (owner !== reactionOwnerKey(this.scope)) return null
+    const op = boardOperationClient(this.client, this.scope, { resource: "task", action: "edit" }, [
+      taskId
+    ])
+    // Enforce 1 user = 1 reaction per target (task or comment): switching emoji replaces prior reaction.
+    await op.execute(sql`DELETE FROM task_reactions
+      WHERE task_id=${taskId} AND comment_id IS ${commentId} AND owner_key=${owner} AND content!=${content}
+      AND EXISTS(SELECT 1 FROM tasks WHERE tasks.id=task_reactions.task_id AND ${taskOwnedBy(this.scope)})
+      AND (${commentId} IS NULL OR EXISTS(SELECT 1 FROM comments WHERE id=${commentId} AND task_id=task_reactions.task_id))`)
     const {
       rows: [row]
-    } = await boardOperationClient(this.client, this.scope, { resource: "task", action: "edit" }, [
-      taskId
-    ]).execute(sql`INSERT INTO task_reactions(task_id,comment_id,owner_key,content,author)
+    } = await op.execute(sql`INSERT INTO task_reactions(task_id,comment_id,owner_key,content,author)
       SELECT id,${commentId},${owner},${content},${author} FROM tasks WHERE id=${taskId} AND ${taskOwnedBy(this.scope)}
       AND (${commentId} IS NULL OR EXISTS(SELECT 1 FROM comments WHERE id=${commentId} AND task_id=tasks.id))
-      ON CONFLICT(task_id,COALESCE(comment_id,0),owner_key,content) DO UPDATE SET content=excluded.content RETURNING id,content,author`)
+      ON CONFLICT(task_id,COALESCE(comment_id,0),owner_key,content) DO UPDATE SET content=excluded.content,author=excluded.author RETURNING id,content,author`)
     return row ? toReaction(row, true) : null
   }
   async remove({ taskId, commentId }: ReactionTarget, reactionId: number, owner: string) {
-    if (owner !== scopeCommentOwnerKey(this.scope)) return false
+    if (owner !== reactionOwnerKey(this.scope)) return false
     const result = await boardOperationClient(
       this.client,
       this.scope,

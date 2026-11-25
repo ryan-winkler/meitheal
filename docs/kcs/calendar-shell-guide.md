@@ -80,7 +80,7 @@ A calendar sync that changes a task advances its edit version, even if someone s
 
 **Deleting a synced task.** Sync does not restore a deleted standalone task when its calendar event is rescheduled and retains the same ID. For a repeating series, the next occurrence after the deleted one gets a new task when it comes up.
 
-**Tasks sent to the calendar.** Meitheal sends tasks with a due date to the first Home Assistant calendar set to **↑ Export only** or **↔ Bidirectional**, and only when **Write back** is on under **Calendar Sync**. Tasks imported from a calendar are never sent back, so they do not appear twice in the calendar app. CalDAV calendars are never written to. Add the `no-sync` label to any task that should never be sent.
+**Tasks sent to the calendar.** Meitheal sends tasks with a due date to the first Home Assistant calendar set to **↑ Export only** or **↔ Bidirectional**, and only when **Write back** is on under **Calendar Sync**. Tasks imported from any Home Assistant or CalDAV calendar are never sent back and never generate duplicate calendar due-date reminder events, keeping a strict one-ticket-per-invite invariant. Inbound sync also recognizes Meitheal-originated reminder and write-back events even when external calendar providers wrap descriptions in HTML, collapse line breaks onto a single line, or truncate long summaries, and outbound reminders strip nested ticket/DUE wrappers and deduplicate by task, entity, and due time even if a binding is re-saved. CalDAV calendars are never written to. Add the `no-sync` label to any task that should never be sent.
 
 ### A repeating calendar event shows no repeat rule, or reopens after completion
 

@@ -19,7 +19,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { onTaskCompleted } from "@lib/gamification-hook";
-        import { createSpriteIconElement } from "../generated/icon-registry";
         import { createTypeIconElement } from "@lib/type-icon-config";
         import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
@@ -43,11 +42,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { browserUuid } from "@lib/browser-uuid"
         import { assigneeFallback } from "@lib/task-assignee-display"
         import { isDoneStatus, normalizeStatus } from "@lib/status-config"
-        import { byId, domEl, qs, setAttr } from "@lib/dom-helpers";
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
           const __signal = pageLifecycle.signal;
+          const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null
 
           // === Task Detail Panel ===
           const tdOverlay = byId(
@@ -176,9 +175,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
-        const tdClose = byId("td-close")
-        const tdPanel = byId("task-detail-panel")
-        const tdResizeHandle = byId("td-resize-handle")
+        const tdClose = document.getElementById("td-close")
+        const tdPanel = document.getElementById("task-detail-panel")
+        const tdResizeHandle = document.getElementById("td-resize-handle")
         const SIDEBAR_WIDTH_KEY = "meitheal:task-sidebar-width:v1"
         const DEFAULT_SIDEBAR_WIDTH = 420
         const MIN_SIDEBAR_WIDTH = 360
@@ -188,8 +187,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const clamped = clampSidebarWidth(width)
           document.documentElement.style.setProperty("--task-inspector-width", `${clamped}px`)
           if (tdResizeHandle) {
-            setAttr(tdResizeHandle, "aria-valuemax", String(maxSidebarWidth()))
-            setAttr(tdResizeHandle, "aria-valuenow", String(clamped))
+            tdResizeHandle.setAttribute("aria-valuemax", String(maxSidebarWidth()))
+            tdResizeHandle.setAttribute("aria-valuenow", String(clamped))
           }
           if (persist) {
             try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)) } catch { /* ignore storage errors */ }
@@ -212,7 +211,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             dragStartX = e.clientX
             dragStartWidth = tdOverlay.getBoundingClientRect().width || DEFAULT_SIDEBAR_WIDTH
             activeWidth = dragStartWidth
-            setAttr(tdResizeHandle, "data-resizing", "")
+            tdResizeHandle.setAttribute("data-resizing", "")
             tdResizeHandle.setPointerCapture?.(e.pointerId)
             e.preventDefault()
           }, { signal: __signal })
@@ -230,7 +229,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           tdResizeHandle.addEventListener("dblclick", () => {
             activeWidth = DEFAULT_SIDEBAR_WIDTH
             document.documentElement.style.removeProperty("--task-inspector-width")
-            setAttr(tdResizeHandle, "aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
+            tdResizeHandle.setAttribute("aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
             try { localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
           }, { signal: __signal })
           tdResizeHandle.addEventListener("keydown", (e) => {
@@ -247,13 +246,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (stored !== null) applySidebarWidth(stored, false)
           }, { signal: __signal })
         }
-        const tdHeading = byId("td-task-heading")
-        const tdActions = byId("td-task-actions")
-        const tdTitleInput = qs<HTMLTextAreaElement>(tdPanel, "#td-title")
+        const tdHeading = document.getElementById("td-task-heading")
+        const tdActions = document.getElementById("td-task-actions")
+        const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
-        const promoteButton = document.querySelector<HTMLButtonElement>("#td-toggle-promote")
         const tdError = byId("td-load-error")
         const copyFallback = byId("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
@@ -302,7 +300,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const focusToggle = document.querySelector<HTMLButtonElement>("#td-toggle-focus")
         const layoutToggle = document.querySelector<HTMLButtonElement>("#td-toggle-layout")
         const layoutPanel = byId("td-layout-panel")
-        const loadedActions = qs<HTMLElement>(tdOverlay, "[data-td-loaded-actions]")
+        const loadedActions = tdOverlay.querySelector<HTMLElement>("[data-td-loaded-actions]")
         let layoutEditorMounted = false
         let layoutScrollTop = 0
         let focusMode = false
@@ -310,8 +308,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let resumeLoadedTask: (() => void) | undefined
 
         function setInspectorAriaLabel(label: string) {
-          setAttr(tdOverlay, "aria-label", label)
-          setAttr(tdPanel, "aria-label", label)
+          tdOverlay.setAttribute("aria-label", label)
+          tdPanel?.setAttribute("aria-label", label)
         }
 
         function syncInspectorDockMode() {
@@ -319,9 +317,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const docked = isOpen && !focusMode && dockMedia.matches
           document.body.classList.toggle("has-docked-inspector", docked)
           tdOverlay.toggleAttribute("data-focus-mode", focusMode)
-          setAttr(tdPanel, "role", docked ? "region" : "dialog")
+          tdPanel?.setAttribute("role", docked ? "region" : "dialog")
           if (docked) tdPanel?.removeAttribute("aria-modal")
-          else setAttr(tdPanel, "aria-modal", "true")
+          else tdPanel?.setAttribute("aria-modal", "true")
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
           if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
           if (layoutToggle) layoutToggle.hidden = !taskLoaded
@@ -349,7 +347,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             [...sections.children].find(isVisible)
           const offset = anchor && viewport ? anchor.getBoundingClientRect().top - viewport.top : 0
           focusMode = expanded
-          setAttr(tdOverlay, "data-focus-used", "")
+          tdOverlay.setAttribute("data-focus-used", "")
           syncInspectorDockMode()
           resizeTitle()
           if (scroller && anchor) {
@@ -375,7 +373,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (!layoutPanel || !layoutToggle || !scroller) return
           if (open) {
             layoutScrollTop = scroller.scrollTop
-            const editor = qs<HTMLElement>(layoutPanel, "[data-task-layout-editor]")
+            const editor = layoutPanel.querySelector<HTMLElement>("[data-task-layout-editor]")
             if (editor && !layoutEditorMounted) {
               initTaskDetailLayoutEditor(editor, __signal)
               layoutEditorMounted = true
@@ -383,7 +381,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
           const wasFocused = layoutPanel.contains(document.activeElement)
           layoutPanel.hidden = !open
-          setAttr(layoutToggle, "aria-expanded", String(open))
+          layoutToggle.setAttribute("aria-expanded", String(open))
           scroller.scrollTop = open ? 0 : layoutScrollTop
           if (!open && wasFocused) layoutToggle.focus({ preventScroll: true })
         }
@@ -395,8 +393,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           document.body.classList.remove("has-docked-inspector")
           tdOverlay.removeAttribute("data-focus-mode")
           tdOverlay.removeAttribute("data-focus-used")
-          setAttr(tdPanel, "role", "dialog")
-          setAttr(tdPanel, "aria-modal", "true")
+          tdPanel?.setAttribute("role", "dialog")
+          tdPanel?.setAttribute("aria-modal", "true")
         }, { once: true })
 
         function beginScopedWrite() {
@@ -613,7 +611,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function statusAllowed(next: string): boolean {
           const previous = statusSelect?.dataset.savedStatus ?? "pending"
-          const laneStatus = qs<HTMLOptionElement>(statusSelect, `option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
+          const laneStatus = statusSelect?.querySelector<HTMLOptionElement>(`option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
           return currentTaskActions.has("edit") &&
             (!(isDoneStatus(laneStatus) || isDoneStatus(previous)) || currentTaskActions.has("complete")) &&
             (normalizeStatus(laneStatus) !== "archived" || currentTaskActions.has("delete"))
@@ -622,7 +620,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         function syncTaskActionControls() {
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
           if (tdTitleInput) tdTitleInput.readOnly = !editable
-          if (promoteButton) promoteButton.disabled = !taskLoaded || !currentTaskActions.has("edit")
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -639,7 +636,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function setStatusBusy(busy: boolean) {
           for (const control of [statusSelect, doneButton]) {
-            if (busy) setAttr(control, "aria-disabled", "true")
+            if (busy) control?.setAttribute("aria-disabled", "true")
             else control?.removeAttribute("aria-disabled")
           }
         }
@@ -737,7 +734,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (scroller) scroller.scrollTop = 0
           }
           if (commentTarget !== null) {
-            const comments = qs<HTMLDetailsElement>(sections, "#td-section-comments")
+            const comments = sections.querySelector<HTMLDetailsElement>("#td-section-comments")
             if (comments) comments.open = true
           }
           tdOverlay.classList.remove("closing")
@@ -753,9 +750,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
            if (tdSkeleton) tdSkeleton.style.display = "";
            if (tdLoaded) tdLoaded.classList.add("hidden");
            tdHeading?.classList.add("invisible")
-           setAttr(tdActions, "hidden", "")
-           setAttr(tdError, "hidden", "")
-           setAttr(copyFallback, "hidden", "")
+           tdActions?.setAttribute("hidden", "")
+           tdError?.setAttribute("hidden", "")
+           copyFallback?.setAttribute("hidden", "")
 
           function showTaskError(unavailable: boolean) {
             currentTaskId = null
@@ -842,21 +839,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               void taskApi.listUserDirectory(modalSignal).then(renderAssignees).catch(() => renderAssignees(null))
             }
             const settings = fetch("/api/settings", requestOptions)
-            const cfContext = currentTaskApiContext()
-            const cfRead = fetch("/api/custom-fields", {
-              cache: "no-store",
-              signal: modalSignal,
-              ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
-            }).catch(() => null)
-            const childrenRead = !Array.isArray(t.subtasks) && byId("td-link-children")
-              ? fetch(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`, requestOptions) // nosemgrep
-              : null
-            const commentsFetch = fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, { // nosemgrep
-              signal: modalSignal,
-              cache: "no-store",
-            })
             // Observe rejections immediately. Field handlers consume the original promises in order.
-            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings, cfRead, childrenRead, commentsFetch])
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings])
 
             // Populate status dropdown from lanes API
             try {
@@ -882,7 +866,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 statusSelect.replaceChildren();
                 for (const lane of lanes) {
                   // Add the main key as an option
-                  const opt = domEl("option");
+                  const opt = document.createElement("option");
                   opt.value = lane.key;
                   if (Array.isArray(lane.includes) && lane.includes.some((status: unknown) => typeof status === "string" && isDoneStatus(status))) {
                     opt.dataset.statusMeaning = "complete"
@@ -926,12 +910,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     t.parent_title ??
                     String(t.parent_id).slice(0, 8),
                 );
-                const parentLink = domEl("a");
+                const parentLink = document.createElement("a");
                 parentLink.href = "#";
                 parentLink.className = "text-xs text-accent hover:underline td-parent-link";
                 parentLink.dataset.id = String(t.parent_id);
                 parentLink.textContent = parentTitle;
-                const unlinkBtn = domEl("button");
+                const unlinkBtn = document.createElement("button");
                 unlinkParentButton = unlinkBtn
                 unlinkBtn.disabled = true
                 unlinkBtn.type = "button";
@@ -939,12 +923,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 unlinkBtn.title = "Remove parent";
                 unlinkBtn.textContent = "✕";
                 linkParentDisplay.replaceChildren(parentLink, document.createTextNode(" "), unlinkBtn);
-                qs(linkParentDisplay, ".td-parent-link")
+                linkParentDisplay
+                  .querySelector(".td-parent-link")
                   ?.addEventListener("click", (e) => {
                     e.preventDefault();
                     openTaskDetail(String(t.parent_id));
                   }, { signal: modalSignal });
-                qs(linkParentDisplay, ".td-unlink-parent")
+                linkParentDisplay
+                  .querySelector(".td-unlink-parent")
                   ?.addEventListener("click", async () => {
                     const unlinkTaskId = currentTaskId
                     const confirmed = await confirmDialog({
@@ -958,7 +944,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     }
                   }, { signal: modalSignal });
               } else {
-                const none = domEl("span", "text-xs text-text-muted italic", "None")
+                const none = document.createElement("span")
+                none.className = "text-xs text-text-muted italic"
+                none.textContent = "None"
                 linkParentDisplay.replaceChildren(none)
               }
             }
@@ -977,8 +965,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 let children: Array<Record<string, unknown>> | null = Array.isArray(t.subtasks)
                   ? (t.subtasks as Array<Record<string, unknown>>)
                   : null;
-                if (!children && childrenRead) {
-                  const childRes = await childrenRead
+                if (!children) {
+                  const childRes = await fetch( // nosemgrep
+                    `/api/tasks?parent_id=${encodeURIComponent(taskId)}`, // nosemgrep
+                    requestOptions,
+                  );
                   if (modalSignal.aborted) return
                   if (childRes.ok) {
                     const childData = await childRes.json()
@@ -988,7 +979,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
                 if (children) {
                   if (children.length === 0) {
-                    const empty = domEl("span", "text-xs text-text-muted italic", "No child items")
+                    const empty = document.createElement("span")
+                    empty.className = "text-xs text-text-muted italic"
+                    empty.textContent = "No child items"
                     childrenDiv.replaceChildren(empty)
                     if (progressWrap) progressWrap.classList.add("hidden");
                   } else {
@@ -996,27 +989,28 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     children.forEach((c: Record<string, unknown>) => {
                       const isDone = isDoneStatus(String(c.status ?? ""));
                       if (isDone) doneCount++;
-                      const row = domEl("div", "flex items-center justify-between gap-2 text-xs")
-                      const chip = domEl("a");
+                      const row = document.createElement("div");
+                      row.className = "flex items-center justify-between gap-2 text-xs";
+                      const chip = document.createElement("a");
                       chip.href = "#";
                       chip.className = `flex items-center gap-1.5 min-w-0 truncate ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
-                      const iconSpan = domEl("span", "shrink-0 inline-flex items-center gap-1")
-                      iconSpan.append(
-                        createSpriteIconElement(isDone ? "check" : "clock", { size: 12 }),
-                        createTypeIconElement(String(c.task_type ?? "task"), 14, typeof c.task_kind === "string" ? c.task_kind : undefined),
-                      );
-                      const label = domEl("span", "truncate", formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id))
+                      const iconSpan = document.createElement("span");
+                      iconSpan.className = "shrink-0 inline-flex";
+                      iconSpan.appendChild(createTypeIconElement(String(c.task_type ?? "task"), 14));
+                      const label = document.createElement("span");
+                      label.className = "truncate";
+                      label.textContent = formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id);
                       chip.append(iconSpan, label);
                       chip.addEventListener("click", (e) => {
                         e.preventDefault();
                         openTaskDetail(String(c.id));
                       }, { signal: modalSignal });
 
-                      const detachBtn = domEl("button");
+                      const detachBtn = document.createElement("button");
                       detachBtn.type = "button";
                       detachBtn.className = "text-text-muted hover:text-danger px-1 shrink-0";
                       detachBtn.title = "Detach from parent";
-                      setAttr(detachBtn, "aria-label", `Detach child item ${String(c.title ?? c.id)}`);
+                      detachBtn.setAttribute("aria-label", `Detach child item ${String(c.title ?? c.id)}`);
                       detachBtn.textContent = "✕";
                       detachBtn.addEventListener("click", async () => {
                         if (detachBtn.disabled || currentTaskId !== taskId) return;
@@ -1051,7 +1045,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
               } catch {
                 if (modalSignal.aborted) return
-                const dash = domEl("span", "text-xs text-text-muted italic", "—")
+                const dash = document.createElement("span")
+                dash.className = "text-xs text-text-muted italic"
+                dash.textContent = "—"
                 childrenDiv.replaceChildren(dash)
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
@@ -1089,11 +1085,21 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                   activityStatus.textContent = entries.length ? "" : (activityStatus.dataset.empty ?? "")
                   for (const e of entries.slice(0, 50)) {
                     const ago = new Date(Number(e.created_at)).toLocaleString();
-                    const row = domEl("div", "flex gap-2 items-baseline py-1 border-b border-border/30")
-                    const agoSpan = domEl("span", "text-text-muted shrink-0", ago)
-                    const fieldSpan = domEl("span", "font-medium text-text-primary", String(e.field ?? ""))
-                    const arrowSpan = domEl("span", "text-text-muted", "→")
-                    const valSpan = domEl("span", "text-accent truncate", String(e.new_value ?? "—").slice(0, 60))
+                    const row = document.createElement("div");
+                    row.className =
+                      "flex gap-2 items-baseline py-1 border-b border-border/30";
+                    const agoSpan = document.createElement("span");
+                    agoSpan.className = "text-text-muted shrink-0";
+                    agoSpan.textContent = ago;
+                    const fieldSpan = document.createElement("span");
+                    fieldSpan.className = "font-medium text-text-primary";
+                    fieldSpan.textContent = String(e.field ?? "");
+                    const arrowSpan = document.createElement("span");
+                    arrowSpan.className = "text-text-muted";
+                    arrowSpan.textContent = "→";
+                    const valSpan = document.createElement("span");
+                    valSpan.className = "text-accent truncate";
+                    valSpan.textContent = String(e.new_value ?? "—").slice(0, 60);
                     row.append(agoSpan, fieldSpan, arrowSpan, valSpan);
                     activityDiv.appendChild(row);
                   }
@@ -1115,7 +1121,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (typeof loadRelatedLinks === "function")
               loadRelatedLinks(taskId);
 
-            const tdIdEl = byId(
+
+            const tdIdEl = document.getElementById(
               "td-id",
             ) as HTMLElement | null;
             if (tdIdEl) {
@@ -1129,6 +1136,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             // Render type icon & kind badge (shared config from @lib/type-icon-config)
             const taskKind = String(t.task_kind || "standard_action").toLowerCase();
             currentTaskKind = taskKind;
+            sections.dataset.taskKind = taskKind;
+            updateSectionOrder();
             const typeIconEl = byId("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
@@ -1143,7 +1152,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
             const kindSelectEl = byId("td-task-kind") as HTMLSelectElement | null;
             if (kindSelectEl) {
-              const routineOpt = qs<HTMLOptionElement>(kindSelectEl, 'option[value="routine_instance"]');
+              const routineOpt = kindSelectEl.querySelector<HTMLOptionElement>('option[value="routine_instance"]');
               const isRoutineTask = Number(t.routine_occurrence) === 1 || taskKind === "routine_instance";
               if (routineOpt) routineOpt.hidden = !isRoutineTask;
               kindSelectEl.value = taskKind;
@@ -1151,6 +1160,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             const initialTitle = String(t.title ?? "")
+            if (tdTitleInput) {
+              tdTitleInput.value = initialTitle
+              tdTitleInput.dataset.savedTitle = initialTitle
+            }
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -1175,9 +1188,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
-              !qs(statusSelect, `option[value="${CSS.escape(taskStatus)}"]`)
+              !statusSelect.querySelector(`option[value="${CSS.escape(taskStatus)}"]`)
             ) {
-              const opt = domEl("option");
+              const opt = document.createElement("option");
               opt.value = taskStatus;
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
@@ -1290,7 +1303,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             startInput.value = formatEventInputValue(startRaw, isAllDay);
             const endInput = byId("td-end-date") as HTMLInputElement;
             endInput.value = formatEventInputValue(endRaw, isAllDay);
-            setAttr(byId("td-event-date-error"), "hidden", "");
+            byId("td-event-date-error")?.setAttribute("hidden", "");
             const trackedInput = byId("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
             if (areaField && areas) {
@@ -1359,7 +1372,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 const pillars = pilData.pillars ?? pilData ?? [];
                 pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
-                  const opt = domEl("option");
+                  const opt = document.createElement("option");
                   opt.value = p.id;
                   opt.textContent = p.name;
                   pillarSelect.appendChild(opt);
@@ -1380,40 +1393,57 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               selectedId: String(t.principle_id ?? ""),
             })
             // Phase 20: Agile hierarchy type
-            const tdTaskTypeEl = byId("td-task-type") as HTMLSelectElement | null;
+            const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
             if (tdTaskTypeEl) {
               const ttVal = String(t.task_type ?? "task");
               tdTaskTypeEl.value = ttVal;
               tdTaskTypeEl.dataset.savedTaskType = ttVal;
             }
 
-            // Phase 1 (REC-04): Set recurrence select to current value
+            // Set recurrence select to current value with Google Calendar presets & custom RRULE support
             const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
-              recurrenceSelect.value = String(t.recurrence_rule ?? "");
+              const { syncRecurrenceSelectValue } = await import("@lib/recurrence-picker");
+              const { describeRule } = await import("@domains/tasks/recurrence");
+              const syncedRule = syncRecurrenceSelectValue(
+                recurrenceSelect,
+                t.recurrence_rule ? String(t.recurrence_rule) : "",
+                {
+                  allowNone: true,
+                  noneLabel: "Does not repeat",
+                  anchorDate: String(t.due_date ?? t.start_date ?? ""),
+                },
+              );
               const descEl = byId("td-recurrence-desc");
               if (descEl) {
-                descEl.textContent = t.recurrence_rule
-                  ? (recurrenceSelect.selectedOptions[0]?.textContent ?? "")
-                  : "";
+                descEl.textContent = syncedRule ? describeRule(syncedRule) : "";
               }
             }
 
             const isPromoted = Boolean(t.is_promoted);
-            if (promoteButton) {
-              setAttr(promoteButton, "aria-pressed", String(isPromoted));
+            const promoteBtn = byId("td-toggle-promote") as HTMLButtonElement | null;
+            if (promoteBtn) {
+              promoteBtn.setAttribute("aria-pressed", String(isPromoted));
               const promoteLabel = isPromoted
                 ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
                 : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-              promoteButton.title = promoteLabel;
-              setAttr(promoteButton, "aria-label", promoteLabel);
+              promoteBtn.title = promoteLabel;
+              promoteBtn.setAttribute("aria-label", promoteLabel);
             }
 
             // Load board-scoped custom fields (falling back to settings on household)
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
+            const cfContext = currentTaskApiContext();
             try {
-              const [settingsRes, cfRes] = await Promise.all([settings, cfRead])
+              const [settingsRes, cfRes] = await Promise.all([
+                settings,
+                fetch("/api/custom-fields", {
+                  cache: "no-store",
+                  signal: modalSignal,
+                  ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
+                }).catch(() => null),
+              ])
               if (cfRes?.ok) {
                 const cfData = await cfRes.json().catch(() => null) as { fields?: unknown } | null
                 if (modalSignal.aborted || currentTaskId !== taskId) return
@@ -1502,7 +1532,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const created = t.created_at
               ? new Date(Number(t.created_at)).toLocaleDateString()
               : "";
-            const tdCreated = byId("td-created");
+            const tdCreated = document.getElementById("td-created");
             if (tdCreated)
               tdCreated.textContent = created ? `Created ${created}` : "";
             const updated = t.updated_at
@@ -1511,19 +1541,30 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const tdUpdated = byId("td-updated");
             if (tdUpdated)
               tdUpdated.textContent = updated ? `Last updated ${updated}` : "";
-            mountTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined);
-            const taskReactions = byId("td-task-reactions");
+            mountTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
+            const taskReactions = document.getElementById("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()
               mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
+
+            // Load comments for the current task.
+            byId("td-comments")?.replaceChildren()
+            byId("td-comment-link-status")?.replaceChildren()
+            commentError?.setAttribute("hidden", "")
+            if (commentButton) commentButton.disabled = false
+            if (commentInput && commentInput.dataset.taskId !== taskId) {
+              commentInput.value = ""
+              commentInput.dataset.taskId = taskId
+            }
+            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
             // Delay resetting _isPopulating so blur/change events that
             // fire asynchronously during focus transitions don't trigger
             // spurious save notifications
-            // Hide skeleton, show loaded content before hydrating #td-title or focusing linked comments
+            // Hide skeleton, show loaded content
             if (modalSignal.aborted) return
             if (tdSkeleton) tdSkeleton.style.display = "none";
             tdHeading?.classList.remove("invisible")
@@ -1531,26 +1572,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
-            if (tdTitleInput) {
-              tdTitleInput.value = initialTitle
-              tdTitleInput.dataset.savedTitle = initialTitle
-            }
-            if (!keepDescriptionDraft) {
-              void renderTaskDescription(description)
-              if (!description) enterDescEdit(false)
-            }
+            if (!keepDescriptionDraft && !description) enterDescEdit()
+            else if (!keepDescriptionDraft) void renderTaskDescription(description)
             resizeTitle()
-
-            // Load comments for the current task after the loaded container is visible so link focus works reliably.
-            byId("td-comments")?.replaceChildren()
-            byId("td-comment-link-status")?.replaceChildren()
-            setAttr(commentError, "hidden", "")
-            if (commentButton) commentButton.disabled = false
-            if (commentInput && commentInput.dataset.taskId !== taskId) {
-              commentInput.value = ""
-              commentInput.dataset.taskId = taskId
-            }
-            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget, undefined, commentsFetch)
             const finishLoadedTask = () => {
               const liveSignal = _modalAbortController?.signal
               if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return
@@ -1580,12 +1604,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function showTaskWriteConflict() {
           if (byId("td-write-conflict")) return
-          const notice = domEl("div")
+          const notice = document.createElement("div")
           notice.id = "td-write-conflict"
           notice.className = "alert alert-warning"
-          setAttr(notice, "role", "alert")
+          notice.setAttribute("role", "alert")
           notice.append("This task changed or its save could not be confirmed. Your input is kept here. Reload the saved task before making further changes. ")
-          const refresh = domEl("button")
+          const refresh = document.createElement("button")
           refresh.type = "button"
           refresh.className = "btn btn-ghost"
           refresh.textContent = "Reload saved task"
@@ -1659,6 +1683,64 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskPatchNow(patch, updatedAt) : false)
         }
 
+        let _tdSaveFeedbackTimer: number | null = null
+        const FIELD_FEEDBACK_META: Record<string, { label: string; selector: string }> = {
+          title: { label: "Title updated", selector: "#td-title" },
+          description: { label: "Description updated", selector: "#td-description, #td-desc-preview-container" },
+          status: { label: "Status updated", selector: "#td-status" },
+          priority: { label: "Priority updated", selector: "#td-priority" },
+          due_date: { label: "Due date updated", selector: "#td-due-date, [data-field-key='due_date']" },
+          start_date: { label: "Start date updated", selector: "#td-start-date, [data-field-key='start_date']" },
+          end_date: { label: "End date updated", selector: "#td-end-date, [data-field-key='end_date']" },
+          effort_minutes: { label: "Effort updated", selector: "#td-effort" },
+          area_id: { label: "Group updated", selector: "#td-area" },
+          project_id: { label: "Project updated", selector: "#td-project" },
+          assigned_to: { label: "Assignee updated", selector: "#td-assignee" },
+          task_type: { label: "Type updated", selector: "#td-task-type" },
+          task_kind: { label: "Kind updated", selector: "#td-task-kind" },
+          labels: { label: "Labels updated", selector: "#td-labels-wrap" },
+          color: { label: "Color updated", selector: "#td-color-picker" },
+          recurrence_rule: { label: "Recurrence updated", selector: "#td-recurrence" },
+          framework_payload: { label: "Score updated", selector: "#td-strategic-section" },
+          custom_fields: { label: "Fields updated", selector: "#td-custom-fields-container" },
+          is_promoted: { label: "Pin updated", selector: "#td-toggle-promote" },
+        }
+
+        function setTicketSaveFeedback(state: "idle" | "saving" | "saved", fieldKey?: string): void {
+          const pill = document.getElementById("td-save-status")
+          const textEl = document.getElementById("td-save-status-text")
+          if (_tdSaveFeedbackTimer !== null) {
+            window.clearTimeout(_tdSaveFeedbackTimer)
+            _tdSaveFeedbackTimer = null
+          }
+          if (pill && textEl) {
+            pill.dataset.state = state
+            if (state === "saving") {
+              textEl.textContent = "Saving…"
+            } else if (state === "saved") {
+              const meta = fieldKey ? FIELD_FEEDBACK_META[fieldKey] : undefined
+              textEl.textContent = meta?.label ?? "Saved"
+              _tdSaveFeedbackTimer = window.setTimeout(() => {
+                if (pill.isConnected) pill.dataset.state = "idle"
+                _tdSaveFeedbackTimer = null
+              }, 2400)
+            } else {
+              textEl.textContent = ""
+            }
+          }
+          if (state === "saved" && fieldKey) {
+            const meta = FIELD_FEEDBACK_META[fieldKey]
+            const target = meta ? document.querySelector<HTMLElement>(meta.selector) : null
+            if (target) {
+              target.classList.remove("td-field--saved")
+              void target.offsetWidth
+              target.classList.add("td-field--saved")
+              window.setTimeout(() => target.classList.remove("td-field--saved"), 900)
+            }
+            showToast(meta?.label ?? "Task updated", "success", { id: "td-field-saved", duration: 1800 })
+          }
+        }
+
         async function saveTaskPatchNow(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
           const primaryField = Object.keys(patch)[0] ?? ""
           if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (Object.hasOwn(patch, "status") && !statusAllowed(String(patch.status)))) return false
@@ -1670,6 +1752,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
           const scopedWrite = search || Object.keys(patch).some(field => ["title", "status", "area_id", "project_id", "framework_payload"].includes(field)) ? beginScopedWrite() : undefined
           let saved = false
+          setTicketSaveFeedback("saving", primaryField)
           try {
             const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
               scopedWrite?.signal ?? AbortSignal.timeout(7_000))
@@ -1680,6 +1763,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               showTaskWriteConflict()
             }
             if (saved) {
+              if (generation === detailGeneration) setTicketSaveFeedback("saved", primaryField)
               if (Object.hasOwn(patch, "area_id")) {
                 changedAreaTask = taskId
                 if (!tdOverlay.classList.contains("active") ||
@@ -1689,13 +1773,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
                 if (Object.hasOwn(patch, "task_type")) {
-                  const sel = byId("td-task-type") as HTMLSelectElement | null
+                  const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
                   if (sel) sel.dataset.savedTaskType = String(patch.task_type)
-                  const typeIconEl = byId("td-type-icon")
+                  const typeIconEl = document.getElementById("td-type-icon")
                   if (typeIconEl) {
                     const tt = String(patch.task_type || "task").toLowerCase()
                     typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind))
-                    typeIconEl.title = KIND_BADGE_LABELS[currentTaskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1))
+                    typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
                   }
                 }
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
@@ -1709,9 +1793,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
             }
             if (!result.ok) {
+              if (generation === detailGeneration) setTicketSaveFeedback("idle")
               log.warn(`Failed to save ${primaryField}:`, result.status)
-              if (primaryField === "task_type") {
-                const sel = byId("td-task-type") as HTMLSelectElement | null
+              if (Object.hasOwn(patch, "task_type")) {
+                const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
                 if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
               }
               if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
@@ -1721,6 +1806,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               }
             }
           } catch (err) {
+            if (generation === detailGeneration) setTicketSaveFeedback("idle")
             log.warn(`Network error saving ${primaryField}:`, err)
           } finally {
             completeDeferralWrite(saved)
@@ -1769,18 +1855,16 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }
 
-        function enterDescEdit(focus = true) {
+        function enterDescEdit() {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
           descView?.classList.add("hidden");
-          const shouldFocus = focus && !scroller?.classList.contains("hidden");
-          void descEditor?.setMode("markdown", shouldFocus);
-          if (shouldFocus) tdDescription?.focus();
+          void descEditor?.setMode("visual", !scroller?.classList.contains("hidden"));
         }
 
         function setDescriptionSaving(saving: boolean): void {
           tdDescription.readOnly = saving
-          setAttr(descEditContainer, "aria-busy", String(saving))
+          descEditContainer?.setAttribute("aria-busy", String(saving))
           if (descCancelBtn) descCancelBtn.disabled = saving
           if (descSaveBtn) {
             descSaveBtn.disabled = saving
@@ -1861,7 +1945,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
 
         // Phase 23: Image attachments upload
-        byId("td-attachment-input")
+        document
+          .getElementById("td-attachment-input")
           ?.addEventListener("change", async (e) => {
             const targetTaskId = currentTaskId;
             const openGen = detailGeneration;
@@ -1926,22 +2011,26 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }
 
         statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })
-        byId("td-priority")
+        document
+          .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
             saveTaskField("priority", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower urgency auto-save
-        byId("td-urgency")
+        document
+          .getElementById("td-urgency")
           ?.addEventListener("change", (e) =>
             saveTaskField("urgency", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower importance auto-save
-        byId("td-importance")
+        document
+          .getElementById("td-importance")
           ?.addEventListener("change", (e) =>
             saveTaskField("importance", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Task kind + Event schedule auto-save
-        byId("td-task-kind")
+        document
+          .getElementById("td-task-kind")
           ?.addEventListener("change", (e) => {
             const prevKind = currentTaskKind
             const nextKind = (e.target as HTMLSelectElement).value || "standard_action"
@@ -1961,15 +2050,24 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               "hidden",
               nextKind !== "calendar_event" && !startVal && !endVal,
             )
-            saveTaskField("task_kind", nextKind)
+            sections.dataset.taskKind = nextKind
+            updateSectionOrder()
+            void saveTaskField("task_kind", nextKind)
             if (currentTaskId && _modalAbortController && (prevKind === "shopping_item" || nextKind === "shopping_item")) {
               mountTaskChecklist(currentTaskId, hasChecklistTextDraft?.getRaw?.() ?? "[]", _modalAbortController.signal, currentTicketKey ?? undefined)
             }
           }, { signal: __signal });
         // Phase 20: task_type auto-save
-        byId("td-task-type")
+        document
+          .getElementById("td-task-type")
           ?.addEventListener("change", (e) => {
-            saveTaskField("task_type", (e.target as HTMLSelectElement).value);
+            const tt = (e.target as HTMLSelectElement).value;
+            const typeIconEl = document.getElementById("td-type-icon");
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind));
+            saveTaskField("task_type", tt);
+            window.dispatchEvent(new CustomEvent("meitheal:task-type-changed", {
+              detail: { taskId: currentTaskId, taskType: tt },
+            }));
           }, { signal: __signal });
         byId("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
@@ -2010,13 +2108,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         // Pillar change auto-save & dynamic Principle update
         let pillarPrinciplesController: AbortController | null = null;
         __signal.addEventListener("abort", () => pillarPrinciplesController?.abort(), { once: true });
-        byId("td-pillar")?.addEventListener("change", async (e) => {
+        document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
           const pillarId = (e.target as HTMLSelectElement).value || null;
           const targetTaskId = currentTaskId;
           const generation = detailGeneration;
           pillarPrinciplesController?.abort();
           const savePromise = saveTaskField("pillar_id", pillarId);
-          const principleSelect = byId("td-principle") as HTMLSelectElement | null;
+          const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
             const controller = new AbortController();
             pillarPrinciplesController = controller;
@@ -2031,11 +2129,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal });
 
         // Principle change auto-save
-        byId("td-principle")?.addEventListener("change", (e) => {
+        document.getElementById("td-principle")?.addEventListener("change", (e) => {
           saveTaskField("principle_id", (e.target as HTMLSelectElement).value || null);
         }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
-        byId("td-assigned-to")
+        document
+          .getElementById("td-assigned-to")
           ?.addEventListener("change", async (e) => {
             const sel = e.target as HTMLSelectElement
             if (sel.disabled || _isPopulating || !currentTaskId) return
@@ -2069,21 +2168,25 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
           }
         }, { signal: __signal });
-        byId("td-progress")
+        document
+          .getElementById("td-progress")
           ?.addEventListener("input", (e) => {
             const v = (e.target as HTMLInputElement).value;
             const progEl = byId("td-progress-value");
             if (progEl) progEl.textContent = `${v}%`;
           }, { signal: __signal });
-        byId("td-progress")
+        document
+          .getElementById("td-progress")
           ?.addEventListener("change", (e) =>
             saveTaskField("progress", Number((e.target as HTMLInputElement).value)),
           { signal: __signal });
-        byId("td-color")
+        document
+          .getElementById("td-color")
           ?.addEventListener("change", (e) =>
             saveTaskField("color", (e.target as HTMLInputElement).value),
           { signal: __signal });
-        byId("td-due-date")
+        document
+          .getElementById("td-due-date")
           ?.addEventListener("change", (e) =>
             saveTaskField("due_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
@@ -2101,22 +2204,27 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (invalid) return
           void saveTaskFields({ start_date: startIso, end_date: endIso })
         }
-        byId("td-event-all-day")
+        document
+          .getElementById("td-event-all-day")
           ?.addEventListener("change", (e) => {
             const allDay = (e.target as HTMLInputElement).checked
             syncEventInputsType(allDay)
             saveEventWindow()
           }, { signal: __signal });
-        byId("td-start-date")
+        document
+          .getElementById("td-start-date")
           ?.addEventListener("change", saveEventWindow, { signal: __signal });
-        byId("td-end-date")
+        document
+          .getElementById("td-end-date")
           ?.addEventListener("change", saveEventWindow, { signal: __signal });
-        byId("td-event-location")
+        document
+          .getElementById("td-event-location")
           ?.addEventListener("change", (e) => {
             const loc = (e.target as HTMLInputElement).value.trim()
             cfApi.setStructuredField("location", loc || undefined, true)
           }, { signal: __signal });
-        byId("td-time-tracked")
+        document
+          .getElementById("td-time-tracked")
           ?.addEventListener("change", (e) =>
             saveTaskField(
               "time_tracked",
@@ -2143,13 +2251,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         })
         cancelCustomFieldSaves = cfApi.cancelPendingSave
         const addCFRow = cfApi.addCFRow
+        const setPreservedCFEntries = cfApi.setPreservedEntries
         flushPendingCustomFieldsSave = cfApi.flushPendingCustomFieldsSave
 
 
         // Parent search — debounced type-ahead
         let parentSearchTimer: ReturnType<typeof setTimeout> | undefined;
         __signal.addEventListener("abort", () => clearTimeout(parentSearchTimer), { once: true });
-        const parentSearchInput = byId(
+        const parentSearchInput = document.getElementById(
           "td-link-parent-search",
         ) as HTMLInputElement | null;
         const parentResultsDiv = byId(
@@ -2177,17 +2286,25 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 (t: Record<string, unknown>) => t.id !== currentTaskId,
               );
               if (tasks.length === 0) {
-                const empty = domEl("div", "px-3 py-2 text-xs text-text-muted italic", "No matches")
+                const empty = document.createElement("div")
+                empty.className = "px-3 py-2 text-xs text-text-muted italic"
+                empty.textContent = "No matches"
                 parentResultsDiv.replaceChildren(empty)
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {
-                    const row = domEl("div", "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2")
+                    const row = document.createElement("div");
+                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
                     row.dataset.id = String(t.id ?? "");
-                    const iconSpan = domEl("span", "shrink-0 inline-flex")
+                    const iconSpan = document.createElement("span");
+                    iconSpan.className = "shrink-0 inline-flex";
                     iconSpan.appendChild(createTypeIconElement(String(t.task_type ?? "task"), 14, typeof t.task_kind === "string" ? t.task_kind : undefined));
-                    const titleSpan = domEl("span", "truncate", formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id))
-                    const typeSpan = domEl("span", "text-xs text-text-muted ml-auto", String(t.task_type ?? "task"))
+                    const titleSpan = document.createElement("span");
+                    titleSpan.className = "truncate";
+                    titleSpan.textContent = formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id);
+                    const typeSpan = document.createElement("span");
+                    typeSpan.className = "text-xs text-text-muted ml-auto";
+                    typeSpan.textContent = String(t.task_type ?? "task");
                     row.append(iconSpan, titleSpan, typeSpan);
                     return row;
                   }),
@@ -2240,38 +2357,42 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal })
 
         // Toggle promoted (sash highlight & top of lane)
-        promoteButton?.addEventListener("click", async () => {
-          if (!currentTaskId || !taskLoaded || !promoteButton || promoteButton.disabled) return;
-          if (_isPopulating) resumeLoadedTask?.();
-          const search = searchSession
-          const generation = detailGeneration
-          const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true";
-          const nextPromoted = !wasPromoted;
-          promoteButton.disabled = true;
-          setAttr(promoteButton, "aria-pressed", String(nextPromoted));
-          try {
-            const saved = await saveTaskField("is_promoted", nextPromoted);
-            if (search && generation !== detailGeneration) return;
-            if (saved === false) {
-              setAttr(promoteButton, "aria-pressed", String(wasPromoted));
-              return;
+        document
+          .getElementById("td-toggle-promote")
+          ?.addEventListener("click", async () => {
+            if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
+            const btn = byId("td-toggle-promote") as HTMLButtonElement | null;
+            if (!btn || btn.disabled) return;
+            const wasPromoted = btn.getAttribute("aria-pressed") === "true";
+            const nextPromoted = !wasPromoted;
+            btn.disabled = true;
+            btn.setAttribute("aria-pressed", String(nextPromoted));
+            try {
+              const saved = await saveTaskField("is_promoted", nextPromoted);
+              if (search && generation !== detailGeneration) return;
+              if (saved === false) {
+                btn.setAttribute("aria-pressed", String(wasPromoted));
+                return;
+              }
+              const promoteLabel = nextPromoted
+                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
+              btn.title = promoteLabel;
+              btn.setAttribute("aria-label", promoteLabel);
+              showToast(nextPromoted
+                ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+                : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
+              document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
+            } finally {
+              btn.disabled = false;
             }
-            const promoteLabel = nextPromoted
-              ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
-              : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-            promoteButton.title = promoteLabel;
-            setAttr(promoteButton, "aria-label", promoteLabel);
-            showToast(nextPromoted
-              ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
-              : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
-            document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
-          } finally {
-            syncTaskActionControls()
-          }
-        }, { signal: __signal });
+          }, { signal: __signal });
 
         // Duplicate task
-        byId("td-duplicate")
+        document
+          .getElementById("td-duplicate")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId;
             if (!taskId || boardWithheld || __signal.aborted) return;
@@ -2316,8 +2437,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
           if (!taskId || !signal || signal.aborted || askAi.getAttribute("aria-busy") === "true") return
-          setAttr(askAi, "aria-disabled", "true")
-          setAttr(askAi, "aria-busy", "true")
+          askAi.setAttribute("aria-disabled", "true")
+          askAi.setAttribute("aria-busy", "true")
           askAi.classList.add("opacity-60")
           byId("td-ai-response")?.remove()
 
@@ -2332,19 +2453,24 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const result = await askAIForTask(taskId, signal)
             if (signal.aborted || currentTaskId !== taskId) return
             if (result.source === "ha-assist") {
-              const response = domEl("div")
+              const response = document.createElement("div")
               response.id = "td-ai-response"
               response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
-              const header = domEl("div", "flex justify-between items-center mb-1.5")
-              const title = domEl("strong", "text-accent text-[11px]", "AI Response")
-              const dismiss = domEl("button")
+              const header = document.createElement("div")
+              header.className = "flex justify-between items-center mb-1.5"
+              const title = document.createElement("strong")
+              title.className = "text-accent text-[11px]"
+              title.textContent = "AI Response"
+              const dismiss = document.createElement("button")
               dismiss.type = "button"
               dismiss.id = "td-ai-dismiss"
               dismiss.className = "text-text-muted hover:text-text-primary text-xs px-1"
-              setAttr(dismiss, "aria-label", "Dismiss AI response")
+              dismiss.setAttribute("aria-label", "Dismiss AI response")
               dismiss.textContent = "×"
               header.append(title, dismiss)
-              const body = domEl("div", "whitespace-pre-wrap", result.response)
+              const body = document.createElement("div")
+              body.className = "whitespace-pre-wrap"
+              body.textContent = result.response
               response.replaceChildren(header, body)
               askAi.parentElement?.after(response)
               dismiss.addEventListener("click", () => response.remove(), { signal })
@@ -2359,8 +2485,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }, { signal: __signal })
 
+
         // Delete
-        byId("td-delete")
+        document
+          .getElementById("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
             if (!taskId || !currentTaskActions.has("delete") || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
@@ -2414,7 +2542,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
           closeTaskReferences()
           commentButton.disabled = true
-          setAttr(commentError, "hidden", "")
+          commentError?.setAttribute("hidden", "")
           let participantDenied = false
           let mentionFailure: Awaited<ReturnType<typeof readCommentMentionProblem>>
           const mentionHeaders = commentMentionWriteHeaders(draft)
@@ -2467,7 +2595,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const copied = await copyToClipboard(link)
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
-            setAttr(copyFallback, "hidden", "")
+            copyFallback?.setAttribute("hidden", "")
             showToast("task_modal.link_copied", "success")
           } else if (copyFallback && copyValue) {
             copyFallback.removeAttribute("hidden")

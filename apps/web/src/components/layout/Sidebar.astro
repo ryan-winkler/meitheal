@@ -1,6 +1,8 @@
 ---
 import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
-import sidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
+import rawSidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
+import { minifyInlineCss } from "../../lib/minify-inline-css"
+const sidebarReorderCss = minifyInlineCss(rawSidebarReorderCss)
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
@@ -35,6 +37,7 @@ import {
   serializeSidebarConfig,
 } from "@domains/navigation/sidebar-menu"
 import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
+import { getCachedHAUserName, isRawHAUserId, resolveCachedHAUserDisplayName } from "@domains/ha"
 
 const currentPath = Astro.url.pathname
 const workNavigation = Astro.props.workNavigation
@@ -259,15 +262,20 @@ const pinnedTaskViews: TaskView[] = TASK_VIEW_ITEM_KEYS
 const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
 const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
 
-const haDisplayName = (Astro.locals as unknown as Record<string, unknown>).hassDisplayName
-const haUsername = (Astro.locals as unknown as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
+const hassUserId = Astro.locals.hassUserId
+const cachedHaIdentity = hassUserId ? await resolveCachedHAUserDisplayName(hassUserId).catch(() => null) : null
+const cachedHaRosterName = hassUserId ? getCachedHAUserName(hassUserId) : undefined
+const rawHaDisplayName = Astro.locals.hassDisplayName || cachedHaIdentity?.displayName || cachedHaRosterName || Astro.locals.hassUserName
+const haDisplayName = typeof rawHaDisplayName === "string" && rawHaDisplayName.trim() && !isRawHAUserId(rawHaDisplayName)
+  ? rawHaDisplayName.trim()
+  : undefined
+const rawHaUsername = Astro.locals.hassUserName || cachedHaIdentity?.username
+const haUsername = typeof rawHaUsername === "string" && rawHaUsername.trim() && !isRawHAUserId(rawHaUsername)
+  ? rawHaUsername.trim()
+  : undefined
 const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
-  displayName: typeof haDisplayName === "string" && haDisplayName.trim()
-    ? haDisplayName
-    : typeof haUsername === "string" && haUsername.trim()
-      ? haUsername
-      : "Household Member",
-  username: typeof haUsername === "string" && haUsername.trim() ? haUsername : "local",
+  displayName: haDisplayName ?? "Household Member",
+  username: haUsername ?? (haDisplayName ? haDisplayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) : "local"),
   role: Astro.locals.hassIsAdmin ? "Admin" : "",
 })
 
@@ -303,7 +311,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
     <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
       <a
         href="/?view=dashboard"
-        data-astro-prefetch="viewport"
+        data-astro-prefetch="hover"
         class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
         aria-label="Meitheal Home"
         title="meitheal. — Keep track of the work your home needs"
@@ -325,9 +333,11 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
             stroke-width="5"></path>
           <circle cx="52" cy="40" r="3.8" fill="var(--accent, #75e9be)"></circle>
         </svg>
-        <span class="sidebar-brand-text truncate">meitheal.</span>
+        <span class="sidebar-brand-stack">
+          <span class="sidebar-brand-text truncate">meitheal.</span>
+          <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
+        </span>
       </a>
-      <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
     </div>
     <button
       type="button"
@@ -509,7 +519,11 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   {gamificationEnabled && currentStreak > 0 && (
     <div class="sidebar-gamification-wrapper">
-      <StreakBadge streak={currentStreak} compact />
+      <StreakBadge
+        streak={currentStreak}
+        compact
+        href={boardLinks?.progress ? `${boardLinks.progress.replace(/#.*$/, "")}#achievements-streaks` : "/progress#achievements-streaks"}
+      />
     </div>
   )}
 
@@ -565,9 +579,14 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
     width: var(--sidebar-width, 240px);
     position: fixed;
-    z-index: 40;
+    z-index: 75;
     padding: 0.875rem 0.75rem;
     overflow: visible;
+  }
+
+  :global(body.sidebar-collapsed) .sidebar {
+    width: 64px;
+    padding-inline: 0.5rem;
   }
 
   @media (min-width: 769px) {
@@ -605,20 +624,35 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-header {
-    margin-bottom: 0.5rem;
-    padding: 0 0.125rem;
+    margin-bottom: 0.625rem;
+    padding: 0.125rem 0.25rem 0.625rem;
     position: relative;
+  }
+
+  .sidebar-brand-stack {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    min-height: 36px;
+    gap: 2px;
+  }
+
+  .sidebar-brand-text {
+    line-height: 22px;
+    height: 22px;
   }
 
   .sidebar-ipa {
     display: block;
-    font-size: 9.5px;
+    font-size: 10px;
     font-style: normal;
     color: var(--text-muted);
-    letter-spacing: 0.09em;
-    padding-inline-start: 2.125rem;
-    margin-top: 2px;
-    line-height: 1;
+    opacity: 0.82;
+    letter-spacing: 0.06em;
+    line-height: 12px;
+    height: 12px;
+    overflow: hidden;
     user-select: none;
     font-family: "JetBrains Mono", ui-monospace, monospace;
   }
@@ -756,9 +790,9 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-edge-toggle {
-    position: absolute; top: 37px; right: -16px; width: 32px; height: 32px; padding: 0; border: 0;
+    position: absolute; top: 35px; right: -18px; width: 36px; height: 36px; padding: 0; border: 0;
     background: transparent; display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer; z-index: 50; color: var(--text-secondary);
+    cursor: pointer; z-index: 80; color: var(--text-secondary);
     transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .sidebar-edge-toggle__circle {

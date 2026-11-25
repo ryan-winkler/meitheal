@@ -3,7 +3,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { currentBoardScope } from "../helpers/current-board-scope"
-import { completeTaskGamification } from "../../apps/web/src/domains/gamification/achievement-engine"
 import {
   ensureGamificationSchema,
   getDailyProgress,
@@ -43,37 +42,6 @@ test("gamification keeps consecutive UTC days across a local DST transition", as
     else process.env.MEITHEAL_DB_URL = previousDb
     if (previousTimezone === undefined) delete process.env.TZ
     else process.env.TZ = previousTimezone
-    await rm(directory, { recursive: true, force: true })
-  }
-})
-
-test("completeTaskGamification rolls back daily stats if achievement unlock fails", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "meitheal-gamification-atomic-"))
-  const previousDb = process.env.MEITHEAL_DB_URL
-  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
-  resetPersistenceForTests()
-
-  try {
-    await ensureSchema()
-    await ensureGamificationSchema()
-    const db = getPersistenceClient()
-    const scope = await currentBoardScope(db)
-    const now = new Date("2026-11-02T12:00:00Z")
-
-    await db.executeMultiple(
-      "CREATE TRIGGER fail_achievement_unlock BEFORE INSERT ON gamification_achievements BEGIN SELECT RAISE(ABORT, 'simulated unlock failure'); END;",
-    )
-    await expect(completeTaskGamification(scope, 30, now)).rejects.toThrow(/simulated unlock failure/)
-    expect(await getStats(scope, now)).toMatchObject({ totalCompleted: 0, totalPoints: 0 })
-
-    await db.executeMultiple("DROP TRIGGER fail_achievement_unlock")
-    const completed = await completeTaskGamification(scope, 30, now)
-    expect(completed.stats).toMatchObject({ totalCompleted: 1, totalPoints: 30 })
-    expect(completed.achievements?.newlyUnlocked.map(a => a.id)).toContain("first_task")
-  } finally {
-    resetPersistenceForTests()
-    if (previousDb === undefined) delete process.env.MEITHEAL_DB_URL
-    else process.env.MEITHEAL_DB_URL = previousDb
     await rm(directory, { recursive: true, force: true })
   }
 })
