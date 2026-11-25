@@ -15,6 +15,32 @@ test.describe("Theme accent and keyboard focus", () => {
     );
   });
 
+  test("Nordic Frost primary actions stay readable at rest and on hover", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await page.locator("#theme-select").selectOption("nordic-frost")
+    await saveAppearance(page)
+    await page.goto("/")
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "nordic-frost")
+    const button = page.getByRole("button", { name: "Start interactive tour" })
+    await expect(button).toBeVisible()
+
+    const ratio = () => button.evaluate(element => {
+      const { color, backgroundColor } = getComputedStyle(element)
+      const luminance = (rgb: string) => {
+        const [r, g, b] = Array.from(rgb.matchAll(/\d+/g), match => {
+          const value = Number(match[0]) / 255
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+      }
+      const [fg, bg] = [luminance(color), luminance(backgroundColor)]
+      return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)
+    })
+    expect(await ratio()).toBeGreaterThanOrEqual(4.8)
+    await button.hover()
+    await expect.poll(ratio).toBeGreaterThanOrEqual(4.8)
+  })
+
   for (const [theme, surface] of [["light", "#f6f5f0"], ["dark", "#101210"]] as const) {
     test(`keeps keyboard focus visible with a ${theme} surface accent`, async ({ page }) => {
       await page.locator("#theme-select").selectOption(theme)
