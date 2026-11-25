@@ -77,7 +77,8 @@ let currentStreak = 0
 let dailyStreak: number | undefined
 let todayXP = 0
 let habits: HabitWithStats[] = []
-let habitsEnabled = false
+const habitsEnabled = await isFeatureEnabled("habits").catch(() => false)
+let foundNoRoutines = false
 const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const todayDate = new Date()
 const todayIsoDate = calendarToday(todayTimeZone, todayDate)
@@ -91,8 +92,10 @@ function focusDueLabel(task: TaskViewItem): string | undefined {
 }
 
 try {
-  if (canCompleteRoutine && (await isFeatureEnabled("habits").catch(() => false))) {
-    await new TemplateRepository(getPersistenceClient(), workScope).ensureDueRoutineTasks(todayTimeZone).catch(() => 0)
+  if (canCompleteRoutine && habitsEnabled) {
+    const prepared = await new TemplateRepository(getPersistenceClient(), workScope)
+      .prepareDueRoutineTasks(todayTimeZone).catch(() => null)
+    foundNoRoutines = prepared?.foundNoRoutines === true
   }
   const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
@@ -192,8 +195,7 @@ if (isOrganizationFeatureAvailable("achievements")) try {
 
 // G38: Fetch habits for Today section
 try {
-  habitsEnabled = await isFeatureEnabled("habits")
-  if (habitsEnabled) {
+  if (habitsEnabled && !foundNoRoutines) {
     const repo = new TemplateRepository(getPersistenceClient(), workScope)
     habits = await repo.getRoutinesWithStats(placement.areaId ?? undefined, placement.projectId ?? undefined, todayTimeZone)
   }

@@ -379,15 +379,22 @@ export class TemplateRepository {
   async getHabitsWithStats(areaId?: string, projectId?: string, timezone = "UTC") {
     return this.getRoutinesWithStats(areaId, projectId, timezone)
   }
+  async ensureDueRoutineTasks(timezone = "UTC"): Promise<number> {
+    return (await this.prepareDueRoutineTasks(timezone)).created
+  }
+
   /**
    * Ensure every active routine has a materialized task for its current cadence period.
    * Idempotent: skips routines whose current period task already exists (pending or complete)
    * or whose RRULE has ended (UNTIL / COUNT) or whose linked project is inactive.
+   * Report an empty list only after an authorized read so Today can avoid repeating it.
    */
-  async ensureDueRoutineTasks(timezone = "UTC"): Promise<number> {
-    if (!scopePermits(this.scope, { resource: "task", action: "create" })) return 0
+  async prepareDueRoutineTasks(timezone = "UTC"): Promise<{ created: number, foundNoRoutines: boolean }> {
+    if (!scopePermits(this.scope, { resource: "task", action: "create" })) {
+      return { created: 0, foundNoRoutines: false }
+    }
     const routines = await this.findRoutines()
-    if (routines.length === 0) return 0
+    if (routines.length === 0) return { created: 0, foundNoRoutines: true }
     const routineIds = routines.map((r) => r.id)
     const projectIds = new Set<string>()
     const parsedBodies = new Map<string, Record<string, unknown>>()
@@ -436,7 +443,7 @@ export class TemplateRepository {
       const outcome = await this.instantiateRoutineTask(routine.id, timezone).catch(() => null)
       if (outcome && !outcome.alreadyExisted) created++
     }
-    return created
+    return { created, foundNoRoutines: false }
   }
   private async createTaskWithOutcome(
     taskId: string,
