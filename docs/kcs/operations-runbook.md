@@ -18,9 +18,9 @@ When Home Assistant is unconfigured, startup checks retry at most once every fiv
 
 For repeated startup logging or delayed activation, check `ha.startup.skipped`, then save complete Home Assistant URL and token settings and confirm connection status. Never copy token values into diagnostics. Run `e2e/ha-standalone-connection.spec.ts` to verify repeated unconfigured requests, configuration changes, database replacement and failed-authentication recovery. Physical Green qualification still uses the unchanged resource and latency limits.
 
-## Eisenhower scoring saves
+## Scoring Triage saves
 
-Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
+Scoring Triage reads the task's existing framework values from the selected Board before saving. A failed or malformed read keeps the dialog and its inputs open so you can retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save. If someone edits the task while triage is open, reopen the dialog to review its latest score.
 
 A review action saves its primary change first. The optional review timestamp does not block a successful action. If its metadata read fails, no timestamp update is sent. Deleted tasks receive no metadata update. Closing or replacing either wizard retires its pending metadata continuation.
 

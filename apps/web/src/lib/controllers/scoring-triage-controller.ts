@@ -18,8 +18,10 @@ import {
   type TriageFrameworkId,
   type TriageTaskRecord,
 } from "@lib/scoring-triage"
-import { saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "@lib/task-api-client"
-import { currentTaskApiContext, type TaskApiContext } from "@lib/task-api"
+import { readTaskFrameworkPayload, saveVersionedTask, sameTaskApiContext, taskApi, taskRecordVersion } from "@lib/task-api-client"
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "@lib/task-api"
+import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { showToast } from "@lib/toast"
 
 export interface OpenScoringTriageOptions {
@@ -48,6 +50,7 @@ let currentValues: Record<string, number> = {}
 let onCompleteCb: (() => void) | undefined
 let wiredModal: HTMLElement | null = null
 let modalAbort: AbortController | null = null
+let openAbort: AbortController | null = null
 
 let epicsMap = new Map<string, string>()
 let projectsMap = new Map<string, string>()
@@ -68,17 +71,27 @@ function setSelectedRadio(name: string, value: string): void {
   })
 }
 
-async function fetchCatalogsAndTasks(): Promise<void> {
+async function fetchCatalogsAndTasks(signal: AbortSignal): Promise<void> {
   const context = currentTaskApiContext()
-  queueContext = null
-  const [tasksRes, projectsRes, areasRes] = await Promise.all([
-    fetch("/api/tasks?deferred=0"),
-    fetch("/api/projects").catch(() => null),
-    fetch("/api/areas").catch(() => null),
+  if (!context) throw new Error("Open triage again from the current Board.")
+  const options = { headers: taskApiHeaders(context), signal }
+  const readCatalog = async (path: string) => {
+    try {
+      const response = await safeFetch(path, options)
+      return response.ok ? await response.json() : null
+    } catch {
+      return null
+    }
+  }
+  const [tasksJson, pJson, aJson] = await Promise.all([
+    safeFetch("/api/tasks?deferred=0", options).then(response => {
+      if (!response.ok) throw new Error("Failed to load tasks for triage")
+      return response.json()
+    }),
+    readCatalog("/api/projects"),
+    readCatalog("/api/areas"),
   ])
-
-  if (!tasksRes.ok) throw new Error("Failed to load tasks for triage")
-  const tasksJson = await tasksRes.json()
+  signal.throwIfAborted()
   if (!sameTaskApiContext(context, currentTaskApiContext())) throw new Error("Open triage again from the current Board.")
   queueContext = context
   allTasks = Array.isArray(tasksJson) ? tasksJson : (tasksJson.tasks ?? [])
@@ -91,8 +104,7 @@ async function fetchCatalogsAndTasks(): Promise<void> {
   }
 
   projectsMap = new Map()
-  if (projectsRes?.ok) {
-    const pJson = await projectsRes.json().catch(() => null)
+  if (pJson) {
     const pList: CatalogOption[] = Array.isArray(pJson) ? pJson : (pJson?.projects ?? pJson?.data ?? [])
     for (const p of pList) {
       if (p?.id) projectsMap.set(String(p.id), String(p.name ?? (p as unknown as { title?: string }).title ?? p.id))
@@ -100,8 +112,7 @@ async function fetchCatalogsAndTasks(): Promise<void> {
   }
 
   areasMap = new Map()
-  if (areasRes?.ok) {
-    const aJson = await areasRes.json().catch(() => null)
+  if (aJson) {
     const aList: CatalogOption[] = Array.isArray(aJson) ? aJson : (aJson?.areas ?? aJson?.data ?? [])
     for (const a of aList) {
       if (a?.id) areasMap.set(String(a.id), String(a.name ?? a.id))
@@ -413,9 +424,14 @@ function renderCurrentTask(): void {
 
 async function saveCurrentTask(): Promise<void> {
   const task = queue[currentIndex]
-  if (!task || !queueContext || saveInProgress) return
+  const context = queueContext
+  if (!task || !context || !openAbort || saveInProgress) return
+  const signal = AbortSignal.any([openAbort.signal, pageLifecycle.signal])
+  const framework = currentFramework
+  const values = { ...currentValues }
+  const version = taskRecordVersion({ ...task })
 
-  const preview = computeTriagePreview(currentFramework, currentValues)
+  const preview = computeTriagePreview(framework, values)
   if (!preview.canSave) return
 
   const saveBtn = byId<HTMLButtonElement>("st-save-btn")
@@ -423,14 +439,20 @@ async function saveCurrentTask(): Promise<void> {
   saveInProgress = true
 
   try {
-    const existingFp = parseTaskFrameworkPayload(task.framework_payload)
     const quickSpRaw = getSelectedRadio("st-quick-sp")
     const effortRaw = byId<HTMLSelectElement>("st-detail-effort")?.value ?? ""
     const delayRaw = byId<HTMLSelectElement>("st-detail-delay")?.value ?? "none"
     const effortType = getSelectedRadio("st-effort-type")
     const interestTag = getSelectedRadio("st-interest")
 
-    const patch = buildTriagePatchPayload(currentFramework, currentValues, existingFp, {
+    const fresh = await taskApi.getTask(task.id, context, signal)
+    if (signal.aborted || queue[currentIndex] !== task || currentFramework !== framework) return
+    const existingFp = readTaskFrameworkPayload(fresh, task.id)
+    if (version === null || taskRecordVersion(fresh) !== version) {
+      showToast("This task changed. Reopen triage to review the latest score.", "error")
+      return
+    }
+    const patch = buildTriagePatchPayload(framework, values, existingFp, {
       storyPoints: quickSpRaw ? Number(quickSpRaw) : null,
       effortMinutes: effortRaw ? Number(effortRaw) : null,
       effortType: effortType || undefined,
@@ -438,7 +460,8 @@ async function saveCurrentTask(): Promise<void> {
       interestTag: interestTag || undefined,
     })
 
-    const saved = await saveVersionedTask(task.id, patch, taskRecordVersion({ ...task }), queueContext, modalAbort?.signal)
+    const saved = await saveVersionedTask(task.id, patch, version, context, signal)
+    if (signal.aborted) return
     if (!saved.ok) {
       showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
       return
@@ -453,12 +476,14 @@ async function saveCurrentTask(): Promise<void> {
     if (typeof patch.effort_type === "string") task.effort_type = patch.effort_type
     if (typeof patch.framework_payload === "string") task.framework_payload = patch.framework_payload
 
-    if (queue[currentIndex] === task) advanceQueue()
+    if (queue[currentIndex] === task && currentFramework === framework) advanceQueue()
   } catch {
-    showToast("common.failed_update", "error")
+    if (!signal.aborted) showToast("common.failed_update", "error")
   } finally {
-    saveInProgress = false
-    updatePreviewUI()
+    if (!signal.aborted) {
+      saveInProgress = false
+      updatePreviewUI()
+    }
   }
 }
 
@@ -472,6 +497,8 @@ function advanceQueue(): void {
 }
 
 export function closeScoringTriage(completed = false): void {
+  openAbort?.abort()
+  openAbort = null
   const modal = byId("scoring-triage-modal")
   if (modal) modal.hidden = true
   document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "scoring-triage" } }))
@@ -552,6 +579,13 @@ export async function openScoringTriage(options: OpenScoringTriageOptions = {}):
   const modal = ensureModalWired()
   if (!modal) return
 
+  openAbort?.abort()
+  openAbort = new AbortController()
+  const signal = AbortSignal.any([openAbort.signal, pageLifecycle.signal])
+  queueContext = null
+  allTasks = []
+  queue = []
+  saveInProgress = false
   savedCount = 0
   onCompleteCb = options.onComplete
   currentFramework = options.framework ?? (modal.dataset.defaultFramework as TriageFrameworkId) ?? "eisenhower"
@@ -567,7 +601,8 @@ export async function openScoringTriage(options: OpenScoringTriageOptions = {}):
   if (titleEl) titleEl.textContent = "Loading open tasks…"
 
   try {
-    await fetchCatalogsAndTasks()
+    await fetchCatalogsAndTasks(signal)
+    if (signal.aborted) return
     if (options.epicId) {
       const el = byId<HTMLSelectElement>("st-filter-epic")
       if (el) el.value = options.epicId
@@ -586,6 +621,7 @@ export async function openScoringTriage(options: OpenScoringTriageOptions = {}):
     }
     rebuildQueue(true)
   } catch {
+    if (signal.aborted) return
     showToast("common.failed_update", "error")
     modal.hidden = true
   }
