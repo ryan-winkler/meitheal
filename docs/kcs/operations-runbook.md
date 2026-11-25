@@ -265,6 +265,8 @@ Check that `K` still moves to the previous task after navigating to Today and af
 
 Open a Timeline bar popup and press `?` with **View Details** focused. Help covers the popup until Escape or **Close shortcuts** returns focus to **View Details**. Native dialogs, popovers and blocking prompts keep keyboard control while open, including when you press `K`.
 
+In the New Task form, press Down Arrow in **Due Date** to reach the calendar choices. Escape closes that calendar and returns focus to the field. Changing the due date updates the repeat presets for that weekday. If an event ends before it starts, submitting the form focuses the editable **Ends** field and leaves the task unsaved.
+
 With a Today AI handoff request pending, open Help and hold the pointer down on its text before the confirmation arrives. When the confirmation appears, release the pointer and use Tab and Escape in the confirmation. Escape returns focus to **Close shortcuts**, and a second Escape returns to **Ask AI**.
 
 ## Cross-Page Shell Program Verification

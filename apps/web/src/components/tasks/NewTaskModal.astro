@@ -1615,23 +1615,9 @@ try {
 
     function syncDueControls(focus = false) {
       const textInput = dueMount?.querySelector<HTMLInputElement>(".idp-text-input")
-      if (textInput) {
-        textInput.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
-        if (focus) textInput.focus({ preventScroll: true })
-        return
-      }
-      const trigger = dueMount?.querySelector<HTMLElement>(".idp-trigger")
-      if (!trigger) return
-      const clear = trigger.querySelector<HTMLButtonElement>(".idp-clear-btn")
-      if (clear) dueMount?.append(clear)
-      dueMount?.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.type = "button" })
-      if (!(trigger instanceof HTMLButtonElement)) {
-        trigger.tabIndex = 0
-        trigger.setAttribute("role", "button")
-      }
-      trigger.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
-      trigger.setAttribute("aria-haspopup", "dialog")
-      if (focus) trigger.focus({ preventScroll: true })
+      if (!textInput) return
+      textInput.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
+      if (focus) textInput.focus({ preventScroll: true })
     }
 
     function restoreDue(raw: string) {
@@ -1640,6 +1626,7 @@ try {
       const hasTime = Boolean(raw && !dateOnly.test(raw) && parsed && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0))
       duePicker?.setValue(parsed, hasTime)
       syncDueControls()
+      recurrencePicker.refreshPresets()
     }
 
     if (dueMount && dueInput) {
@@ -1650,6 +1637,18 @@ try {
         editable: true,
         enableTime: true,
         ariaLabel: dueLabel,
+        onPanelOpen(panel) {
+          panel.classList.add("nt-due-date-panel")
+          panel.setAttribute("aria-label", dueLabel)
+          overlay.append(panel)
+          panel.addEventListener("keydown", event => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            duePicker?.closePanel()
+            syncDueControls(true)
+          }, { signal })
+        },
         onChange(date, meta) {
           if (meta?.hasTime) {
             dueInput.value = date.toISOString()
@@ -1659,48 +1658,19 @@ try {
             const d = String(date.getDate()).padStart(2, "0")
             dueInput.value = `${y}-${m}-${d}`
           }
+          recurrencePicker.refreshPresets()
           markEdited()
           queueMicrotask(() => syncDueControls(false))
         },
         onClear() {
           dueInput.value = ""
+          recurrencePicker.refreshPresets()
           markEdited()
           queueMicrotask(() => syncDueControls(true))
         },
         signal,
       })
       syncDueControls()
-      // The shared picker portals to body. Keep this instance inside the modal's focus scope.
-      dueMount.addEventListener("click", () => {
-        const prior = new Set(document.querySelectorAll(".idp-panel"))
-        requestAnimationFrame(() => {
-          const panel = [...document.querySelectorAll<HTMLElement>(".idp-panel")].find(item => !prior.has(item))
-          if (!panel || signal.aborted) return
-          panel.classList.add("nt-due-date-panel")
-          panel.setAttribute("role", "dialog")
-          panel.setAttribute("aria-label", dueLabel)
-          overlay.append(panel)
-          const bounds = panel.getBoundingClientRect()
-          panel.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - bounds.width - 8))}px`
-          panel.style.top = `${Math.max(8, Math.min(bounds.top, innerHeight - bounds.height - 8))}px`
-          panel.style.bottom = ""
-          panel.addEventListener("keydown", event => {
-            if (event.key !== "Escape") return
-            event.preventDefault()
-            event.stopPropagation()
-            duePicker?.setValue(displayedDate(dueInput.value))
-            syncDueControls(true)
-          }, { signal })
-          panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
-        })
-      }, { capture: true, signal })
-      dueMount.addEventListener("keydown", event => {
-        const target = event.target as HTMLElement
-        if (target.matches(".idp-trigger:not(button)") && ["Enter", " "].includes(event.key)) {
-          event.preventDefault()
-          target.click()
-        }
-      }, { signal })
       signal.addEventListener("abort", () => duePicker?.destroy(), { once: true })
     }
 
@@ -2526,7 +2496,9 @@ try {
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {
-          document.getElementById("nt-event-end")?.focus()
+          const endField = document.getElementById("nt-event-end")
+          const endPicker = endField?.nextElementSibling?.querySelector<HTMLElement>(".idp-text-input")
+          ;(endPicker ?? endField)?.focus()
           return
         }
         if (kindInput?.value === "shopping_item" && shoppingQuantity() === null) {

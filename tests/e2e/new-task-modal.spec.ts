@@ -32,7 +32,7 @@ test.describe("New Task Modal", () => {
     await page.getByRole("button", { name: "New Task", exact: true }).click()
 
     await expect(page.locator("#new-task-title-input")).toBeVisible()
-    await expect(page.locator("#new-task-desc-input")).toBeVisible()
+    await expect(page.getByRole("tabpanel", { name: "Visual", exact: true })).toBeVisible()
     await expect(page.getByRole("combobox", { name: "Priority", exact: true })).toBeVisible()
     await expect(page.locator("#new-task-status")).toHaveValue(/.+/)
     const status = page.getByRole("radiogroup", { name: "Task status" })
@@ -94,7 +94,7 @@ test.describe("New Task Modal", () => {
     await page.keyboard.press("Enter")
     const overlay = page.locator("#new-task-overlay")
     const first = overlay.locator("#close-new-task-modal")
-    const last = overlay.locator("#submit-new-task-another")
+    const last = overlay.locator("#nt-split-toggle")
     await expect(overlay.locator("#new-task-title-input")).toBeFocused()
     await last.focus()
     await page.keyboard.press("Tab")
@@ -155,6 +155,8 @@ test.describe("New Task Modal", () => {
     })
 
     const submit = page.locator("#submit-new-task-btn")
+    await page.locator("#nt-split-toggle").click()
+    await page.locator('[data-after-create="open"]').click()
     const creationResponse = (status: number) => page.waitForResponse(response =>
       new URL(response.url()).pathname === "/api/tasks" && response.request().method() === "POST" && response.status() === status,
     )
@@ -216,7 +218,8 @@ test.describe("Recovered ticket form", () => {
     await modal.getByRole("button", { name: "Checklist", exact: true }).click()
     await expect(modal.getByRole("button", { name: "Checklist", exact: true })).toHaveAttribute("aria-pressed", "true")
     const title = modal.getByRole("textbox", { name: "Title (required)", exact: true })
-    const description = modal.getByRole("textbox", { name: "Description", exact: true })
+    await modal.getByRole("tab", { name: "Markdown", exact: true }).click()
+    const description = modal.locator("#new-task-desc-input")
     await expect(title).toHaveAttribute("maxlength", "500")
     await expect(description).toHaveAttribute("maxlength", "10000")
     await title.fill("Prepare household supplies")
@@ -226,20 +229,24 @@ test.describe("Recovered ticket form", () => {
     await expect(modal.locator("#nt-checklist-items-container").getByRole("listitem")).toHaveCount(2)
     await expect(modal.locator("#nt-checklist-count")).toHaveText("2 items")
     await modal.getByRole("combobox", { name: "Priority", exact: true }).selectOption("2")
-    const expectedDue = await page.evaluate(() => {
+    const { expectedDue, expectedRule } = await page.evaluate(() => {
       const date = new Date()
       date.setDate(date.getDate() + 1)
       date.setHours(0, 0, 0, 0)
-      return date.toISOString()
+      const days = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+      return {
+        expectedDue: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+        expectedRule: `FREQ=WEEKLY;BYDAY=${days[date.getDay()]}`,
+      }
     })
-    await modal.getByRole("group", { name: "Due Date", exact: true }).getByRole("button", { name: "Due Date", exact: true }).press("Enter")
+    await modal.getByRole("group", { name: "Due Date", exact: true }).getByRole("textbox", { name: "Due Date", exact: true }).press("ArrowDown")
     await modal.locator(".nt-due-date-panel").getByRole("button", { name: /^Tomorrow/ }).press("Enter")
     await modal.locator("#nt-options > summary").click()
     const goal = modal.getByRole("combobox", { name: "Goal", exact: true })
     await expect(goal).toBeVisible()
     await goal.selectOption("form-goal")
     await expect(modal.getByRole("combobox", { name: "Assignee", exact: true })).toBeHidden()
-    await modal.getByRole("combobox", { name: "Repeat", exact: true }).selectOption("FREQ=WEEKLY")
+    await modal.getByRole("combobox", { name: "Repeat", exact: true }).selectOption(expectedRule)
     await expect(modal.locator("#nt-is-routine, #nt-ai-handoff, [data-field-type=attachment]")).toHaveCount(0)
     for (const width of [1000, 320]) {
       await page.setViewportSize({ width, height: 740 })
@@ -265,7 +272,10 @@ test.describe("Recovered ticket form", () => {
     await expect(modal.getByRole("button", { name: "Create Checklist", exact: true })).toBeDisabled()
     await expect(modal.locator("#nt-check-save")).toBeFocused()
     await expect(title).toHaveValue("Prepare household supplies")
-    expect(sent).toMatchObject({ goal_id: "form-goal", priority: 2, recurrence_rule: "FREQ=WEEKLY", due_date: expectedDue })
+    expect(sent).toMatchObject({
+      goal_id: "form-goal", priority: 2, recurrence_rule: expectedRule, due_date: expectedDue,
+      description: "Bring supplies for the weekend.",
+    })
     expect(sent).not.toHaveProperty("is_routine")
   })
 
@@ -275,13 +285,17 @@ test.describe("Recovered ticket form", () => {
     const modal = page.getByRole("dialog", { name: "New Task", exact: true })
     await modal.getByRole("button", { name: "Event", exact: true }).click()
     await modal.getByRole("textbox", { name: "Title (required)", exact: true }).fill("Household visit")
-    await modal.getByLabel("Starts", { exact: true }).fill("2026-12-12T14:00")
-    await modal.getByLabel("Ends", { exact: true }).fill("2026-12-12T13:00")
+    const starts = modal.getByRole("textbox", { name: "Starts", exact: true })
+    const ends = modal.getByRole("textbox", { name: "Ends", exact: true })
+    await starts.fill("2026-12-12 14:00")
+    await starts.press("Enter")
+    await ends.fill("2026-12-12 13:00")
+    await ends.press("Enter")
     let creates = 0
     page.on("request", request => { if (new URL(request.url()).pathname === "/api/tasks" && request.method() === "POST") creates++ })
     await modal.getByRole("button", { name: "Create Event", exact: true }).click()
     await expect(modal.locator("#nt-date-error")).toHaveText("End must be after start.")
-    await expect(modal.getByLabel("Ends", { exact: true })).toBeFocused()
+    await expect(ends).toBeFocused()
     expect(creates).toBe(0)
   })
 })
@@ -305,9 +319,9 @@ test.describe("Due date capture compatibility", () => {
     expect(await modal.locator("#new-task-title-input").evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true)
     let creates = 0
     page.on("request", request => { if (new URL(request.url()).pathname === "/api/tasks" && request.method() === "POST") creates++ })
-    const trigger = modal.getByRole("group", { name: "Due Date", exact: true }).getByRole("button", { name: /^Due Date:/ })
-    await expect(trigger.locator("button")).toHaveCount(0)
-    await trigger.press("Enter")
+    const trigger = modal.getByRole("group", { name: "Due Date", exact: true }).getByRole("textbox", { name: /^Due Date:/ })
+    await expect(trigger).toBeVisible()
+    await trigger.press("ArrowDown")
     const picker = modal.locator(".nt-due-date-panel")
     await expect(picker).toBeVisible()
     const pickerStyle = await picker.evaluate(el => {
@@ -332,7 +346,7 @@ test.describe("Due date capture compatibility", () => {
     await expect(picker).toHaveCount(0)
     await expect(trigger).toBeFocused()
     await expect(stored).toHaveValue(due)
-    await modal.getByRole("button", { name: "Remove scheduled date", exact: true }).press("Enter")
+    await modal.getByRole("button", { name: "Clear date", exact: true }).press("Enter")
     await expect(stored).toHaveValue("")
     await expect(modal).toBeVisible()
     expect(creates).toBe(0)

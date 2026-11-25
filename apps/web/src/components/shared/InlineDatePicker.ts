@@ -48,6 +48,8 @@ export interface InlineDatePickerOptions {
   hasTime?: boolean
   /** Accessible label for the input/trigger */
   ariaLabel?: string
+  /** Place a newly opened panel within a parent dialog before positioning it. */
+  onPanelOpen?: (panel: HTMLElement) => void
   /** AbortSignal for cleanup */
   signal?: AbortSignal
 }
@@ -299,7 +301,7 @@ export class InlineDatePicker {
         commitTyped(true)
       } else if (e.key === "ArrowDown" && !this.panel) {
         e.preventDefault()
-        this.openPanel()
+        this.openPanel(true)
       } else if (e.key === "Escape" && this.panel) {
         e.stopPropagation()
         this.closePanel()
@@ -442,7 +444,7 @@ export class InlineDatePicker {
     panel.style.zIndex = "10000"
   }
 
-  private openPanel() {
+  private openPanel(focusFirst = false) {
     this.closePanel()
 
     const panel = document.createElement("div")
@@ -496,7 +498,9 @@ export class InlineDatePicker {
     this.panel = panel
     this.container.querySelector(".idp-cal-toggle")?.setAttribute("aria-expanded", "true")
     document.body.appendChild(panel)
+    this.options.onPanelOpen?.(panel)
     this.clampPanelPosition(panel)
+    if (focusFirst) panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
     requestAnimationFrame(() => {
       if (this.panel === panel) this.clampPanelPosition(panel)
     })
@@ -507,6 +511,7 @@ export class InlineDatePicker {
       }
     }
     setTimeout(() => {
+      if (this.panel !== panel) return
       document.addEventListener("click", closeHandler as EventListener, listenerOpts(this.options.signal))
       this.panelCleanups.push(() => document.removeEventListener("click", closeHandler as EventListener))
     }, 0)
