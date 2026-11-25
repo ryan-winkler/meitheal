@@ -116,7 +116,7 @@ test.describe("Tabler Settings recovery", () => {
       const security = page.getByRole("link", { name: "Report a security vulnerability privately", exact: true })
       await expect(security).toHaveAttribute("href", "mailto:hi@meitheal.io")
       expect(await security.evaluate(element => getComputedStyle(element).textDecorationLine)).toContain("underline")
-      expect(await contrastAgainst(security, "#local-feedback")).toBeGreaterThanOrEqual(4.5)
+      expect(await contrastAgainst(security, "#help-support-card")).toBeGreaterThanOrEqual(4.5)
       await page.locator('[data-settings-nav="look-and-feel-settings"]').press("Enter")
     }
   })
