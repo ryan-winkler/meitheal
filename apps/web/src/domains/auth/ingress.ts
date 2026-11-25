@@ -16,8 +16,7 @@ function sanitizeIngressHeaderName(raw: string | null): string | undefined {
   if (!raw) return undefined
   // Supervisor may pass UTF-8 or Latin-1 encoded display names; strip HTML/control chars safely.
   const cleaned = raw
-    .replace(/<[^>]*>/g, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
+    .replace(/<[^>]*>|[<>\u0000-\u001f\u007f-\u009f]/g, "")
     .trim()
     .slice(0, 128)
   return cleaned || undefined

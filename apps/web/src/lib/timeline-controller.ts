@@ -337,7 +337,10 @@ async function patchTask(task: TimelineTask, fields: Record<string, unknown>, pr
     preview?.()
     const result = await saveVersionedTask(task.id, fields, version, context, signal)
     if (result.ok) {
-      Object.assign(task, result.task, { task_version: result.version })
+      for (const key of ["start_date", "end_date", "due_date", "status", "priority", "area_id", "project_id", "task_kind"]) {
+        if (Object.hasOwn(result.task, key)) Reflect.set(task, key, result.task[key])
+      }
+      task.task_version = result.version
       return true
     }
     if (sameTaskApiContext(context, currentTaskApiContext()) && !signal?.aborted
@@ -380,8 +383,14 @@ async function saveBarDates(
     const accepted = mapTasks([bar.original]).dated[0]
     if (accepted) {
       const canonical = bars.find(item => item.id === bar.id)
-      if (canonical && canonical !== bar) Object.assign(canonical, accepted)
-      Object.assign(bar, accepted)
+      for (const displayed of [bar, canonical]) {
+        if (!displayed) continue
+        displayed.start = accepted.start
+        displayed.end = accepted.end
+        displayed.isMilestone = accepted.isMilestone
+        displayed.isOverdue = accepted.isOverdue
+        displayed.colour = accepted.colour
+      }
     }
   } else {
     rollbackBarDates(bars, bar.id, snapshot, bar)

@@ -429,7 +429,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         try:
             new_expiry = await async_renew_token(self.api, days=90)
             if new_expiry:
-                _LOGGER.info("Renewed Meitheal integration token until %s", new_expiry)
+                _LOGGER.info("Renewed Meitheal integration token")
         except (MeithealConnectionError, MeithealResponseError):
             _LOGGER.debug("Deferred proactive Meitheal token renewal; will retry later")
 
