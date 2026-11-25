@@ -1,4 +1,4 @@
-import { scopePermits, scopeLimits, type BoardScope } from "../board-scope"
+import { scopePermits, scopeLimits, scopeServiceDestination, type BoardScope } from "../board-scope"
 import { ownedPlanning, storageBoardId, taskField, taskOwnedBy, taskPlacementJoin, taskProjection } from "./board-storage"
 import { sql, sourceSql, type SqlFragment } from "./sql-fragment"
 import { featureAudienceAllowed } from "../board-feature-policy"
@@ -91,7 +91,8 @@ const searchTaskColumns = [
 ] as const
 
 export type TaskReadProjection = "full" | "minimal" | "records" | "search" | "kanban-order"
-const readModelPrefixes = new WeakMap<BoardScope, Map<TaskReadProjection, SqlFragment>>()
+const MAX_READ_MODEL_PREFIXES = 128
+const readModelPrefixes = new Map<string, SqlFragment>()
 
 /**
  * Shared read model, composed explicitly by repository source queries. This does
@@ -99,21 +100,27 @@ const readModelPrefixes = new WeakMap<BoardScope, Map<TaskReadProjection, SqlFra
  * their bound arguments follow this prefix's arguments in lexical order.
  */
 export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select", projection: TaskReadProjection = "full"): SqlFragment {
-  let prefixes = readModelPrefixes.get(scope)
-  if (!prefixes) {
-    prefixes = new Map()
-    readModelPrefixes.set(scope, prefixes)
-  }
-  let prefix = prefixes.get(projection)
+  const destination = scopeServiceDestination(scope)
+  const key = JSON.stringify([
+    projection, scope.boardId, storageBoardId(scope), scope.principal.kind, scope.principal.id,
+    destination?.areaId, destination?.projectId,
+    scopePermits(scope, { resource: "task", action: "read" }),
+    scopeLimits(scope).map(({ principal }) => [principal.kind, principal.id]),
+  ])
+  let prefix = readModelPrefixes.get(key)
   if (!prefix) {
     prefix = taskReadPrefix(scope, projection)
-    prefixes.set(projection, prefix)
+    if (readModelPrefixes.size >= MAX_READ_MODEL_PREFIXES) {
+      const oldest = readModelPrefixes.keys().next().value
+      if (oldest !== undefined) readModelPrefixes.delete(oldest)
+    }
+    readModelPrefixes.set(key, prefix)
   }
   return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} ${prefix}
     ${sourceSql(continuation === "select" ? "" : ",")} ${query}`
 }
 
-/** Reuse only the query template for the same issued scope. SQL still checks the current audiences. */
+/** Cache SQL with the same bound scope inputs. Queries still check current audiences and authority. */
 function taskReadPrefix(scope: BoardScope, projection: TaskReadProjection): SqlFragment {
   const columns = projection === "kanban-order"
     ? ["id", "is_promoted", "deferred_at", "status", "kanban_position", "priority", "created_at", "assigned_to"]
