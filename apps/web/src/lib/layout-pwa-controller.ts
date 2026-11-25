@@ -233,9 +233,8 @@ function syncOfflineBanner() {
 
 async function flushOfflineOutbox(notify = true) {
   const result = await replayOfflineMutations()
-  pendingOfflineCount = result.remaining
   offlineReplayFailed = result.failed > 0
-  syncOfflineBanner()
+  window.dispatchEvent(new CustomEvent(OFFLINE_QUEUE_EVENT, { detail: { count: result.remaining } }))
   if (result.synced > 0) {
     if (notify) showToast(buildOfflineSyncSummary(0, result.synced), "success")
     document.dispatchEvent(new CustomEvent("meitheal:tasks-changed"))
