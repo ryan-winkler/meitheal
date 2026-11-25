@@ -327,162 +327,166 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       </div>
     </section>
 
-    <section id="today-focus" class="page-shell__section" data-today-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Focus</div>
-          <h2 class="page-shell__title">Priority tasks</h2>
-        </div>
-      </div>
-
-      {focusStackTasks.length > 0 ? (
-        <div class="focus-stack" id="section-focus-stack">
-          <div class="focus-stack__header">
-            <span class="focus-stack__title">Next tasks</span>
-            <span class="focus-stack__subtitle">
-              {focusStackTasks.length} to focus on
-            </span>
+    <CachedHtmlSlot cacheKey={focusStackTasks.length === 0 ? "today-focus-empty" : null}>
+      <section id="today-focus" class="page-shell__section" data-today-section>
+        <div class="page-shell__intro">
+          <div>
+            <div class="page-shell__eyebrow">Focus</div>
+            <h2 class="page-shell__title">Priority tasks</h2>
           </div>
-          <div class="focus-stack__cards">
-            {focusStackTasks.map((task, i) => (
-              <div
-                class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
-                data-id={task.id}
-                data-promoted={task.is_promoted ? "true" : "false"}
-                {...taskSurface(task.status, task.color)}
-                data-focus-index={i}
-              >
-                <span class="focus-card__step">{i + 1}</span>
-                <a class="focus-card__body" href={taskDetailPath(task)} data-task-detail-link={task.id}>
-                  <span class="focus-card__title">{task.title}</span>
-                  <div class="focus-card__meta">
-                    {task.is_promoted && (
-                      <span class="task-promoted-pill">
-                        <Icon name="star" size={11} sprite /> Promoted
-                      </span>
-                    )}
-                    {task.priority && task.priority <= 2 && (
-                      <span class="focus-card__priority" data-pri={task.priority}>
-                        {task.priority === 1 ? "▲ Critical" : "↑ High"}
-                      </span>
-                    )}
-                    <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
-                    {effectiveTaskScheduledDate(task) && (
-                      <span class="focus-card__due">
-                        <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
-                        {focusDueLabel(task)}
-                      </span>
-                    )}
-                  </div>
-                </a>
-                <button
-                  type="button"
-                  class="focus-card__complete btn btn-sm"
+        </div>
+
+        {focusStackTasks.length > 0 ? (
+          <div class="focus-stack" id="section-focus-stack">
+            <div class="focus-stack__header">
+              <span class="focus-stack__title">Next tasks</span>
+              <span class="focus-stack__subtitle">
+                {focusStackTasks.length} to focus on
+              </span>
+            </div>
+            <div class="focus-stack__cards">
+              {focusStackTasks.map((task, i) => (
+                <div
+                  class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
                   data-id={task.id}
-                  title="Complete this task"
-                  aria-label={`Complete ${task.title}`}
+                  data-promoted={task.is_promoted ? "true" : "false"}
+                  {...taskSurface(task.status, task.color)}
+                  data-focus-index={i}
                 >
-                  <Icon name="check" size={14} sprite />
-                </button>
-              </div>
+                  <span class="focus-card__step">{i + 1}</span>
+                  <a class="focus-card__body" href={taskDetailPath(task)} data-task-detail-link={task.id}>
+                    <span class="focus-card__title">{task.title}</span>
+                    <div class="focus-card__meta">
+                      {task.is_promoted && (
+                        <span class="task-promoted-pill">
+                          <Icon name="star" size={11} sprite /> Promoted
+                        </span>
+                      )}
+                      {task.priority && task.priority <= 2 && (
+                        <span class="focus-card__priority" data-pri={task.priority}>
+                          {task.priority === 1 ? "▲ Critical" : "↑ High"}
+                        </span>
+                      )}
+                      <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
+                      {effectiveTaskScheduledDate(task) && (
+                        <span class="focus-card__due">
+                          <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
+                          {focusDueLabel(task)}
+                        </span>
+                      )}
+                    </div>
+                  </a>
+                  <button
+                    type="button"
+                    class="focus-card__complete btn btn-sm"
+                    data-id={task.id}
+                    title="Complete this task"
+                    aria-label={`Complete ${task.title}`}
+                  >
+                    <Icon name="check" size={14} sprite />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div class="today-shell__empty card">
+            No urgent focus items are competing for attention right now.
+          </div>
+        )}
+
+        <div class="today-filter-bar" id="today-filter-bar">
+          <input
+            type="text"
+            id="today-search"
+            class="form-input"
+            placeholder="Search tasks..."
+            autocomplete="off"
+          />
+          <select id="today-filter-status" class="form-select" aria-label="Filter by status">
+            <option value="">All Status</option>
+            <option value="pending">Todo</option>
+            <option value="active">Active</option>
+            <option value="complete">Done</option>
+            <option value="overdue">Overdue</option>
+          </select>
+          <select id="today-filter-priority" class="form-select" aria-label="Filter by priority">
+            <option value="">All Priority</option>
+            <option value="1">▲ Critical</option>
+            <option value="2">↑ High</option>
+            <option value="3">→ Medium</option>
+            <option value="4">↓ Low</option>
+            <option value="5">· Minimal</option>
+          </select>
+          <select id="today-filter-rice" class="form-select" aria-label="Filter by RICE score">
+            <option value="">All RICE</option>
+            <option value="high">High (≥15)</option>
+            <option value="medium">Medium (8-14)</option>
+            <option value="low">Low (&lt;8)</option>
+          </select>
+          <select id="today-sort" class="form-select" aria-label="Sort tasks">
+            <option value="priority-asc">Priority ↑</option>
+            <option value="priority-desc">Priority ↓</option>
+            <option value="rice-desc">RICE ↓</option>
+            <option value="rice-asc">RICE ↑</option>
+            <option value="due_date-asc">Due Soonest</option>
+            <option value="due_date-desc">Due Latest</option>
+            <option value="title-asc">Title A-Z</option>
+            <option value="title-desc">Title Z-A</option>
+          </select>
+          <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
+            <Icon name="x" size={16} sprite />
+          </button>
+          <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} sprite /></button>
+        </div>
+      </section>
+    </CachedHtmlSlot>
+
+    <CachedHtmlSlot cacheKey={carriedForwardTasks.length === 0 && suggestedTasks.length === 0 ? "today-triage-empty" : null}>
+      <section id="today-triage" class="page-shell__section" data-today-section>
+        <div class="page-shell__intro">
+          <div>
+            <div class="page-shell__eyebrow">Triage</div>
+            <h2 class="page-shell__title">Overdue and suggested tasks</h2>
+          </div>
+        </div>
+
+        <div id="migration-prompt" class="today-section" style="display: none;"></div>
+
+        <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
+          <button type="button" class="today-section__header today-section__toggle"
+            aria-controls="today-carried-list" aria-expanded="true">
+            <Icon name="chevron-down" size={14} class="today-section__icon" sprite />
+            <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
+              <Icon name="refresh" size={16} sprite /> Carried Forward
+            </span>
+            <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
+          </button>
+          <div class="today-section__list" id="today-carried-list" data-today-task-list>
+            {carriedForwardTasks.map(task => (
+              <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Carried Forward" />
             ))}
           </div>
         </div>
-      ) : (
-        <div class="today-shell__empty card">
-          No urgent focus items are competing for attention right now.
+        <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
+
+        <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
+          <button type="button" class="today-section__header today-section__toggle"
+            aria-controls="today-suggested-list" aria-expanded="true">
+            <Icon name="chevron-down" size={14} class="today-section__icon" sprite />
+            <span class="today-section__title" style="color: var(--accent-text);">
+              <Icon name="sparkles" size={16} sprite /> Suggested
+            </span>
+            <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
+          </button>
+          <div class="today-section__list" id="today-suggested-list" data-today-task-list>
+            {suggestedTasks.map(task => (
+              <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+            ))}
+          </div>
         </div>
-      )}
-
-      <div class="today-filter-bar" id="today-filter-bar">
-        <input
-          type="text"
-          id="today-search"
-          class="form-input"
-          placeholder="Search tasks..."
-          autocomplete="off"
-        />
-        <select id="today-filter-status" class="form-select" aria-label="Filter by status">
-          <option value="">All Status</option>
-          <option value="pending">Todo</option>
-          <option value="active">Active</option>
-          <option value="complete">Done</option>
-          <option value="overdue">Overdue</option>
-        </select>
-        <select id="today-filter-priority" class="form-select" aria-label="Filter by priority">
-          <option value="">All Priority</option>
-          <option value="1">▲ Critical</option>
-          <option value="2">↑ High</option>
-          <option value="3">→ Medium</option>
-          <option value="4">↓ Low</option>
-          <option value="5">· Minimal</option>
-        </select>
-        <select id="today-filter-rice" class="form-select" aria-label="Filter by RICE score">
-          <option value="">All RICE</option>
-          <option value="high">High (≥15)</option>
-          <option value="medium">Medium (8-14)</option>
-          <option value="low">Low (&lt;8)</option>
-        </select>
-        <select id="today-sort" class="form-select" aria-label="Sort tasks">
-          <option value="priority-asc">Priority ↑</option>
-          <option value="priority-desc">Priority ↓</option>
-          <option value="rice-desc">RICE ↓</option>
-          <option value="rice-asc">RICE ↑</option>
-          <option value="due_date-asc">Due Soonest</option>
-          <option value="due_date-desc">Due Latest</option>
-          <option value="title-asc">Title A-Z</option>
-          <option value="title-desc">Title Z-A</option>
-        </select>
-        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
-          <Icon name="x" size={16} />
-        </button>
-        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} /></button>
-      </div>
-    </section>
-
-    <section id="today-triage" class="page-shell__section" data-today-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Triage</div>
-          <h2 class="page-shell__title">Overdue and suggested tasks</h2>
-        </div>
-      </div>
-
-      <div id="migration-prompt" class="today-section" style="display: none;"></div>
-
-      <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
-        <button type="button" class="today-section__header today-section__toggle"
-          aria-controls="today-carried-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" />
-          <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
-            <Icon name="refresh" size={16} /> Carried Forward
-          </span>
-          <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
-        </button>
-        <div class="today-section__list" id="today-carried-list" data-today-task-list>
-          {carriedForwardTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Carried Forward" />
-          ))}
-        </div>
-      </div>
-      <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
-
-      <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
-        <button type="button" class="today-section__header today-section__toggle"
-          aria-controls="today-suggested-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" />
-          <span class="today-section__title" style="color: var(--accent-text);">
-            <Icon name="sparkles" size={16} /> Suggested
-          </span>
-          <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
-        </button>
-        <div class="today-section__list" id="today-suggested-list" data-today-task-list>
-          {suggestedTasks.map(task => (
-            <TaskListItem task={task} showFocusToday showActions section="Suggested" />
-          ))}
-        </div>
-      </div>
-    </section>
+      </section>
+    </CachedHtmlSlot>
 
     <section id="today-work" class="page-shell__section" data-today-section>
       <div class="page-shell__intro">
@@ -612,66 +616,68 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       </div>
     </section>
 
-    <section id="today-habits" class="page-shell__section" data-today-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Routines</div>
-          <h2 class="page-shell__title">Your routines</h2>
+    <CachedHtmlSlot cacheKey={habits.length === 0 ? `today-habits-empty:${habitsEnabled}` : null}>
+      <section id="today-habits" class="page-shell__section" data-today-section>
+        <div class="page-shell__intro">
+          <div>
+            <div class="page-shell__eyebrow">Routines</div>
+            <h2 class="page-shell__title">Your routines</h2>
+          </div>
         </div>
-      </div>
 
-      <div class="today-section" id="section-habits">
-        <button type="button" class="today-section__header today-section__toggle"
-          aria-controls="today-habits-list" aria-expanded="true">
-          <Icon name="chevron-down" size={14} class="today-section__icon" />
-          <span class="today-section__title" style="color: var(--accent-text);">
-            <Icon name="repeat" size={16} /> Routines
-          </span>
-          <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
-        </button>
-        <div class="today-section__list" id="today-habits-list">
-          {habitsEnabled && habits.length > 0 ? (
-            habits.map(habit => {
-              const routineIcon = mapEntityEmojiToTabler(habit.icon)
-              return (
-              <div
-                class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
-                data-habit-id={habit.id}
-                data-today-task-id={habit.todayTaskId ?? ""}
-              >
-                <span class="habit-card__icon" aria-hidden="true">
-                  {routineIcon ? <Icon name={routineIcon} size={18} sprite /> : habit.icon}
-                </span>
-                <div class="habit-card__info">
-                  <span class="habit-card__name">{habit.name}</span>
-                  <span class="habit-card__meta">
-                    {habit.currentStreak > 0 && <span class="habit-card__streak"><Icon name="flame" size={14} sprite />{habit.currentStreak}</span>}
-                    <span class="habit-card__total">{habit.totalCompletions} total</span>
-                    {!habit.projectActive && <span class="habit-card__inactive">Paused project</span>}
-                    {habit.todayTaskId && <a class="habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>View task</a>}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="habit-card__complete btn btn-sm"
-                  disabled={habit.todayCompleted || !canCompleteRoutine || !habit.projectActive}
-                  aria-pressed={habit.todayCompleted ? "true" : "false"}
+        <div class="today-section" id="section-habits">
+          <button type="button" class="today-section__header today-section__toggle"
+            aria-controls="today-habits-list" aria-expanded="true">
+            <Icon name="chevron-down" size={14} class="today-section__icon" sprite />
+            <span class="today-section__title" style="color: var(--accent-text);">
+              <Icon name="repeat" size={16} sprite /> Routines
+            </span>
+            <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
+          </button>
+          <div class="today-section__list" id="today-habits-list">
+            {habitsEnabled && habits.length > 0 ? (
+              habits.map(habit => {
+                const routineIcon = mapEntityEmojiToTabler(habit.icon)
+                return (
+                <div
+                  class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
+                  data-habit-id={habit.id}
+                  data-today-task-id={habit.todayTaskId ?? ""}
                 >
-                  {habit.todayCompleted ? <><Icon name="check" size={14} sprite /> Done</> : "Complete"}
-                </button>
+                  <span class="habit-card__icon" aria-hidden="true">
+                    {routineIcon ? <Icon name={routineIcon} size={18} sprite /> : habit.icon}
+                  </span>
+                  <div class="habit-card__info">
+                    <span class="habit-card__name">{habit.name}</span>
+                    <span class="habit-card__meta">
+                      {habit.currentStreak > 0 && <span class="habit-card__streak"><Icon name="flame" size={14} sprite />{habit.currentStreak}</span>}
+                      <span class="habit-card__total">{habit.totalCompletions} total</span>
+                      {!habit.projectActive && <span class="habit-card__inactive">Paused project</span>}
+                      {habit.todayTaskId && <a class="habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>View task</a>}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    class="habit-card__complete btn btn-sm"
+                    disabled={habit.todayCompleted || !canCompleteRoutine || !habit.projectActive}
+                    aria-pressed={habit.todayCompleted ? "true" : "false"}
+                  >
+                    {habit.todayCompleted ? <><Icon name="check" size={14} sprite /> Done</> : "Complete"}
+                  </button>
+                </div>
+                )
+              })
+            ) : (
+              <div class="today-shell__empty card">
+                {habitsEnabled
+                  ? "No active routines are feeding into Today yet."
+                  : "Routines are currently disabled for this workspace."}
               </div>
-              )
-            })
-          ) : (
-            <div class="today-shell__empty card">
-              {habitsEnabled
-                ? "No active routines are feeding into Today yet."
-                : "Routines are currently disabled for this workspace."}
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </CachedHtmlSlot>
 
     <section id="today-flow" class="page-shell__section" data-today-section>
       <div class="page-shell__intro">

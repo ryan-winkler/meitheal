@@ -36,7 +36,7 @@ import { effectiveTaskScheduledDate, isValidTaskKind } from "@meitheal/domain-ta
 import { taskLabelInsert } from "./label-reference-repository"
 import { homeAssistantTaskAreaCondition } from "./home-assistant-task-area"
 import type { Client, InStatement, InValue, ResultSet, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, executeWriteWithRetry, localReaderCacheToken, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
 import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -53,6 +53,9 @@ import { discardUnappliedTaskActivity, sanitizeOriginName, taskAddedActivity, ta
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
+
+const notificationPreferencesCache = new WeakMap<object, { token: string; value: string | null }>()
+const defaultAssigneeCache = new WeakMap<object, { token: string; boards: Map<string, string | null> }>()
 
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
@@ -1770,13 +1773,30 @@ export class TaskRepository {
   /** Look up the default assignee from app_settings (nullable) */
   async getDefaultAssignee(): Promise<string | null> {
     try {
-      const result = await this.forOperation("create").execute(sql`SELECT value FROM app_settings
-        WHERE key = ${`default_assignee:${this.scope.boardId}`} LIMIT 1`)
-      if (result.rows.length > 0) {
-        return String((result.rows[0] as Record<string, unknown>).value);
+      const intent = { resource: "task", action: "create" } as const
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const state = localReaderCacheToken(this.client)
+      const boardId = this.scope.boardId
+      const cached = state && defaultAssigneeCache.get(state.owner)
+      if (cached && cached.token === state?.token) {
+        const value = cached.boards.get(boardId)
+        if (value !== undefined) return value
       }
+      const { rows: [row] } = await this.client.execute(sql`SELECT value FROM app_settings
+        WHERE key = ${`default_assignee:${boardId}`} LIMIT 1`)
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const value = row ? String(row.value) : null
+      if (state && localReaderCacheToken(this.client)?.token === state.token) {
+        let entry = defaultAssigneeCache.get(state.owner)
+        if (entry?.token !== state.token) {
+          entry = { token: state.token, boards: new Map() }
+          defaultAssigneeCache.set(state.owner, entry)
+        }
+        entry.boards.set(boardId, value)
+      }
+      return value
     } catch { /* ignore — default is optional */ }
-    return null;
+    return null
   }
 
   /** Look up a parent task's type for nesting validation */
@@ -3190,20 +3210,32 @@ export class TaskRepository {
       disabledUsers: new Set<string>(),
       channels: { sidebar: true, mobile_push: false },
       mobileTargets: [] as string[],
-    };
+    }
     try {
-      const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1", []), "select"));
-      if (result.rows.length > 0) {
-        const raw = JSON.parse(String((result.rows[0] as Record<string, unknown>).value));
+      const intent = { resource: "task", action: "read" } as const
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults
+      const state = localReaderCacheToken(this.client)
+      const cached = state && notificationPreferencesCache.get(state.owner)
+      let value = cached && cached.token === state?.token ? cached.value : undefined
+      if (value === undefined) {
+        const { rows: [row] } = await this.client.execute("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1")
+        if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults
+        value = row ? String(row.value) : null
+        if (state && localReaderCacheToken(this.client)?.token === state.token) {
+          notificationPreferencesCache.set(state.owner, { token: state.token, value })
+        }
+      }
+      if (value !== null) {
+        const raw = JSON.parse(value)
         if (typeof raw === "object" && raw !== null) {
-          defaults.enabled = raw.enabled !== false;
-          if (Array.isArray(raw.disabled_users)) defaults.disabledUsers = new Set(raw.disabled_users);
-          if (raw.channels) defaults.channels = raw.channels;
-          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = raw.mobile_targets;
+          defaults.enabled = raw.enabled !== false
+          if (Array.isArray(raw.disabled_users)) defaults.disabledUsers = new Set(raw.disabled_users)
+          if (raw.channels && typeof raw.channels === "object") defaults.channels = { ...raw.channels }
+          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = [...raw.mobile_targets]
         }
       }
     } catch { /* settings not available */ }
-    return defaults;
+    return defaults
   }
 
   // ── Comment Methods ─────────────────────────────────────────────────
