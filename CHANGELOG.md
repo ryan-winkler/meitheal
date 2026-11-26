@@ -8,6 +8,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Security Advisories:** [GitHub Security Advisories](https://github.com/ryan-winkler/meitheal/security/advisories)
 - **User Documentation:** [README.md](README.md)
 
+## [0.0.4] - 2026-11-26 (Stable release)
+
+- Move grouped Kanban cards and update Type in the open task details. Choose a Board on Planning or Progress & Growth and keep the active section.
+- Open a new routine's task immediately. Attach images while keeping the Discussion draft in place. Find GitHub Issues and Discussions in **Settings → App & Companion → Help & Support**.
+- Capture tasks offline and send pending tasks when the original account and Board reconnect. Open Home Assistant links directly to the selected view.
+- Take a Home Assistant App backup before updating. See the [backup and restore guide](docs/kcs/home-assistant-backup-and-restore.md).
+
 ## [0.0.4-canary] - 2026-11-25 (Canary channel)
 
 Continuous validation release built from `dev`. Entries below use plain, scannable descriptions grouped by change type.
