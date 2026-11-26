@@ -69,6 +69,7 @@ const { class: className } = Astro.props
   const endpoint = "api/saved-filters"
   const activeCapability = "MEITHEAL_PRESETS_NETWORK_ONLY"
   const waitingCapability = "MEITHEAL_PRESETS_WAITING_CAPABLE"
+  const activeRetryTimeoutMs = 1_500
   const focusKey = "meitheal:table-preset-focus"
 
   interface Preset {
@@ -110,11 +111,14 @@ const { class: className } = Astro.props
     const save = wrapper?.querySelector<HTMLButtonElement>("#saved-presets-save")
     if (!wrapper || !toggle || !panel || !list || !save || wrapper.dataset.ready) return
     wrapper.dataset.ready = "true"
+    const presetOwner = wrapper
     const trigger = toggle
     const panelEl = panel
     const listEl = list
     const saveButton = save
     let generation = 0
+    let boardWithheld = false
+    let restoreFocusAfterVerification = false
     let read: AbortController | undefined
     let action: AbortController | undefined
     let presets: Preset[] = []
@@ -161,13 +165,14 @@ const { class: className } = Astro.props
       const scope = scopeUrl()
       const worker = navigator.serviceWorker?.controller ?? null
       const version = generation
-      const current = () => !signal.aborted && expanded() && version === generation && navigator.onLine &&
+      const current = () => !signal.aborted && !boardWithheld && presetOwner.isConnected &&
+        expanded() && version === generation && navigator.onLine &&
         (navigator.serviceWorker?.controller ?? null) === worker && scopeUrl().href === scope.href
       return { scope, worker, current }
     }
 
     async function refresh() {
-      if (!expanded()) return
+      if (boardWithheld || !presetOwner.isConnected || !expanded()) return
       read?.abort()
       const request = new AbortController()
       read = request
@@ -188,7 +193,7 @@ const { class: className } = Astro.props
           if (!fresh()) return
           const script = new URL("sw.js", scope).href
           if (registration?.active !== worker || worker.scriptURL !== script ||
-              !await workerAllowsNetworkOnly(worker, activeCapability)) {
+              !await workerAllowsNetworkOnly(worker, activeCapability, activeRetryTimeoutMs)) {
             const waiting = registration?.waiting
             const compatible = waiting?.scriptURL === script && await workerAllowsNetworkOnly(waiting, waitingCapability)
             if (!fresh()) return
@@ -377,12 +382,28 @@ const { class: className } = Astro.props
     }, { signal })
     const reconnect = () => {
       if (!expanded()) return
-      const hadDialog = action !== undefined
-      const focus = hadDialog || wrapper.contains(document.activeElement)
+      const focus = action !== undefined || presetOwner.contains(document.activeElement)
       invalidate()
-      if (focus) trigger.focus()
+      if (focus && boardWithheld) restoreFocusAfterVerification = true
+      else if (focus) trigger.focus()
       void refresh()
     }
+    const boardContainsPresets = (event: Event) => event.target instanceof Node && event.target.contains(presetOwner)
+    document.addEventListener("meitheal:board-hidden", event => {
+      if (!boardContainsPresets(event)) return
+      boardWithheld = true
+      reconnect()
+    }, { signal })
+    document.addEventListener("meitheal:board-verified", event => {
+      if (!boardWithheld || !boardContainsPresets(event)) return
+      boardWithheld = false
+      const active = document.activeElement
+      if (restoreFocusAfterVerification && (active === document.body || active?.closest("[data-board-verification]"))) {
+        trigger.focus({ preventScroll: true })
+      }
+      restoreFocusAfterVerification = false
+      void refresh()
+    }, { signal })
     navigator.serviceWorker?.addEventListener("controllerchange", reconnect, { signal })
     window.addEventListener("meitheal-sw-update", event => {
       if ((event as CustomEvent<{ type?: string }>).detail?.type === "update-available" && expanded()) void refresh()
