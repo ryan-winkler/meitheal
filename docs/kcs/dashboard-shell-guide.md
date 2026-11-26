@@ -194,7 +194,9 @@ Select **Attach image** in Discussion or **Add image** in Attachments to choose
 a PNG, JPEG, GIF, WebP or AVIF file. Updating the attachment list keeps the
 Discussion at your current position and preserves your draft. After choosing a
 file, use **View image** in the confirmation to open its preview. The image is
-saved in this browser for the current Board and account.
+saved in this browser for the current Board and account. This also works inside
+the Home Assistant panel and Companion app when browser storage is available
+and enabled.
 
 Select **Focus mode** on desktop to expand the ticket over the app window. The
 **Boxed** appearance keeps the ticket centered, and **Fluid** uses the full

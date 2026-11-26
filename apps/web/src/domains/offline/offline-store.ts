@@ -10,7 +10,7 @@ import { currentTaskApiContext } from "@lib/task-api"
  */
 
 import { createClientLogger } from "@lib/client-logger"
-import { shouldEnableIDB } from "@lib/companion-detect"
+import { shouldEnableAttachmentIDB, shouldEnableIDB } from "@lib/companion-detect"
 
 const log = createClientLogger("offline", "store")
 
@@ -135,8 +135,8 @@ function settleCurrent(db: IDBDatabase, complete: () => void, reject: (reason?: 
   } catch (error) { reject(error) }
 }
 
-async function getDb(selected?: OfflinePartition): Promise<IDBDatabase | null> {
-  if (!shouldEnableIDB()) return null
+async function getDb(selected?: OfflinePartition, storage: "offline" | "attachments" = "offline"): Promise<IDBDatabase | null> {
+  if (!(storage === "attachments" ? shouldEnableAttachmentIDB() : shouldEnableIDB())) return null
   const partition = selected ?? currentOfflinePartition()
   if (!partition) throw new Error("Open an authenticated Board before using offline work.")
   assertOfflinePartition(partition)
@@ -372,7 +372,7 @@ export interface TaskAttachment {
 }
 
 export async function saveAttachment(attachment: TaskAttachment): Promise<void> {
-  const db = await getDb()
+  const db = await getDb(undefined, "attachments")
   if (!db) throw new Error("Browser storage is unavailable for attachments.")
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
@@ -386,7 +386,7 @@ export async function saveAttachment(attachment: TaskAttachment): Promise<void> 
 }
 
 export async function getAttachmentsByTaskId(taskId: string, partition?: OfflinePartition): Promise<TaskAttachment[]> {
-  const db = await getDb(partition)
+  const db = await getDb(partition, "attachments")
   if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readonly")
@@ -399,7 +399,7 @@ export async function getAttachmentsByTaskId(taskId: string, partition?: Offline
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
-  const db = await getDb()
+  const db = await getDb(undefined, "attachments")
   if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
