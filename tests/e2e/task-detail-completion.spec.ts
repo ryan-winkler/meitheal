@@ -201,23 +201,63 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   }
 })
 
-test("Details restores the promotion button after a rejected save", async ({ page, request }) => {
+test("Details enables promotion when ready and restores it after a rejected save", async ({ page, request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", {})
   const created = await request.post("/api/tasks", { headers, data: { title: "Promotion rollback fixture" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
-  await page.goto("/tasks?view=kanban#kanban")
-  await page.locator(`.kanban-card[data-id="${id}"] .card-open-btn`).click()
+  const taskUrl = `/api/tasks/${id}`
   const button = page.locator("#td-toggle-promote")
-  // The button acts on the loaded task, so wait for Details to finish loading.
-  await expect(page.locator("#td-title")).toHaveValue("Promotion rollback fixture")
-  await expect(button).toHaveAttribute("aria-pressed", "false")
-  await expect(button).toBeEnabled()
-  await page.route(`**/api/tasks/${id}`, route => route.request().method() === "PUT"
-    ? route.fulfill({ status: 403, json: { error: "denied" } }) : route.continue())
-  const rejected = page.waitForResponse(response => response.url().endsWith("/api/tasks/" + id) && response.status() === 403)
-  await button.click()
-  await rejected
-  await expect(button).toBeEnabled()
-  await expect(button).toHaveAttribute("aria-pressed", "false")
+  let releaseRejection = () => {}
+  const waitForRejection = new Promise<void>(resolve => { releaseRejection = resolve })
+  let attemptedPromotion: unknown
+  await page.route(`**${taskUrl}`, async route => {
+    if (route.request().method() !== "PUT") return route.continue()
+    attemptedPromotion = route.request().postDataJSON()?.is_promoted
+    await waitForRejection
+    return route.fulfill({ status: 403, json: { error: "denied" } })
+  })
+  try {
+    await page.goto("/tasks?view=kanban#kanban")
+    const firstRender = await page.evaluateHandle(() => {
+      const content = document.querySelector<HTMLElement>("#td-loaded-content")!
+      const promotion = document.querySelector<HTMLButtonElement>("#td-toggle-promote")!
+      const status = document.querySelector<HTMLSelectElement>("#td-status")!
+      // Capture the first reveal in the browser so polling cannot skip the loading state.
+      const controls = new Promise<{ promotionDisabled: boolean; statusDisabled: boolean }>(resolve => {
+        const observer = new MutationObserver(() => {
+          if (content.classList.contains("hidden")) return
+          observer.disconnect()
+          resolve({ promotionDisabled: promotion.disabled, statusDisabled: status.disabled })
+        })
+        observer.observe(content, { attributes: true, attributeFilter: ["class"] })
+      })
+      return { controls }
+    })
+    await page.locator(`.kanban-card[data-id="${id}"] .card-open-btn`).click()
+    await expect(page.locator("#td-title")).toHaveValue("Promotion rollback fixture")
+    const firstControls = await firstRender.evaluate(render => render.controls)
+    await firstRender.dispose()
+    expect(firstControls.promotionDisabled, "Promote follows Details edit readiness at the first reveal").toBe(firstControls.statusDisabled)
+
+    await expect(button).toHaveAttribute("aria-pressed", "false")
+    await expect(button).toBeEnabled()
+    await button.click()
+    await expect.poll(() => attemptedPromotion).toBe(true)
+    await expect(button).toBeDisabled()
+    await expect(button).toHaveAttribute("aria-pressed", "true")
+    const rejected = page.waitForResponse(response =>
+      new URL(response.url()).pathname === taskUrl && response.request().method() === "PUT",
+    )
+    releaseRejection()
+    expect((await rejected).status()).toBe(403)
+    await expect(button).toHaveAttribute("aria-pressed", "false")
+    await expect(button).toBeEnabled()
+    const persisted = await request.get(taskUrl, { headers })
+    expect(persisted.status()).toBe(200)
+    expect((await persisted.json()).is_promoted).toBe(false)
+  } finally {
+    releaseRejection()
+    await request.delete(taskUrl, { headers, data: {} })
+  }
 })

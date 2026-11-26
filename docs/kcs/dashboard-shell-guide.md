@@ -187,6 +187,9 @@ saves the change. Unsaved Description text stays in the editor.
 Activity Log starts closed and loads
 when you open it. If the request fails, use **Retry** in Activity Log.
 
+**Promote to top** becomes available when the task is ready to edit. If the save
+fails, the star returns to its previous state.
+
 Select **Attach image** in Discussion or **Add image** in Attachments to choose
 a PNG, JPEG, GIF, WebP or AVIF file. Updating the attachment list keeps the
 Discussion at your current position and preserves your draft. After choosing a

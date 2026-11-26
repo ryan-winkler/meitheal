@@ -252,6 +252,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const typeSelect = byId<HTMLSelectElement>("td-task-type")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
+        const promoteButton = byId<HTMLButtonElement>("td-toggle-promote")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const tdError = byId("td-load-error")
         const copyFallback = byId("td-copy-link-fallback")
@@ -263,6 +264,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let currentTaskVersion: number | null = null
         const currentTaskActions = new Set<string>()
         let taskSaveConflict = false
+        let pendingPromotionGeneration: number | undefined
         const taskSaveQueues = new Map<string, Promise<void>>()
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
@@ -622,6 +624,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
           if (tdTitleInput) tdTitleInput.readOnly = !editable
           if (typeSelect) typeSelect.disabled = !editable
+          if (promoteButton) promoteButton.disabled = !editable || pendingPromotionGeneration === detailGeneration
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -1433,14 +1436,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             const isPromoted = Boolean(t.is_promoted);
-            const promoteBtn = byId("td-toggle-promote") as HTMLButtonElement | null;
-            if (promoteBtn) {
-              promoteBtn.setAttribute("aria-pressed", String(isPromoted));
+            if (promoteButton) {
+              promoteButton.setAttribute("aria-pressed", String(isPromoted))
               const promoteLabel = isPromoted
                 ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
-                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-              promoteBtn.title = promoteLabel;
-              promoteBtn.setAttribute("aria-label", promoteLabel);
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top")
+              promoteButton.title = promoteLabel
+              promoteButton.setAttribute("aria-label", promoteLabel)
             }
 
             // Load board-scoped custom fields (falling back to settings on household)
@@ -2389,38 +2391,38 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal })
 
         // Toggle promoted (sash highlight & top of lane)
-        document
-          .getElementById("td-toggle-promote")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const btn = byId("td-toggle-promote") as HTMLButtonElement | null;
-            if (!btn || btn.disabled) return;
-            const wasPromoted = btn.getAttribute("aria-pressed") === "true";
-            const nextPromoted = !wasPromoted;
-            btn.disabled = true;
-            btn.setAttribute("aria-pressed", String(nextPromoted));
-            try {
-              const saved = await saveTaskField("is_promoted", nextPromoted);
-              if (search && generation !== detailGeneration) return;
-              if (saved === false) {
-                btn.setAttribute("aria-pressed", String(wasPromoted));
-                return;
-              }
-              const promoteLabel = nextPromoted
-                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
-                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-              btn.title = promoteLabel;
-              btn.setAttribute("aria-label", promoteLabel);
-              showToast(nextPromoted
-                ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
-                : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
-              document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
-            } finally {
-              btn.disabled = false;
+        promoteButton?.addEventListener("click", async () => {
+          const taskId = currentTaskId
+          if (!taskId || promoteButton.disabled || boardWithheld) return
+          const generation = detailGeneration
+          const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true"
+          const nextPromoted = !wasPromoted
+          pendingPromotionGeneration = generation
+          syncTaskActionControls()
+          promoteButton.setAttribute("aria-pressed", String(nextPromoted))
+          try {
+            const saved = await saveTaskField("is_promoted", nextPromoted)
+            if (__signal.aborted || boardWithheld || generation !== detailGeneration || currentTaskId !== taskId) return
+            if (!saved) {
+              promoteButton.setAttribute("aria-pressed", String(wasPromoted))
+              return
             }
-          }, { signal: __signal });
+            const promoteLabel = nextPromoted
+              ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+              : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top")
+            promoteButton.title = promoteLabel
+            promoteButton.setAttribute("aria-label", promoteLabel)
+            showToast(nextPromoted
+              ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+              : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"))
+            document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: taskId } }))
+          } finally {
+            if (pendingPromotionGeneration === generation) {
+              pendingPromotionGeneration = undefined
+              syncTaskActionControls()
+            }
+          }
+        }, { signal: __signal })
 
         // Duplicate task
         document
