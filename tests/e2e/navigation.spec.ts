@@ -62,34 +62,70 @@ test.describe("Responsive Navigation", () => {
     const created = await request.post("/api/areas", { headers, data: { name: "Sidebar rename fixture" } })
     expect(created.status()).toBe(201)
     const { id: areaId } = await created.json()
-    await page.setViewportSize({ width: 1440, height: 960 })
-    await page.goto("/")
-    const household = page.locator('[data-named-board-shortcut="household"]')
-    const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
-    if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
-    const areasToggle = household.locator(".sidebar-board-toggle")
-    if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
+    const areaPath = `/api/areas/${areaId}`
+    const events: string[] = []
+    const relevant = (url: string) => {
+      const { pathname, searchParams } = new URL(url)
+      return pathname === areaPath || (pathname === "/api/boards/household" && searchParams.get("view") === "groups")
+    }
+    page.on("response", response => {
+      if (relevant(response.url())) events.push(`${response.request().method()} ${response.status()}`)
+    })
+    page.on("requestfailed", request => {
+      if (relevant(request.url())) events.push(`${request.method()} ${request.failure()?.errorText}`)
+    })
+    let completed = false
     try {
+      await page.setViewportSize({ width: 1440, height: 960 })
+      await page.goto("/")
+      const household = page.locator('[data-named-board-shortcut="household"]')
+      const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+      if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
+      const areasToggle = household.locator(".sidebar-board-toggle")
+      if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
       const row = household.locator(`[data-area-group="${areaId}"] .stree__area-row`)
+      await expect(row, "The created Area appears after opening Household").toBeVisible({ timeout: 7_000 })
       const toggle = row.locator("[data-area-toggle]")
       const menu = row.locator("[data-area-menu]")
       const name = "Renamed fixture area"
       const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
-      await row.hover()
-      await menu.click()
-      await page.locator('#area-menu-dropdown [data-action="rename"]').click()
+      await row.hover({ timeout: 5_000 })
+      await menu.click({ timeout: 5_000 })
+      const rename = page.locator('#area-menu-dropdown [data-action="rename"]')
+      await expect(rename, "The Area menu shows the Rename action").toBeVisible({ timeout: 9_000 })
+      await rename.click({ timeout: 5_000 })
       const input = row.locator(".stree__inline-input")
-      await input.fill(name)
-      await input.press("Enter")
+      await expect(input, "Rename opens the inline Area editor").toBeVisible()
+      await input.fill(name, { timeout: 5_000 })
+      const [saved] = await Promise.all([
+        page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === areaPath, { timeout: 8_000 }),
+        input.press("Enter", { timeout: 5_000 }),
+      ])
+      expect(saved.status(), "The server saved the Area rename").toBe(200)
       await expect(toggle).toHaveAccessibleName(`Projects in ${name}`)
       await expect(toggle).toHaveAttribute("data-area-name-label", name)
       await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
       await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
       await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
-      await toggle.click()
+      await toggle.click({ timeout: 5_000 })
       await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+      completed = true
+    } catch (error) {
+      const state = await page.evaluate(() => ({
+        notice: document.querySelector("[data-board-group-notice]")?.textContent,
+        toasts: Array.from(document.querySelectorAll("[role=alert], [role=status]"), node => node.textContent)
+          .filter(text => /load|unavailable|Area/.test(text ?? "")),
+      })).catch(() => null)
+      console.error("Sidebar Area rename diagnostics", JSON.stringify({ events, state }))
+      throw error
     } finally {
-      await request.delete(`/api/areas/${areaId}`, { headers })
+      try {
+        const deleted = await request.delete(areaPath, { headers, timeout: 3_000 })
+        expect(deleted.ok(), "The temporary Area was removed").toBe(true)
+      } catch (error) {
+        if (completed) throw error
+        console.error("Sidebar Area rename cleanup failed", String(error))
+      }
     }
   })
 
