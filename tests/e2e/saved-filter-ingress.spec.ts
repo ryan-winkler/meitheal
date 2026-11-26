@@ -3,6 +3,7 @@ import { once } from "node:events"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { setTimeout as delay } from "node:timers/promises"
 
 import { expect, test } from "@playwright/test"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
@@ -133,9 +134,38 @@ test("saved filters wait for the scoped worker and stay unavailable offline", as
     await expect(toggle).toHaveCount(0)
     await expect(apply).toHaveCount(0)
     expect(reads).toHaveLength(requestsBeforeOffline)
+    // A slow active worker still has to acknowledge compatibility after reconnecting.
+    await page.evaluate(() => {
+      const originalPost = ServiceWorker.prototype.postMessage
+      let probes = 0
+      ServiceWorker.prototype.postMessage = function (message, transfer) {
+        const options = Array.isArray(transfer) ? { transfer } : transfer
+        if (message?.type !== "MEITHEAL_PRESETS_NETWORK_ONLY") {
+          originalPost.call(this, message, options)
+          return
+        }
+        if (++probes === 2) ServiceWorker.prototype.postMessage = originalPost
+        window.setTimeout(() => originalPost.call(this, message, options), 750)
+      }
+    })
+    // Let an independent reconnect read outrun the real Board verification, if it starts early.
+    const isAuthority = (url: URL) => url.pathname === prefix + "/api/boards/household" && url.searchParams.get("view") === "authority"
+    await context.route(isAuthority, async route => {
+      await delay(1_750)
+      await route.continue()
+    })
+    const reconnectSteps: string[] = []
+    page.on("response", response => {
+      if (response.ok() && response.request().method() === "HEAD" && isAuthority(new URL(response.url()))) reconnectSteps.push("verified")
+    })
+    page.on("request", request => {
+      if (request.method() === "GET" && new URL(request.url()).pathname === endpoint) reconnectSteps.push("read")
+    })
     await context.setOffline(false)
     await expect(recovery).toBeHidden()
     await expect(apply).toBeVisible()
+    expect(reconnectSteps[0]).toBe("verified")
+    expect(reconnectSteps.filter(step => step === "read")).toHaveLength(1)
     await expect(toggle).toBeFocused()
     const after = await page.request.get(origin + endpoint)
     expect((await after.json()).filters).toContainEqual(expect.objectContaining({ id }))
