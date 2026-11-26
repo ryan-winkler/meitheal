@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
 import { once } from "node:events"
-import { copyFile, mkdtemp, rm } from "node:fs/promises"
+import { copyFileSync } from "node:fs"
+import { mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -721,9 +722,10 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "x".repeat(512)] }], "write")
     }
 
-    await expect.poll(async () => {
+    await expect.poll(() => {
       const mainCopy = join(directory, "main-after-idle.db")
-      await copyFile(dbPath, mainCopy)
+      // The idle checkpoint runs on this thread and cannot overlap a synchronous copy.
+      copyFileSync(dbPath, mainCopy)
       const probe = new DatabaseSync(mainCopy, { readOnly: true })
       try {
         const table = probe.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='wal_probe'").get()
@@ -742,7 +744,7 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     await sleepMs(180)
 
     const disabledCopy = join(directory, "main-after-disable.db")
-    await copyFile(dbPath, disabledCopy)
+    copyFileSync(dbPath, disabledCopy)
     const disabledProbe = new DatabaseSync(disabledCopy, { readOnly: true })
     try {
       expect(Number((disabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
@@ -767,7 +769,7 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     }
     await sleepMs(140)
     const readDeferredCopy = join(directory, "main-after-deferred-reads.db")
-    await copyFile(dbPath, readDeferredCopy)
+    copyFileSync(dbPath, readDeferredCopy)
     const readDeferredProbe = new DatabaseSync(readDeferredCopy, { readOnly: true })
     try {
       expect(Number((readDeferredProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
@@ -778,9 +780,9 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     for (let i = 16; i <= 21; i += 1) {
       await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "d".repeat(512)] }])
     }
-    await expect.poll(async () => {
+    await expect.poll(() => {
       const deferredBatchCopy = join(directory, "main-after-deferred-batch.db")
-      await copyFile(dbPath, deferredBatchCopy)
+      copyFileSync(dbPath, deferredBatchCopy)
       const probe = new DatabaseSync(deferredBatchCopy, { readOnly: true })
       try {
         return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
@@ -794,9 +796,9 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       await tx.execute({ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "t".repeat(512)] })
       await tx.commit()
     }
-    await expect.poll(async () => {
+    await expect.poll(() => {
       const deferredTxCopy = join(directory, "main-after-deferred-tx.db")
-      await copyFile(dbPath, deferredTxCopy)
+      copyFileSync(dbPath, deferredTxCopy)
       const probe = new DatabaseSync(deferredTxCopy, { readOnly: true })
       try {
         return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
@@ -813,7 +815,7 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     }
     await sleepMs(180)
     const partialDisabledCopy = join(directory, "main-after-partial-exec.db")
-    await copyFile(dbPath, partialDisabledCopy)
+    copyFileSync(dbPath, partialDisabledCopy)
     const partialDisabledProbe = new DatabaseSync(partialDisabledCopy, { readOnly: true })
     try {
       expect(Number((partialDisabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(27)
@@ -821,9 +823,9 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       partialDisabledProbe.close()
     }
 
-    const readCopyCount = async (name: string) => {
+    const readCopyCount = (name: string) => {
       const copyPath = join(directory, name)
-      await copyFile(dbPath, copyPath)
+      copyFileSync(dbPath, copyPath)
       const probe = new DatabaseSync(copyPath, { readOnly: true })
       try {
         return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
@@ -880,7 +882,7 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "w".repeat(512)] }], "write")
     }
     await sleepMs(160)
-    expect(await readCopyCount("main-after-rolledback-execmulti.db")).toBe(47)
+    expect(readCopyCount("main-after-rolledback-execmulti.db")).toBe(47)
 
     // Autocommitted prefix inside a failing client.executeMultiple must count toward checkpointing.
     await expect(client.executeMultiple(
@@ -909,7 +911,7 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "q".repeat(512)] }], "write")
     }
     await sleepMs(180)
-    expect(await readCopyCount("main-after-quoted-pragma.db")).toBe(59)
+    expect(readCopyCount("main-after-quoted-pragma.db")).toBe(59)
   } finally {
     client.close()
     await rm(directory, { recursive: true, force: true })
