@@ -59,13 +59,16 @@ export function initKanbanPage(signal: AbortSignal): void {
   const retry = shell?.querySelector<HTMLButtonElement>("[data-kanban-retry]")
   if (!shell || !initialBoard || !status || !retry || shell.dataset.kanbanBooted === "true") return
   shell.dataset.kanbanBooted = "true"
+  const verificationRoot = shell.closest<HTMLElement>("[data-board-directory][data-board-verify]")
 
   let board = initialBoard
   let boardLifetime = new AbortController()
   let pending: AbortController | undefined
+  let loadAfterVerification = false
   let desired = taskBackgroundUrl()
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
+  let lastDataOnly = false
   let requestNumber = 0
   const areaLinks = document.querySelectorAll<HTMLAnchorElement>("[data-deferred-link], [data-inactivity-link]")
   const syncAreaLinks = (area: string) => {
@@ -125,11 +128,18 @@ export function initKanbanPage(signal: AbortSignal): void {
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
     pending?.abort()
-    const request = new AbortController()
-    pending = request
     desired = url
     lastFocus = focus
     resetScroll = reset
+    lastDataOnly = dataOnly
+    if (signal.aborted || verificationRoot?.dataset.boardExpired === "true") return
+    if (!board.isConnected) {
+      loadAfterVerification = true
+      return
+    }
+    loadAfterVerification = false
+    const request = new AbortController()
+    pending = request
     const origin = location.href
     const requestedFocus = document.activeElement
     let focusMoved = false
@@ -162,7 +172,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (!response.ok) throw new Error("Board request failed")
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
-      if (request.signal.aborted || signal.aborted) return
+      if (request.signal.aborted || signal.aborted || !board.isConnected) return
       if (dataOnly && (location.href !== origin || loadEpoch !== kanbanMutationEpoch)) {
         renderStatus("")
         return
@@ -389,6 +399,21 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   window.addEventListener("online", () => {
     if (board.dataset.inactivityEnabled === "true") void refresh()
+  }, { signal })
+  verificationRoot?.addEventListener("meitheal:board-hidden", event => {
+    if (event.target !== verificationRoot) return
+    if (pending) {
+      loadAfterVerification = true
+      pending.abort()
+    }
+    if (verificationRoot.dataset.boardExpired === "true") loadAfterVerification = false
+  }, { signal })
+  verificationRoot?.addEventListener("meitheal:board-verified", event => {
+    if (event.target !== verificationRoot || !loadAfterVerification) return
+    // Let verification reattach the Board and restore focus before capturing it.
+    queueMicrotask(() => {
+      if (loadAfterVerification && board.isConnected) void load(new URL(desired), lastFocus, resetScroll, lastDataOnly)
+    })
   }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()

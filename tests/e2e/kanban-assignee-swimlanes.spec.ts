@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { expect } from "@playwright/test"
+import { expect, type Route } from "@playwright/test"
 import { test } from "../helpers/stored-assignee-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
@@ -91,9 +91,40 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
 
     verified = true
     const preRefreshHeader = await heading(haTask).elementHandle()
-    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
-    await expect.poll(() => preRefreshHeader!.evaluate(element => element.isConnected)).toBe(false)
+    let verificationStarted!: () => void
+    let releaseVerification!: () => void
+    const started = new Promise<void>(resolve => { verificationStarted = resolve })
+    const gate = new Promise<void>(resolve => { releaseVerification = resolve })
+    const matchesVerification = (url: URL) => url.pathname === "/api/boards/household" && url.searchParams.get("view") === "authority"
+    const holdVerification = async (route: Route) => {
+      if (route.request().method() === "HEAD") {
+        verificationStarted()
+        await gate
+      }
+      await route.continue()
+    }
+    await page.route(matchesVerification, holdVerification)
+    const earlyReads = await page.evaluateHandle(() => {
+      const fetch = window.fetch
+      let whileDetached = 0
+      window.fetch = (...args) => {
+        const [input] = args
+        const url = new URL(input instanceof Request ? input.url : input, location.href)
+        if (url.searchParams.has("boardRefresh") && !document.getElementById("kanban-board")) whileDetached++
+        return fetch(...args)
+      }
+      return () => whileDetached
+    })
+    try {
+      await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+      await started
+      await expect.poll(() => preRefreshHeader!.evaluate(element => element.isConnected)).toBe(false)
+      expect(await earlyReads.evaluate(read => read())).toBe(0)
+    } finally { releaseVerification() }
     await expect(label(haTask)).toContainText(haUser.name)
+    expect(await earlyReads.evaluate(read => read())).toBe(0)
+    await earlyReads.dispose()
+    await page.unroute(matchesVerification, holdVerification)
     await expect(label(otherHaTask)).toHaveText(otherHaUser.name)
     await expect(label(localTask)).toContainText(localUser.name)
     expect(new Set(await Promise.all([label(haTask).textContent(), label(localTask).textContent()])))
@@ -152,6 +183,18 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
     await expect.poll(() => removedHeader!.evaluate(element => element.isConnected)).toBe(false)
     await expect(lane.locator(".kanban-column-header")).toBeFocused()
     await expect(group(unassignedTask).locator(cardSelector(localTask))).toBeVisible()
+
+    await page.route(matchesVerification, route => route.request().method() === "HEAD"
+      ? route.fulfill({ status: 403 })
+      : route.continue())
+    const revokedReads: string[] = []
+    page.on("request", req => {
+      if (new URL(req.url()).searchParams.has("boardRefresh")) revokedReads.push(req.url())
+    })
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+    await expect(page.locator("[data-board-expired]")).toBeVisible()
+    await expect(page.locator("#kanban-board")).toHaveCount(0)
+    expect(revokedReads).toEqual([])
   } finally {
     for (const taskId of taskIds) {
       const deleted = await request.delete(`${app}/api/tasks/${taskId}`, { headers })
