@@ -273,7 +273,7 @@ export function initAgentTokensSettings(): void {
 
   async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
     try {
-      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+      const res = await window.fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
         method: "PATCH",
         headers: boardHeaders(boardId),
         body: JSON.stringify({ action: "agent", tokenId, enabled }),
