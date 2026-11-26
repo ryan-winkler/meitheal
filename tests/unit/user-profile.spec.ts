@@ -24,6 +24,32 @@ test("normalization accepts theme colors and custom hex colors", () => {
   expect(normalizeUserProfile({ avatarColor: "not-a-color" }).avatarColor).toBe("theme")
 })
 
+test("normalization keeps Home Assistant user IDs out of display names and handles", () => {
+  const userId = "ABCDEF0123456789ABCDEF0123456789"
+  const saved = { displayName: `  ${userId}  `, username: `@${userId}` }
+
+  expect(normalizeUserProfile(saved, { displayName: " Ada  Lovelace ", username: " @ada " })).toMatchObject({
+    displayName: "Ada Lovelace",
+    username: "ada",
+  })
+  expect(normalizeUserProfile(saved, { displayName: userId, username: userId })).toMatchObject({
+    displayName: DEFAULT_USER_PROFILE.displayName,
+    username: "householdmember",
+  })
+})
+
+test("normalization preserves old saved profiles and derives a handle when there is none", () => {
+  const saved = JSON.stringify(JSON.stringify({ displayName: " Grace  Hopper ", username: "@grace.h" }))
+  expect(normalizeUserProfile(saved, { displayName: "李 雷" })).toMatchObject({
+    displayName: "Grace Hopper",
+    username: "grace.h",
+  })
+  expect(normalizeUserProfile({ displayName: "Grace Hopper" }, { displayName: "李 雷" })).toMatchObject({
+    displayName: "Grace Hopper",
+    username: "gracehopper",
+  })
+})
+
 test("validation accepts theme colors and rejects malformed colors", () => {
   expect(validateUserProfile({ displayName: "Ryan", avatarColor: "theme" })).toMatchObject({
     ok: true, profile: { avatarColor: "theme" },
