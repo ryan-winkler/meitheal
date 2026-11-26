@@ -194,7 +194,9 @@ Select **Attach image** in Discussion or **Add image** in Attachments to choose
 a PNG, JPEG, GIF, WebP or AVIF file. Updating the attachment list keeps the
 Discussion at your current position and preserves your draft. After choosing a
 file, use **View image** in the confirmation to open its preview. The image is
-saved in this browser for the current Board and account.
+saved in this browser for the current Board and account. This also works inside
+the Home Assistant panel and Companion app when browser storage is available
+and enabled.
 
 Select **Focus mode** on desktop to expand the ticket over the app window. The
 **Boxed** appearance keeps the ticket centered, and **Fluid** uses the full
@@ -229,3 +231,5 @@ and try the move again.
 At inner widths of `1440px` or wider (including `1920x1080` monitors with the Home Assistant sidebar expanded), opening a task docks `#task-detail-overlay` as a `420px` right workspace pane (`body.has-docked-inspector`) styled via CSS `@container` queries (`container-name: task-inspector`). While docked, `body` scroll stays unlocked, `#task-detail-panel` uses `role="region"` with its own accessible name, and SearchHub plus single-key shortcuts remain active whenever focus is outside editable panel inputs. Below `1440px`, the inspector switches back to a modal dialog (`role="dialog"`, `aria-modal="true"`) without discarding unsaved title, description, or checklist edits.
 
 Inside Home Assistant Supervisor Ingress, `layout-body-controller.ts` and `task-modal-controller.ts` persist the Ingress-stripped internal route (`pathname + search + hash`, including `/tickets/MTH-142` and filtered sub-views) in `ingress-state-persistence.ts`. Reloading the Home Assistant browser tab within 60 seconds restores `prefix + state.path` in `Layout.astro` without double-prefixing the Ingress URL.
+
+Browser Back closes a ticket to the Board, Area filter, and view where you opened it. Forward reopens the ticket. If you close and reopen while an Area edit is saving, Details waits for the save to finish before fetching the ticket again and showing its saved Area.

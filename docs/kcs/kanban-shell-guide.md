@@ -77,6 +77,8 @@ Open **Overdue** from Dashboard to filter tasks across every Kanban page. The bo
 
 Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
 
+When the browser restores Kanban from its Back or Forward cache, the Board verifies access before refreshing the groups. Groups keep their collapsed state. If focus remained with the Board, it returns to the same group heading when present.
+
 After a keyboard move from a card’s action menu, focus follows the card. If the destination group is collapsed, focus lands on its heading so you can expand it.
 
 On a grouped board, drag a card to a workflow lane heading or choose a lane from its action menu to keep the current grouping value. With **By Type**, drop the card on an Epic, Story, or Task group heading, its card area, or its **Add Task** row to change the task type. The confirmation names the new type and includes the destination lane when it changes. A group has a reorder grip when its lane has another visible group. Drag the grip to move the whole group within its lane or open the grip menu and choose an available direction. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane. The group surface uses your current theme, corner roundness, and panel style.
