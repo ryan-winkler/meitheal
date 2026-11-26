@@ -86,7 +86,7 @@ After changing a title, type or parent in Details, close Details to refresh the 
 
 ### Saved filters are unavailable
 
-If Presets offers **Activate update**, activate the compatible worker and retry. The list needs a fresh network response and stays unavailable offline. When a legacy preset cannot be read, use **Back to presets** and save a new view from the current Table. An unavailable Area leaves the Table empty until you choose a different Area or clear the filters.
+The list needs a fresh network response and stays unavailable offline. On reconnect, Presets waits for current Board access and for the active Home Assistant worker to confirm support. Use **Retry** if the list stays unavailable. If Presets offers **Activate update**, activate the compatible worker and retry. When a legacy preset cannot be read, use **Back to presets** and save a new view from the current Table. An unavailable Area leaves the Table empty until you choose a different Area or clear the filters.
 
 The browser and API clients use the canonical `/api/saved-filters` path. Home Assistant requests retain their ingress prefix. Responses are private and no-store. Encoded or trailing path aliases return 404.
 

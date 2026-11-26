@@ -1,8 +1,8 @@
-export function workerAllowsNetworkOnly(worker: ServiceWorker, capability: string): Promise<boolean> {
+function requestWorkerCapability(worker: ServiceWorker, capability: string, timeoutMs: number): Promise<boolean | undefined> {
   return new Promise(resolve => {
     const channel = new MessageChannel()
-    const timer = window.setTimeout(() => finish(false), 500)
-    function finish(ready: boolean) {
+    const timer = window.setTimeout(() => finish(undefined), timeoutMs)
+    function finish(ready: boolean | undefined) {
       window.clearTimeout(timer)
       channel.port1.close()
       resolve(ready)
@@ -14,6 +14,14 @@ export function workerAllowsNetworkOnly(worker: ServiceWorker, capability: strin
       finish(false)
     }
   })
+}
+
+export async function workerAllowsNetworkOnly(worker: ServiceWorker, capability: string, retryTimeoutMs?: number): Promise<boolean> {
+  const compatible = await requestWorkerCapability(worker, capability, 500)
+  if (compatible === undefined && retryTimeoutMs !== undefined) {
+    return (await requestWorkerCapability(worker, capability, retryTimeoutMs)) === true
+  }
+  return compatible === true
 }
 
 export function privateIngressScope(): URL | null {
