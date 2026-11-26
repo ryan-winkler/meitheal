@@ -309,6 +309,7 @@ test("history opens a fresh composer and verifies the account before exposing it
     await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
     await title.fill("Unsaved private edit")
     await page.locator("html").evaluate(root => { root.dataset.previousCapture = "true" })
+    const tasksUrl = page.url()
     await page.goto(origin + prefix + "/fixture")
 
     let releaseHead = () => {}
@@ -322,7 +323,18 @@ test("history opens a fresh composer and verifies the account before exposing it
       await route.continue().catch(() => {})
     })
     try {
-      await page.goBack({ waitUntil: "commit" })
+      const cdp = await page.context().newCDPSession(page)
+      const { currentIndex, entries } = await cdp.send("Page.getNavigationHistory")
+      const previous = entries[currentIndex - 1]
+      expect(previous?.url).toBe(tasksUrl)
+      const documentUrl = new URL(tasksUrl)
+      documentUrl.hash = ""
+      // The restored workspace can reload before the Back command commits.
+      const [restored] = await Promise.all([
+        page.waitForResponse(response => response.url() === documentUrl.href && response.request().isNavigationRequest()),
+        cdp.send("Page.navigateToHistoryEntry", { entryId: previous!.id }),
+      ])
+      expect(restored.status()).toBe(200)
       await expect(page).toHaveURL(url => url.pathname === prefix + "/tasks")
       await expect(page.locator("html")).not.toHaveAttribute("data-previous-capture", "true")
       await expect(title).toBeHidden()

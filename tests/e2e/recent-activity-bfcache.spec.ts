@@ -90,9 +90,13 @@ for (const revoked of [false, true]) {
       }
       expect(await context.cookies(origin)).toEqual(cookies)
 
+      const { currentIndex, entries } = await cdp.send("Page.getNavigationHistory")
+      const activityEntry = entries[currentIndex - 1]
+      expect(activityEntry?.url).toBe(url)
+      // The persisted pageshow handler reloads immediately, so Back may never commit.
       const [response] = await Promise.all([
         page.waitForResponse(response => response.url() === url && response.request().isNavigationRequest()),
-        page.goBack({ waitUntil: "commit" }),
+        cdp.send("Page.navigateToHistoryEntry", { entryId: activityEntry!.id }),
       ])
       try {
         await expect.poll(() => snapshot).toEqual({ hidden: true, rows: 0, filters: 0, retainedSentinel: false })

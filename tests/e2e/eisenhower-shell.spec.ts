@@ -125,6 +125,7 @@ test.describe("Eisenhower Shell", () => {
       await expect(target.locator(".quadrant__empty")).toBeVisible()
       await expect(target).not.toHaveAttribute("role", "list")
 
+      await expect(card).toHaveAttribute("draggable", "true")
       await card.dragTo(target)
 
       const link = target.getByRole("listitem").getByRole("link", { name: title })
