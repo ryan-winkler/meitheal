@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { mergeCoverageMaps } from "./coverage-report.mjs"
-import { artifactDigest, loadPilotShardTimings, shardIdentity, testedTree, testsInReport, validateShardReports } from "./ci-shards.mjs"
+import { artifactDigest, loadPilotShardTimings, shardIdentity, testedTree, testInventory, validateShardReports } from "./ci-shards.mjs"
 
 const [directory, output, total] = process.argv.slice(2)
 const count = Number(total)
@@ -16,7 +16,7 @@ const listed = JSON.parse(execFileSync(process.execPath, [
   join(cwd, "node_modules/@playwright/test/cli.js"), "test", "--list", "--reporter=json",
 ], { cwd, env: { ...process.env, MEITHEAL_TEST_BROWSER: "1" }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }))
 const files = [...new Set(listed.suites.map(suite => suite.file))]
-const cases = testsInReport(listed)
+const cases = testInventory(listed)
 if (!files.length || !cases.length) throw new Error("No specs or test cases were discovered")
 
 const shards = Array.from({ length: count }, (_, position) => join(directory, "shard-" + (position + 1)))

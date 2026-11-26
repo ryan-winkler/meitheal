@@ -53,6 +53,12 @@ export function testsInReport(report) {
   return cases
 }
 
+export function testInventory(report) {
+  // The root suite owns execution even when an imported helper declares the test.
+  return report.suites.flatMap(suite =>
+    testsInReport({ suites: [suite] }).map(test => ({ ...test, suiteFile: suite.file })))
+}
+
 /**
  * @param {string[]} files
  * @param {number} count
@@ -86,7 +92,7 @@ export function planShards(files, count, timings = {}) {
 export function validateShardReports(reports, files, cases, count, identity, timings = {}) {
   if (reports.length !== count) throw new Error("Incorrect number of shard reports")
   const plan = planShards(files, count, timings)
-  const expectedCases = new Map(cases.map(test => [test.id, test.file]))
+  const expectedCases = new Map(cases.map(test => [test.id, test]))
   if (expectedCases.size !== cases.length) throw new Error("Duplicate discovered test identity")
   const observedCases = new Map()
   const shardIndexes = new Set()
@@ -110,7 +116,8 @@ export function validateShardReports(reports, files, cases, count, identity, tim
         throw new Error("Spec failed or ran outside its assigned shard: " + result.file)
       }
       for (const test of result.cases) {
-        if (expectedCases.get(test.id) !== result.file || test.file !== result.file || observedCases.has(test.id) ||
+        const expected = expectedCases.get(test.id)
+        if (!expected || expected.suiteFile !== result.file || expected.file !== test.file || observedCases.has(test.id) ||
             !["expected", "skipped"].includes(test.outcome) || (test.outcome === "expected" && !test.attempts.length)) {
           throw new Error("Unexpected, failed or repeated test: " + test.file + " " + test.title)
         }
