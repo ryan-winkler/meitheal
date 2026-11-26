@@ -38,7 +38,9 @@ async function drag(page: Page, source: Locator, delta: number) {
 test("another drag or resize cannot overwrite a pending date edit", async ({ page, request, datedTask }) => {
   const { id, start } = datedTask
   const path = `/api/tasks/${id}`
-  await page.goto("/boards/household?view=timeline#timeline")
+  const timeline = "/boards/household?view=timeline#timeline"
+  await page.clock.install()
+  await page.goto(timeline)
   const chart = page.locator("#gantt-chart")
   const bar = chart.locator(`.gantt-bar[data-task-id="${id}"]`)
   const rect = bar.locator("rect").first()
@@ -59,8 +61,14 @@ test("another drag or resize cannot overwrite a pending date edit", async ({ pag
     const preview = await x()
     expect(preview - original).toBeCloseTo(2 * pxPerDay)
 
-    await drag(page, rect, 3 * pxPerDay)
+    // Let the first gesture's click suppression expire. The second drag
+    // releases inside the busy bar and the browser can dispatch a click.
+    await page.clock.fastForward(250)
+    await drag(page, rect, pxPerDay)
+    await expect(page.locator(".gantt-popup")).toHaveCount(0)
     await drag(page, bar.locator(".gantt-resize-handle--left"), pxPerDay)
+    await expect(page.locator(".gantt-popup")).toHaveCount(0)
+    await expect(page).toHaveURL(timeline)
     expect(attempts).toBe(1)
     expect(await x()).toBeCloseTo(preview)
     release.resolve()
@@ -70,7 +78,10 @@ test("another drag or resize cannot overwrite a pending date edit", async ({ pag
     expect(await x()).toBeCloseTo(preview)
     const stored = await (await request.get(path)).json()
     expect(stored.start_date).toBe(addDays(start, 2))
-    await page.reload()
+    await rect.click()
+    await expect(page.getByRole("button", { name: /View Details/ })).toBeVisible()
+    expect((await page.reload())?.status()).toBe(200)
+    await expect(page).toHaveURL(timeline)
     await expect(rect).toBeVisible()
     expect(await x()).toBeCloseTo(preview)
   } finally { release.resolve() }

@@ -2697,13 +2697,14 @@ function renderGantt(
   }, { signal })
 
   barsGroup.addEventListener("click", (e) => {
-    if (Date.now() < suppressBarClickUntil) return
     const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
     if (!groupEl) return
+    // Keep clicks produced by drags out of the page's delegated task opener.
+    e.stopPropagation()
+    if (Date.now() < suppressBarClickUntil) return
     const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
     const dRow = displayRows[rIdx]
-    if (dRow?.kind !== "bar") return
-    e.stopPropagation()
+    if (dRow?.kind !== "bar" || activeTimelineWrites.has(dRow.bar.id)) return
     hideTooltip()
     showPopup(dRow.bar, e.clientX, e.clientY, document.body, signal)
   }, { signal })
