@@ -73,7 +73,7 @@ const SVG_ATTRS = new Set([
 const JSON_HDR = { "Content-Type": "application/json" }
 
 const apiReq = (url: string, method: string, body?: unknown) =>
-  fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
+  window.fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
 
 async function copyText(text: string, okMsg: string): Promise<void> {
   const ok = await copyToClipboard(text)
