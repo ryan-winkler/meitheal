@@ -24,17 +24,19 @@ test.describe("Task Experience Unification (R01-R20)", () => {
     await request.delete(`/api/tasks/${id}`, { headers }).catch(() => {})
   }
 
-  async function openTaskCard(page: Page, id: string) {
+  async function expectTaskInspector(page: Page, id: string) {
     const overlay = page.locator("#task-detail-overlay")
-    const alreadyOpen = await overlay.evaluate((el, targetId) => el.classList.contains("active") && el.getAttribute("data-open-task-id") === targetId, id).catch(() => false)
-    if (!alreadyOpen) {
-      const card = page.locator(`.kanban-card[data-id="${id}"]`)
-      await expect(card).toBeVisible()
-      await card.locator(".card-open-btn").click()
-    }
     await expect(overlay).toHaveClass(/active/)
     await expect(overlay).toHaveAttribute("data-open-task-id", id)
-    await expect(page.locator("#td-status")).toBeEnabled()
+    const status = page.locator("#td-status")
+    await expect(status).toBeVisible()
+    await expect(status).toBeEnabled()
+  }
+
+  async function openTaskCard(page: Page, id: string) {
+    const card = page.locator(`.kanban-card[data-id="${id}"]`)
+    await card.locator(".card-open-btn").click()
+    await expectTaskInspector(page, id)
   }
 
   test("R01/R02/R04: shared editor hierarchy, Full form child with draft stack, and Convert checklist item to child", async ({ page, request, baseURL }) => {
@@ -136,7 +138,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       expect((await savePut).status()).toBe(200)
 
       await page.reload()
-      await openTaskCard(page, id)
+      await expectTaskInspector(page, id)
       await page.getByRole("button", { name: "Edit description" }).click()
       await markdownBtn.click()
       await expect(page.locator("#td-description")).toHaveValue(payload)
@@ -167,7 +169,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       expect(Number(storedWidth)).toBeGreaterThan(420)
 
       await page.reload()
-      await openTaskCard(page, id)
+      await expectTaskInspector(page, id)
       const cssWidth = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--task-inspector-width").trim())
       expect(cssWidth).toBe(`${storedWidth}px`)
 
