@@ -13,7 +13,7 @@ for (const theme of ["light", "dark"]) {
     await page.addInitScript((value) => localStorage.setItem("meitheal-theme", value), theme)
     await page.goto("/")
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
-    await expect(page.getByRole("link", { name: "Meitheal Home", exact: true })).toBeVisible()
+    await expect(page.getByRole("link", { name: "meitheal. Home", exact: true })).toBeVisible()
 
     await page.locator(".main-content").evaluate(async (content) => {
       await document.fonts.ready
@@ -73,10 +73,9 @@ test("Settings navigation and fields have valid semantics at mobile width", asyn
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/settings#navigation-settings")
 
-  await expect(page.locator("#settings-directory")).toBeHidden()
+  await expect(page.locator("#settings-directory")).toBeVisible()
   await page.locator("#nav-sidebar-menu-section > summary").click()
   await expect(page.getByRole("button", { name: "Hide · Dashboard", exact: true })).toBeVisible()
-  await page.getByRole("button", { name: "Sections", exact: true }).click()
   const navSection = page.locator('[data-settings-nav="navigation-settings"]')
   await expect(navSection).toBeVisible()
   await expect(navSection).toHaveAttribute("aria-current", "location")

@@ -8,6 +8,8 @@
  * Bounded context: UI Infrastructure / Notifications
  */
 
+import { currentTaskApiContext } from "./task-api"
+
 export type ToastDurationChoice = 0 | 3000 | 5000 | 8000
 
 export interface NotificationPreferences {
@@ -18,8 +20,12 @@ export interface NotificationPreferences {
   soundEnabled: boolean
 }
 
-export const NOTIFICATION_PREFS_STORAGE_KEY = "meitheal:notification-prefs:v1"
-export const NOTIFICATION_PREFS_CHANGE_EVENT = "meitheal:notification-preferences-change"
+const STORAGE_KEY_PREFIX = "meitheal:notification-prefs:v2:"
+
+function notificationPreferencesKey(): string | undefined {
+  const actor = currentTaskApiContext()?.actorKey
+  if (actor) return STORAGE_KEY_PREFIX + actor
+}
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   toastsEnabled: true,
@@ -63,7 +69,8 @@ export function normalizeNotificationPreferences(raw: unknown): NotificationPref
 export function loadNotificationPreferences(): NotificationPreferences {
   if (typeof window === "undefined") return { ...DEFAULT_NOTIFICATION_PREFERENCES }
   try {
-    const raw = window.localStorage.getItem(NOTIFICATION_PREFS_STORAGE_KEY)
+    const key = notificationPreferencesKey()
+    const raw = key && window.localStorage.getItem(key)
     if (!raw) return { ...DEFAULT_NOTIFICATION_PREFERENCES }
     return normalizeNotificationPreferences(JSON.parse(raw))
   } catch {
@@ -73,20 +80,20 @@ export function loadNotificationPreferences(): NotificationPreferences {
 
 export function saveNotificationPreferences(
   patch: Partial<NotificationPreferences>,
-): NotificationPreferences {
+): boolean {
+  if (typeof window === "undefined") return false
+  const key = notificationPreferencesKey()
+  if (!key) return false
   const next = normalizeNotificationPreferences({
     ...loadNotificationPreferences(),
     ...patch,
   })
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(NOTIFICATION_PREFS_STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      /* storage unavailable */
-    }
-    window.dispatchEvent(new CustomEvent(NOTIFICATION_PREFS_CHANGE_EVENT, { detail: next }))
+  try {
+    window.localStorage.setItem(key, JSON.stringify(next))
+    return true
+  } catch {
+    return false
   }
-  return next
 }
 
 /**

@@ -3,6 +3,7 @@
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
+        import { promptDialog } from "@lib/prompt-dialog"
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -13,6 +14,7 @@
         import { currentTaskApiContext } from "@lib/task-api"
         import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
         import { taskViewUrl, type TaskView } from "@lib/task-view-route"
+        import { initThemeWatcher } from "@lib/theme-watcher"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -38,6 +40,7 @@
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
+        window.promptDialog = promptDialog
         // Connection status check — singleton interval (P0-4: prevent accumulation)
         async function checkHealth() {
           const indicator = document.getElementById("connection-status");
@@ -88,7 +91,10 @@
           const bindKeyboard = keyboardSignal !== signal
           keyboardSignal = signal
           applyAppearancePreferences(readAppearancePreferences())
-          if (bindKeyboard) bindAppearanceNavigation(signal)
+          if (bindKeyboard) {
+            bindAppearanceNavigation(signal)
+            initThemeWatcher(signal)
+          }
 
           // Defensive: clear any stale body scroll lock from a previous page's
           // task-detail or modal overlay (MPA nav doesn't run close handlers)

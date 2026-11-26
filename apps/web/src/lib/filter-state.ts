@@ -675,8 +675,10 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
     case "status":
       return el.dataset.status ?? "pending"
     case "rice": {
-      const r = Number(el.dataset.rice ?? "")
-      if (isNaN(r) || el.dataset.rice === "") return "none"
+      const score = el.dataset.rice
+      if (!score) return "none"
+      const r = Number(score)
+      if (!Number.isFinite(r)) return "none"
       if (r >= 15) return "high"
       if (r >= 8) return "medium"
       return "low"

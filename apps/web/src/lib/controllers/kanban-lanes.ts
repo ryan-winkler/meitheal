@@ -48,7 +48,7 @@ function laneHeaders(json = false): HeadersInit | undefined {
 
 function emitLanesChanged(action: string): void {
   document.dispatchEvent(new CustomEvent("meitheal:lanes-changed", { detail: { action } }))
-  document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action } }))
+  document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action, dataOnly: true } }))
 }
 
 function resolveLaneColor(lane: LanePanelLane): string {
@@ -125,8 +125,8 @@ export function initLaneManagementPanel(): void {
   }
 
   async function persistLaneOrder(): Promise<void> {
-    const orderedIds = Array.from(laneList!.querySelectorAll<HTMLElement>("tr.lane-item[data-id]"))
-      .map(el => el.dataset.id)
+    const orderedIds = Array.from(laneList!.querySelectorAll<HTMLElement>("tr.lane-item"))
+      .map(el => el.dataset.laneId)
       .filter((id): id is string => Boolean(id))
     if (!orderedIds.length) return
     const ok = await mutateLane("/api/lanes", "PUT", { ordered_ids: orderedIds }, "Failed to reorder lanes", "kanban-lane-reorder")
@@ -139,7 +139,7 @@ export function initLaneManagementPanel(): void {
       ...loadedLanes.map((lane) => {
         const row = document.createElement("tr")
         row.className = "lane-item"
-        row.dataset.id = lane.id
+        row.dataset.laneId = lane.id
         row.dataset.position = String(lane.position)
 
         // Column 1: Single centered Tabler drag handle (no competing second icon)

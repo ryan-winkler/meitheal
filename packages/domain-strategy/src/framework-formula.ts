@@ -1,6 +1,7 @@
 /** Round computed framework scores cleanly to at most two decimal places. */
 export function roundFrameworkScore(score: number): number {
-  return Math.round((score + Number.EPSILON) * 100) / 100
+  const scaled = (score + Number.EPSILON) * 100
+  return Number.isFinite(scaled) ? Math.round(scaled) / 100 : score
 }
 
 /** Evaluate the arithmetic supported by framework formulas without dynamic code. */

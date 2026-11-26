@@ -12,7 +12,7 @@
  */
 
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
-import { TOUR_RESTORE_EVENT, TOUR_STORAGE_KEY, parseTourState, transitionTourState } from "@lib/tour-steps"
+import { TOUR_STORAGE_KEY, parseTourState, transitionTourState } from "@lib/tour-steps"
 
 const STORAGE_KEY = "meitheal-dismissed-helpers"
 const TOUR_HELPER_ID = "meitheal-function-tour"
@@ -89,7 +89,6 @@ function handleHelperRestore(event: KeyboardEvent): void {
   restoreAllHelpers()
   if (tourDismissed) {
     try { localStorage.setItem(TOUR_STORAGE_KEY, JSON.stringify(transitionTourState("restore"))) } catch { /* ignore */ }
-    window.dispatchEvent(new CustomEvent(TOUR_RESTORE_EVENT))
   }
   for (const helper of document.querySelectorAll<HTMLElement>("[data-helper-id]")) {
     helper.style.display = ""

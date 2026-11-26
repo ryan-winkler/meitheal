@@ -28,7 +28,7 @@ import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"
-import { formatCardCustomFieldValue } from "../lib/custom-field-defs"
+import { boardCustomFieldsSettingKey, kanbanCardFieldNames, normalizeCustomFieldDefs } from "../lib/custom-field-defs"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "../lib/rice-lens"
 import { taskDetailPath } from "../lib/task-page-url"
 import {
@@ -75,10 +75,11 @@ const canCreate = scopePermits(scope, { resource: "task", action: "create" })
 const canComplete = scopePermits(scope, { resource: "task", action: "complete" })
 const canDelete = scopePermits(scope, { resource: "task", action: "delete" })
 const explicitRequestedView = requestedTaskView(Astro.url.searchParams)
+const userAgent = Astro.request.headers.get("user-agent") ?? ""
 const renderedView = resolveDefaultTaskView(
   Astro.url.searchParams,
   Astro.url.hash,
-  Astro.request.headers.get("user-agent") ?? "",
+  userAgent,
 )
 const organization = await organizationLabelsFor(Astro)
 const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
@@ -119,11 +120,15 @@ const selectedProject = selectedProjectId ? await hierarchyRepo.findProjectById(
 let completedAutoHideDays = 30;
 // Backlog mode: visible (default) | hidden | disabled
 let backlogMode = "visible";
+let cardFieldNames = kanbanCardFieldNames([])
 try {
+  const cardFieldsKey = boardCustomFieldsSettingKey(boardId)
   const settings = renderedView === "kanban" ? await repo.getSettings([
     "completed_auto_hide_days",
     "backlog_mode",
+    cardFieldsKey,
   ]) : {};
+  cardFieldNames = kanbanCardFieldNames(normalizeCustomFieldDefs(settings[cardFieldsKey]))
   if (settings.completed_auto_hide_days) {
     const val = Number(JSON.parse(settings.completed_auto_hide_days));
     if (!isNaN(val) && val >= 0) completedAutoHideDays = val;
@@ -272,7 +277,7 @@ const boardAreaQuery = `?${new URLSearchParams({ board_id: boardId, ...(kanbanFi
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
-  const url = taskViewUrl(currentUrl, "kanban")
+  const url = taskViewUrl(currentUrl, "kanban", false, userAgent)
   setKanbanPage(url, key, page)
   return url.pathname + url.search + url.hash
 }
@@ -324,7 +329,7 @@ if (groupByProject) {
     barId="kanban-bar"
     slot="custom-header"
     viewTabs={TASK_VIEWS.map(view => {
-      const url = taskViewUrl(currentUrl, view, true)
+      const url = taskViewUrl(currentUrl, view, true, userAgent)
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >
@@ -415,7 +420,7 @@ if (groupByProject) {
 
     <!-- Card field customizer panel (toggled by Fields toolbar icon) -->
     <div class="kanban-fields-panel hidden" id="kanban-fields-panel">
-      <CardCustomizer boardId={scope.boardId} />
+      <CardCustomizer {boardId} {cardFieldNames} />
     </div>
 
       <div class="lane-mgmt hidden" id="lane-mgmt" role="dialog" aria-modal="true" aria-labelledby="lane-mgmt-title">
@@ -446,7 +451,7 @@ if (groupByProject) {
           <div class="lane-mgmt-help-popover" id="lane-mgmt-help-popover" role="note" hidden>
             <Icon name="info-circle" size={15} sprite class="lane-mgmt-help-popover__icon" />
             <p class="lane-mgmt-help-popover__text">
-              <strong>Swimlanes &amp; Statuses stay in sync.</strong> Drag rows to reorder Kanban columns and status lists across every view. Renaming a built-in lane creates a display alias while keeping its system status intact for filters and automations.
+              <strong>Swimlanes &amp; Statuses stay in sync.</strong> Drag a grip to reorder Kanban columns and status lists across every view. Renaming a built-in lane creates a display alias while keeping its system status intact for filters and automations.
             </p>
           </div>
           <div class="table-responsive lane-mgmt-table-wrap">
@@ -660,6 +665,7 @@ if (groupByProject) {
                     dueStatus={dueStatus}
                     description={description}
                     rice={rice}
+                    {cardFieldNames}
                     childCount={childCount}
                     area={cardArea ?? null}
                     epicGroup={epicGroup}
@@ -1341,44 +1347,6 @@ if (groupByProject) {
   .kanban-inline-add .quick-add-error:empty {
     display: none;
   }
-  /* Phase 20: Swimlane groups */
-  .swimlane-group {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 0px;
-  }
-  .swimlane-toggle {
-    font-size: 10px;
-    color: var(--text-muted);
-    transition: transform 200ms;
-    flex-shrink: 0;
-  }
-  .swimlane-type-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .swimlane-label {
-    flex: 1;
-  }
-  .swimlane-count {
-    background: var(--bg-card);
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-size: 10px;
-    color: var(--text-muted);
-  }
-  .swimlane-cards {
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
 </style>
 
 <style is:inline is:global>
@@ -1389,13 +1357,6 @@ if (groupByProject) {
   .kanban-board.density-compact .kanban-card-title {
     font-size: 0.8rem;
     line-height: 1.2;
-  }
-  .kanban-board.density-compact .kanban-card-meta,
-  .kanban-board.density-compact .kanban-card-desc,
-  .kanban-board.density-compact .kanban-progress,
-  .kanban-board.density-compact .label-badges,
-  .kanban-board.density-compact .kanban-custom-fields {
-    display: none;
   }
   .kanban-board.density-compact .kanban-cards {
     gap: 4px;
@@ -1559,13 +1520,9 @@ if (groupByProject) {
   .lane-mgmt-table tbody tr.lane-item {
     border-bottom: 1px solid var(--border);
     background: var(--bg-card);
-    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .lane-mgmt-table tbody tr.lane-item:last-child {
     border-bottom: none;
-  }
-  .lane-mgmt-table tbody tr.lane-item:hover {
-    background: var(--bg-hover);
   }
   .lane-mgmt-table tbody tr.lane-item--ghost {
     opacity: 0.38;

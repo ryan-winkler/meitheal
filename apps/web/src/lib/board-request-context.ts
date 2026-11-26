@@ -1,7 +1,6 @@
 import { getIngressTransport } from "../../scripts/ingress-transport.mjs"
 import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 import { readCurrentHARole } from "@domains/ha/current-admin"
-import { cacheTrustedIngressUser, currentSupervisorFingerprint } from "@domains/ha/ha-user-cache"
 import { BoardAccessService } from "@domains/tasks/board-access-service"
 import { currentBoardGrantRevision } from "@domains/tasks/persistence/board-grant-fence"
 import { ContinuityLockedError } from "@domains/tasks/persistence/continuity-client"
@@ -17,10 +16,6 @@ import { boardSessionProof } from "./named-board-request"
 import { canManageSystemSettings } from "./settings-security"
 import { verifiedIngressUser } from "./verified-ingress-user"
 import { timingSafeEqual } from "node:crypto"
-
-// In-request principal proofs must outlive normal SQLite writes and slow HA responses
-// (middleware allows up to 25s for mutations) so requests never spuriously fail with 409 Conflict.
-const PRINCIPAL_PROOF_TTL_MS = 30_000
 
 type RequestContext = { request: Request; locals: App.Locals }
 type RecordScope = {
@@ -78,34 +73,13 @@ async function loadIngressPrincipal(
 ): Promise<VerifiedPrincipal | null> {
   const user = trustedIngressUser(locals)
   if (!user || (write && !validBrowserProof(request, user.id))) return null
-  let role = await readCurrentHARole(user.id, request.signal, { allowCachedFallback: true })
-  if (role === "denied") return null
-
-  // If Home Assistant Core WebSocket is temporarily unreachable or restarting,
-  // bootstrap/preserve access from the trusted Supervisor ingress identity
-  // (already verified by Supervisor on this request) without letting revoked users back in.
-  if (role === "unavailable") {
-    const fingerprint = currentSupervisorFingerprint()
-    if (fingerprint) {
-      const cached = await cacheTrustedIngressUser({
-        userId: user.id,
-        displayName: locals.hassDisplayName,
-        username: locals.hassUserName,
-        isAdmin: user.isAdmin,
-        fingerprint,
-      })
-      if (!cached) return null
-      role = cached.role
-    } else {
-      role = user.isAdmin ? "admin" : "member"
-    }
-  }
-
-  if (request.signal.aborted) return null
+  const deadline = Date.now() + 5_000
+  const role = await readCurrentHARole(user.id, request.signal)
+  if ((role !== "admin" && role !== "member") || deadline <= Date.now()) return null
   return registerVerifiedPrincipal(
     { kind: "ha_user", id: user.id },
     {
-      expiresAt: Date.now() + PRINCIPAL_PROOF_TTL_MS,
+      expiresAt: deadline,
       administrator: role === "admin"
     }
   )
@@ -145,7 +119,7 @@ async function loadPrincipal(
     return registerVerifiedPrincipal(
       { kind: "agent", id: agent.tokenId, tokenId: agent.tokenId },
       {
-        expiresAt: Date.now() + PRINCIPAL_PROOF_TTL_MS,
+        expiresAt: Date.now() + 5_000,
         administrator: false,
         tokenScopes: agent.scopes,
         assignedTo: agent.assigneeId,
@@ -156,7 +130,6 @@ async function loadPrincipal(
   const user = trustedIngressUser(locals)
   if (user) return verifiedBoardIngressPrincipal({ request, locals }, write)
   if (!process.env.SUPERVISOR_TOKEN && canManageSystemSettings(request, locals)) {
-    await ensureSchema()
     const db = getPersistenceClient()
     const state = localReaderCacheToken(db)
     let identityValue: string | null | undefined =
@@ -182,7 +155,7 @@ async function loadPrincipal(
     return registerVerifiedPrincipal(
       { kind: "local_operator", id: identityValue },
       {
-        expiresAt: Date.now() + PRINCIPAL_PROOF_TTL_MS,
+        expiresAt: Date.now() + 5_000,
         administrator: true
       }
     )

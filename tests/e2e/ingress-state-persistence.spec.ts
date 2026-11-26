@@ -57,7 +57,7 @@ test("saveNavigationState writes correct JSON to sessionStorage", () => {
   expect(Date.now() - state.timestamp).toBeLessThan(1000);
 });
 
-test("getNavigationState returns state when fresh (< 60s)", () => {
+test("getNavigationState returns state when fresh", () => {
   storageMap.clear();
   saveNavigationState("/table", 200);
   const state = getNavigationState();
@@ -66,14 +66,14 @@ test("getNavigationState returns state when fresh (< 60s)", () => {
   expect(state!.scrollY).toBe(200);
 });
 
-test("getNavigationState returns null when expired (> 60s)", () => {
+test("getNavigationState returns null after the four-hour restore window", () => {
   storageMap.clear();
   storageMap.set(
     navigationKey,
     JSON.stringify({
       path: "/settings",
       scrollY: 0,
-      timestamp: Date.now() - 70_000,
+      timestamp: Date.now() - (4 * 60 * 60 + 1) * 1000,
     }),
   );
   const state = getNavigationState();

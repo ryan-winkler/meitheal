@@ -12,12 +12,19 @@
  */
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
+import { boardScopeResponse } from "@lib/board-http"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { PWA_TASK_SHORTCUT_KINDS, resolvePwaTaskKind } from "@lib/pwa-manifest-builder"
 import { SHOPPING_CATEGORIES } from "@lib/pwa-capture-builder"
 
 const rawKind = Astro.url.searchParams.get("kind")
 const activeSpec = resolvePwaTaskKind(rawKind) ?? PWA_TASK_SHORTCUT_KINDS[0]!
+if (activeSpec.kind === "routine") {
+  const params = new URLSearchParams({ new: "1" })
+  const boardId = Astro.url.searchParams.get("board_id")
+  if (boardId) params.set("board_id", boardId)
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/routines?${params}`)
+}
 const manifestHref = `/manifest.webmanifest?kind=${encodeURIComponent(activeSpec.kind)}`
 
 // Safely read optional Web Share Target parameters (Astro auto-escapes all outputs)
@@ -29,8 +36,10 @@ const initialNotes = [sharedText, sharedUrl && sharedTitle ? sharedUrl : ""].fil
 
 const scopeRes = await resolveBoardRequestScope(Astro, {
   operation: { resource: "task", action: "create" },
-}).catch(() => null)
-const defaultBoardId = scopeRes?.ok ? scopeRes.scope.boardId : ""
+  write: false,
+})
+if (!scopeRes.ok) return boardScopeResponse(scopeRes.errorCode)
+const defaultBoardId = scopeRes.scope.boardId
 
 const isShopping = activeSpec.kind === "shopping_item"
 const isChecklist = activeSpec.kind === "checklist"
@@ -40,6 +49,7 @@ const isChecklist = activeSpec.kind === "checklist"
   title={`${activeSpec.label} — Meitheal`}
   description={activeSpec.description}
   manifestHref={manifestHref}
+  workNavigation={{ scope: scopeRes.scope }}
 >
   <Fragment slot="page-title">
     <span class="new-pwa-page-title">
@@ -623,7 +633,11 @@ const isChecklist = activeSpec.kind === "checklist"
 <script>
   import { consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { enqueueOfflineMutation } from "@lib/pwa-offline-sync"
+  import { currentOfflinePartition, enqueueSyncOp } from "@domains/offline/offline-store"
+  import { registerBackgroundSync } from "@domains/offline/sync-engine"
+  import { browserUuid } from "@lib/browser-uuid"
+  import { countOfflineMutations, OFFLINE_QUEUE_EVENT } from "@lib/pwa-offline-sync"
+  import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
   import {
     buildQuickCapturePayload,
     SHOPPING_CATEGORIES,
@@ -862,19 +876,25 @@ const isChecklist = activeSpec.kind === "checklist"
       })
       const serializedPayload = JSON.stringify(payload)
       const boardId = form.dataset.boardId?.trim() || undefined
+      const taskContext = currentTaskApiContext()
+      const partition = currentOfflinePartition()
+      const attemptId = browserUuid()
 
       const queueForOffline = async () => {
-        const queued = await enqueueOfflineMutation({
-          url: "/api/tasks",
-          method: "POST",
-          boardId,
-          body: serializedPayload,
-        })
+        if (!partition || partition.boardId !== boardId) throw new Error("Open the original Board before saving offline.")
+        if (new TextEncoder().encode(serializedPayload).byteLength > 65_536) throw new Error("This item is too large to save offline.")
+        const queued = await enqueueSyncOp({
+          operation: "create", table: "tasks", entityId: attemptId, payload: serializedPayload,
+        }, { id: attemptId, partition })
         if (!queued) throw new Error("Offline storage is unavailable in this browser.")
+        void countOfflineMutations().then(count => {
+          window.dispatchEvent(new CustomEvent(OFFLINE_QUEUE_EVENT, { detail: { count } }))
+        }).catch(() => {})
+        void registerBackgroundSync()
         if (feedback) {
           feedback.textContent = ""
           const msg = document.createElement("span")
-          msg.textContent = `Saved offline: ${title} — will sync automatically when back online.`
+          msg.textContent = `Saved offline: ${title}. Open this Board when you're online to sync.`
           feedback.appendChild(msg)
           feedback.className = "new-pwa-feedback new-pwa-feedback--ok"
           feedback.hidden = false
@@ -888,8 +908,8 @@ const isChecklist = activeSpec.kind === "checklist"
           return
         }
 
-        const headers: Record<string, string> = { "Content-Type": "application/json" }
-        if (boardId) headers["X-Meitheal-Board-Id"] = boardId
+        if (!boardId || taskContext?.boardId !== boardId) throw new Error("Open a Board with permission to create tasks.")
+        const headers = taskApiHeaders(taskContext, { "Content-Type": "application/json", "Idempotency-Key": attemptId })
 
         let res: Response
         try {

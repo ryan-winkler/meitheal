@@ -9,6 +9,7 @@ import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { boardContextHref, readBoardNavigationContext } from "@lib/board-workspace"
 import { taskApi } from "@lib/task-api-client"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { taskBackgroundUrl } from "@lib/task-page-url"
 import { showToast } from "@lib/toast"
 import { bindCardPreferencesSync } from "@lib/card-view-sync"
@@ -343,11 +344,12 @@ function initOpenTaskFilter(): (() => void) | undefined {
         const taskList = document.getElementById("task-list")
         const refreshedTasks = html.querySelector('#task-list[data-available="true"]')
         if (taskList && refreshedTasks) {
+          const active = document.activeElement
+          const previousControl = active && taskList.contains(active) ? active : null
           taskList.replaceChildren(...refreshedTasks.childNodes)
+          if (previousControl) findKanbanDetailFocus(taskList, previousControl)?.focus({ preventScroll: true })
           void hydrateTaskAssignees(taskList, signal)
-          void import("@lib/controllers/kanban-reaction-counts")
-            .then(({ initKanbanReactionCounts }) => initKanbanReactionCounts(taskList, signal))
-            .catch(() => {})
+          taskList.dispatchEvent(new Event("meitheal:dashboard-cards-updated"))
         }
         countsAvailable = true
         loadFailed = false
@@ -376,9 +378,17 @@ function initTaskDetailLaunchers(onTasksChanged?: () => void): void {
       import("@lib/controllers/kanban-reaction-counts"),
     ]).then(([quickMod, menuMod, reactionMod]) => {
       if (signal.aborted) return
-      quickMod.initQuickActions(buildTaskApiUrl, signal, refreshDashboardCards)
+      let actions = new AbortController()
+      const bindCardActions = () => {
+        actions.abort()
+        actions = new AbortController()
+        const cardSignal = AbortSignal.any([signal, actions.signal])
+        quickMod.initQuickActions(buildTaskApiUrl, cardSignal, refreshDashboardCards, taskList)
+        reactionMod.initKanbanReactionCounts(taskList, cardSignal)
+      }
+      taskList.addEventListener("meitheal:dashboard-cards-updated", bindCardActions, { signal })
+      bindCardActions()
       menuMod.initContextMenu(taskList, buildTaskApiUrl, async () => {}, refreshDashboardCards, signal)
-      reactionMod.initKanbanReactionCounts(taskList, signal)
     }).catch(() => {})
   }
 

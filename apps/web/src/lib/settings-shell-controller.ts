@@ -80,8 +80,10 @@ export function initSettingsShell(): void {
   const narrow = window.matchMedia("(max-width: 860px)")
   const sections = panels.querySelectorAll<HTMLElement>("[data-settings-shell-section]")
   const links = directory.querySelectorAll<HTMLAnchorElement>("[data-settings-nav]")
+  let desktopDirectoryOpen = true
 
-  function setDirectoryOpen(open: boolean): void {
+  function syncDirectory(): void {
+    const open = narrow.matches || desktopDirectoryOpen
     toggle!.setAttribute("aria-expanded", String(open))
     directory!.hidden = !open
     shell!.toggleAttribute("data-directory-collapsed", !open)
@@ -122,7 +124,6 @@ export function initSettingsShell(): void {
       }
     })
     if (narrow.matches) {
-      directory!.hidden = false
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       ;(activeLink as HTMLAnchorElement | null)?.scrollIntoView({
         block: "nearest",
@@ -167,14 +168,16 @@ export function initSettingsShell(): void {
   }
 
   pageLifecycle.on(toggle, "click", () => {
-    setDirectoryOpen(toggle.getAttribute("aria-expanded") !== "true")
+    desktopDirectoryOpen = !desktopDirectoryOpen
+    syncDirectory()
   })
 
   pageLifecycle.on(document, "keydown", (event) => {
-    if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || directory.hidden) return
+    if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || narrow.matches || directory.hidden) return
     if (document.activeElement !== toggle && !directory.contains(document.activeElement)) return
     event.preventDefault()
-    setDirectoryOpen(false)
+    desktopDirectoryOpen = false
+    syncDirectory()
     toggle.focus()
   })
 
@@ -214,11 +217,11 @@ export function initSettingsShell(): void {
   pageLifecycle.on(shell, "meitheal:settings-jump", () => showDestination(location.hash, true))
 
   pageLifecycle.on(narrow, "change", () => {
-    if (narrow.matches && directory.contains(document.activeElement)) toggle.focus()
-    setDirectoryOpen(!narrow.matches)
+    if (!narrow.matches && !desktopDirectoryOpen && directory.contains(document.activeElement)) toggle.focus()
+    syncDirectory()
   })
 
-  setDirectoryOpen(!narrow.matches)
+  syncDirectory()
   showDestination(location.hash, true)
   initUnifiedBarSearchLauncher("settings-bar")
   initCompanionLinks()

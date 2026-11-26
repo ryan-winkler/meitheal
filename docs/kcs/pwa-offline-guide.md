@@ -10,9 +10,17 @@ Meitheal caches static assets such as scripts, CSS, fonts and icons. Work pages 
 
 The existing IndexedDB engine can retain supported task edits and pending operations for the verified account, installation and Board that created them. Switching accounts or Boards does not transfer a queue. Previously unpartitioned legacy browser data stays unclaimed for manual recovery; it is not automatically assigned to the next visitor.
 
+Open a task shortcut while connected to establish its Board context. In browsers that support opening a new app window, the shortcut opens its target there and preserves the current form. If the connection drops while the form is open, task capture can save to that Board's outbox. Reconnect in the same context to replay the original attempt. Opening a shortcut from a closed app still requires a connection. The Routine shortcut opens the connected Routine editor.
+
+Home Assistant ingress can open a shortcut directly in the browser. The form establishes the current Board and account before submission and requires current write permission when it saves.
+
 ## Pending changes
 
 A pending operation keeps its original Board, actor, placement and retry identity. Reconnect using the same account and Board. Do not create another task just because the response was lost.
+
+If you close the app while a change is pending, reopen it while connected and
+return to the original account and Board. Replay runs in the open app after it
+verifies that context.
 
 Capture receipts require a connection. The App checks the original attempt at `GET /api/tasks?captureReceipt=1`; this is the only receipt lookup route. Receipt checks bypass HTTP and service-worker caches. An offline or denied check leaves the save unconfirmed. Retry the original check when connected.
 

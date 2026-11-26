@@ -21,6 +21,14 @@ A saved Calendar shortcut with all task kinds is marked current only when Calend
 3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The number beside the calendar icon counts local Event starts and saved calendar occurrences for that day. The month totals each saved calendar occurrence once, even if it appears on several days. The day drawer lists saved and live events in its connected section using Meitheal’s household timezone. All-day events stay on their calendar dates. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Tasks and local Events come from the Household Board. Open a named Board to see its tickets. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
 4. The month controls keep the active filters. Use **Clear All** to start over. Its accessible name is **Clear all active filters**.
 
+On phones, the month grid updates the inline agenda when you tap a date. Open **Filters** to focus the text search, and press Escape inside the controls to return to the filter button. Its **Filters Active** label stays visible to assistive technology while filters apply. On wider screens, the day drawer loads the agenda when you open a date.
+
+### Plan a day on the schedule
+
+Day groups timed Tasks by due time and Events by start time using the Household timezone, including early and late hours. Items in the same hour stack in separate rows. Date-only items appear above the hourly schedule. Saved connected Events open their linked tasks. Live feed occurrences can be read in place. If one source is unavailable, the schedule shows available entries and identifies the failed source.
+
+Use **Add Task** or **Add Event** above the schedule. Both use the displayed date after you swipe or use the day controls. In the compact Month view, **Add Task** uses the date selected in the agenda.
+
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space. The drawer focuses **Close**. Press Escape to return to the selected day.
@@ -80,7 +88,7 @@ A calendar sync that changes a task advances its edit version, even if someone s
 
 **Deleting a synced task.** Sync does not restore a deleted standalone task when its calendar event is rescheduled and retains the same ID. For a repeating series, the next occurrence after the deleted one gets a new task when it comes up.
 
-**Tasks sent to the calendar.** Meitheal sends tasks with a due date to the first Home Assistant calendar set to **↑ Export only** or **↔ Bidirectional**, and only when **Write back** is on under **Calendar Sync**. Tasks imported from any Home Assistant or CalDAV calendar are never sent back and never generate duplicate calendar due-date reminder events, keeping a strict one-ticket-per-invite invariant. Inbound sync also recognizes Meitheal-originated reminder and write-back events even when external calendar providers wrap descriptions in HTML, collapse line breaks onto a single line, or truncate long summaries, and outbound reminders strip nested ticket/DUE wrappers and deduplicate by task, entity, and due time even if a binding is re-saved. CalDAV calendars are never written to. Add the `no-sync` label to any task that should never be sent.
+**Tasks sent to the calendar.** Meitheal sends tasks with a due date to the first Home Assistant calendar set to **↑ Export only** or **↔ Bidirectional**, and only when **Write back** is on under **Calendar Sync**. Tasks imported from any Home Assistant or CalDAV calendar are never sent back and never generate duplicate calendar due-date reminder events, keeping a strict one-ticket-per-invite invariant. Inbound sync also recognizes Meitheal-originated reminder and write-back events even when external calendar providers wrap descriptions in HTML, collapse line breaks onto a single line, or truncate long summaries, and outbound reminders strip nested ticket/DUE wrappers and deduplicate by task, entity, and due time even if a binding is re-saved. CalDAV calendars are never written to. To exclude a task from calendar exports, manual pushes and calendar reminders, add the `no-sync` label.
 
 ### A repeating calendar event shows no repeat rule, or reopens after completion
 
@@ -131,4 +139,6 @@ If Calendar had already loaded, it keeps the last successful results. Select **R
 
 The sibling Timeline view (`/tasks?view=timeline`) renders scheduled bars, milestones, and unscheduled rows through synchronized `requestAnimationFrame` vertical row windowing across `.gantt-sidebar-track` and `svg.gantt-native` (`<= 60` mounted bar groups and `<= 450` timeline DOM nodes on 500-task schedules). A milestone keeps its chosen task color. An overdue milestone adds a danger outline and an overdue label for assistive technology. `Day` and `Week` zoom modes use a repeating SVG `<pattern>` background grid, while `Month` zoom renders exact 1st-of-month `<line>` dividers. Active pointer drags and focused rows remain mounted when scrolled outside the viewport window, `ArrowDown`/`ArrowUp` and `j`/`k` navigate across `displayRows` by row index (`role="grid"`, `aria-rowcount`, `aria-rowindex`), narrow bars (`< 96px`) render external right-hand labels, and PNG schedule exports compute sidebar row offsets from `data-row-index` at any scroll position.
 
-The sidebar inserts adjacent new rows together in row-index order. Retained rows stay in place so a window update preserves keyboard focus and in-progress drags. The 500-task browser check measures a median scroll pass of at most 6 ms across nine distinct window changes.
+Scroll and resize handlers read the viewport before updating the sidebar, chart header or date label. The scheduled frame uses those measurements to mount rows without forcing layout. The sidebar inserts adjacent new rows together in row-index order and keeps retained rows in place to preserve keyboard focus and in-progress drags.
+
+The 500-task case in `tests/e2e/track-d-docked-inspector-and-gantt.spec.ts` measures a median scroll pass of at most 6 ms across nine window changes and verifies keyboard navigation, dragging and PNG export.

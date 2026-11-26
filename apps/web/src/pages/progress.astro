@@ -1,5 +1,6 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -16,10 +17,12 @@ import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from 
  */
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { boardScopeStorage } from "@domains/tasks/board-scope"
+import { boardScopeStorage, scopeBoardAccess } from "@domains/tasks/board-scope"
+import { readBoardDirectory } from "@lib/board-view"
 import BoardsStyles from "../components/boards/BoardsStyles.astro"
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import BoardPagePicker from "../components/layout/BoardPagePicker.astro"
 import GoalsTab from "../components/progress/GoalsTab.astro"
 import AchievementsTab from "../components/progress/AchievementsTab.astro"
 import RoutinesWorkspace from "../components/routines/RoutinesWorkspace.astro"
@@ -41,8 +44,7 @@ const workScope = workScopeResult.scope
 
 
 const boardId = workScope.boardId
-const { rows: [boardRecord] } = await getPersistenceClient().execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
-const boardName = String(boardRecord?.name ?? "Board")
+const boardName = scopeBoardAccess(workScope).name
 const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
 if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
 const boardArea = pagePlacement.area
@@ -75,6 +77,10 @@ const personalProgress = boardScopeStorage(workScope) === "legacy_null_v1" &&
   !boardArea && !boardProject
 const personalOwner = personalProgress ? await resolvePersonalPillarOwner(Astro) : undefined
 const personalForm = personalOwner ? issuePersonalPillarForm(personalOwner) : undefined
+const directory = await readBoardDirectory(workScope.principal, Astro.request).catch(() => null)
+const accessibleBoards = directory?.boards ?? []
+const canSelectPersonal = ["ha_user", "local_operator"].includes(workScope.principal.kind) &&
+  accessibleBoards.some(board => board.id === "household" && board.state === "active")
 
 try {
   await ensureSchema()
@@ -105,23 +111,30 @@ try {
 
 const routinesEnabled = await isFeatureEnabled("habits")
 const showBoardBackLink = !personalProgress && Boolean(boardId)
+const boardHref = boardWorkspaceHref(boardId, {
+  area: boardProject ? undefined : boardArea?.id,
+  project: boardProject?.id,
+  fromArea: boardProject ? Astro.url.searchParams.get("from") ?? undefined : undefined,
+}, "kanban")
 ---
 
-<Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}
+  workNavigation={{ scope: workScope, placement: pagePlacement }}>
   <BoardsStyles />
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="progress">
-    {showBoardBackLink && (
-      <div class="progress-board-context">
-        <a href={`/boards/${encodeURIComponent(boardId)}`} class="progress-board-context__link">
+    <div class="progress-board-context">
+      <BoardPagePicker page="progress" {boardId} {boardName} boardLabel={label("board", false)}
+        boards={accessibleBoards} area={boardArea?.name} project={boardProject?.name}
+        personal={personalProgress} {canSelectPersonal} />
+      {showBoardBackLink && (
+        <a href={boardHref} class="progress-board-context__link">
           <Icon name="layout-kanban" size={14} sprite />
           <span>Back to {boardName}</span>
-          {boardArea && <span class="progress-board-context__sep">/ {boardArea.name}</span>}
-          {boardProject && <span class="progress-board-context__sep">/ {boardProject.name}</span>}
         </a>
-      </div>
-    )}
+      )}
+    </div>
 
     {/* ─── Pillars (full inline content) ─── */}
     {available("pillars") && <section data-parent-section="pillars" id="progress-section-pillars">
@@ -233,27 +246,23 @@ const showBoardBackLink = !personalProgress && Boolean(boardId)
   import { pageLifecycle } from "@lib/page-lifecycle"
 
   pageLifecycle.onPageLoad((signal) => {
+    const section = document.getElementById("progress-section-achievements")
+    if (!section) return
+
     const focusAchievementsFromHash = () => {
       const hash = window.location.hash
       if (!/^#achievements(?:-|$)/.test(hash)) return
-      const section = document.getElementById("progress-section-achievements")
-      if (!section) return
-
-      // Ensure Achievements section is visible even before/alongside ParentPageShell sync
-      if (section.hasAttribute("hidden")) {
-        const achievementsTab = document.querySelector<HTMLElement>('[data-unified-bar-section="achievements"]')
-        achievementsTab?.click()
-        section.hidden = false
-        section.classList.add("is-active")
-      }
-
       const targetId = hash.slice(1)
-      const targetEl = targetId !== "achievements"
-        ? (document.getElementById(targetId) ?? section)
-        : section
+      const targetEl = targetId === "achievements" ? section : document.getElementById(targetId)
+      if (!targetEl || !section.contains(targetEl)) return
 
       const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       requestAnimationFrame(() => {
+        if (signal.aborted || location.hash !== hash || section.hidden) return
+        if (targetEl !== section) {
+          targetEl.tabIndex = -1
+          targetEl.focus({ preventScroll: true })
+        }
         targetEl.scrollIntoView({
           behavior: prefersReducedMotion ? "auto" : "smooth",
           block: targetEl === section ? "start" : "center",
@@ -275,7 +284,12 @@ const showBoardBackLink = !personalProgress && Boolean(boardId)
   /* ─── Subtle board context link (replaces duplicate nav bar) ─── */
   .progress-board-context {
     max-width: 1100px;
-    margin: 0 auto 0.25rem;
+    margin: 0.75rem auto .25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
   }
 
   :root[data-appearance-width="fluid"] .progress-board-context,
@@ -292,7 +306,6 @@ const showBoardBackLink = !personalProgress && Boolean(boardId)
     color: var(--text-secondary);
     text-decoration: none;
     padding: 0.25rem 0.5rem;
-    margin-left: -0.5rem;
     border-radius: var(--radius-sm, 6px);
     transition: color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -300,11 +313,6 @@ const showBoardBackLink = !personalProgress && Boolean(boardId)
   .progress-board-context__link:hover {
     color: var(--text-primary);
     background: var(--bg-hover);
-  }
-
-  .progress-board-context__sep {
-    color: var(--text-muted);
-    font-weight: 400;
   }
 
   /* ─── Inline page wrapper ─── */

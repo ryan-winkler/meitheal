@@ -37,7 +37,7 @@ import {
   serializeSidebarConfig,
 } from "@domains/navigation/sidebar-menu"
 import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
-import { getCachedHAUserName, isRawHAUserId, resolveCachedHAUserDisplayName } from "@domains/ha"
+import { getCachedHAUserName } from "@domains/ha"
 
 const currentPath = Astro.url.pathname
 const workNavigation = Astro.props.workNavigation
@@ -67,7 +67,7 @@ interface NavItemDef {
 
 const taskViewBaseUrl = new URL(boardContext ? `/boards/${encodeURIComponent(boardContext.boardId)}` : "/tasks", Astro.url)
 const taskViewHref = (view: TaskView) => {
-  const url = taskViewUrl(taskViewBaseUrl, view, true)
+  const url = taskViewUrl(taskViewBaseUrl, view, true, Astro.request.headers.get("user-agent") ?? "")
   return url.pathname + url.search + url.hash
 }
 
@@ -263,16 +263,10 @@ const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
 const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
 
 const hassUserId = Astro.locals.hassUserId
-const cachedHaIdentity = hassUserId ? await resolveCachedHAUserDisplayName(hassUserId).catch(() => null) : null
 const cachedHaRosterName = hassUserId ? getCachedHAUserName(hassUserId) : undefined
-const rawHaDisplayName = Astro.locals.hassDisplayName || cachedHaIdentity?.displayName || cachedHaRosterName || Astro.locals.hassUserName
-const haDisplayName = typeof rawHaDisplayName === "string" && rawHaDisplayName.trim() && !isRawHAUserId(rawHaDisplayName)
-  ? rawHaDisplayName.trim()
-  : undefined
-const rawHaUsername = Astro.locals.hassUserName || cachedHaIdentity?.username
-const haUsername = typeof rawHaUsername === "string" && rawHaUsername.trim() && !isRawHAUserId(rawHaUsername)
-  ? rawHaUsername.trim()
-  : undefined
+const withoutRawHaId = (name?: string) => name && !/^[0-9a-f]{32}$/i.test(name.trim()) ? name.trim() : undefined
+const haDisplayName = withoutRawHaId(Astro.locals.hassDisplayName || cachedHaRosterName || Astro.locals.hassUserName)
+const haUsername = withoutRawHaId(Astro.locals.hassUserName)
 const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
   displayName: haDisplayName ?? "Household Member",
   username: haUsername ?? (haDisplayName ? haDisplayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) : "local"),
@@ -308,12 +302,12 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   </button>
 
   <div class="sidebar-header flex items-center gap-2 pb-3 mb-0">
-    <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
+    <div class="sidebar-brand-group relative flex flex-col flex-1 min-w-0">
       <a
         href="/?view=dashboard"
         data-astro-prefetch="hover"
         class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
-        aria-label="Meitheal Home"
+        aria-label="meitheal. Home"
         title="meitheal. — Keep track of the work your home needs"
       >
         <svg
@@ -335,9 +329,9 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
         </svg>
         <span class="sidebar-brand-stack">
           <span class="sidebar-brand-text truncate">meitheal.</span>
-          <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
         </span>
       </a>
+      <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
     </div>
     <button
       type="button"
@@ -632,10 +626,8 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-brand-stack {
     display: flex;
     flex-direction: column;
-    justify-content: center;
     min-width: 0;
     min-height: 36px;
-    gap: 2px;
   }
 
   .sidebar-brand-text {
@@ -644,11 +636,14 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-ipa {
+    position: absolute;
+    inset-inline-start: 34px;
+    inset-block-end: 0;
+    pointer-events: none;
     display: block;
     font-size: 10px;
     font-style: normal;
-    color: var(--text-muted);
-    opacity: 0.82;
+    color: var(--text-secondary);
     letter-spacing: 0.06em;
     line-height: 12px;
     height: 12px;
@@ -700,7 +695,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   :global(.sidebar .nav-link.active) {
     background: rgb(var(--accent-rgb) / 0.1);
-    color: var(--accent-text);
+    color: var(--text-primary);
   }
 
   :global(.sidebar .nav-link.active .nav-icon) {
@@ -765,14 +760,13 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none !important; }
   body.sidebar-collapsed .sidebar-board-children { display: none; }
-  .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children .sidebar-board-row > a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
   .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
   .sidebar-board-children .sidebar-board-row .nav-link { flex: 1; min-width: 0; }
   .sidebar-board-children .sidebar-board-toggle { min-inline-size: 26px; inline-size: 26px; block-size: 26px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-secondary); }
   .sidebar-board-children .sidebar-board-toggle:hover,
   .sidebar-board-children .sidebar-board-toggle:focus-visible { background: var(--bg-hover); color: var(--text-primary); }
   .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
-  .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
   .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
 
   [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {

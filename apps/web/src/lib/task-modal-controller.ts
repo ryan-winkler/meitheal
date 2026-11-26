@@ -1,5 +1,5 @@
 import { currentTaskApiContext, taskApiHeaders } from "./task-api"
-import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
+import { deleteVersionedTask, publishTaskTypeChange, saveVersionedTask, sameTaskApiContext, taskRecordVersion, type SavedTaskTypeChange } from "./task-api-client"
 import { formatTicketDisplay } from "./task-editor-fields"
 import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-description-editor"
 import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
@@ -250,7 +250,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const tdActions = document.getElementById("td-task-actions")
         const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
+        const typeSelect = byId<HTMLSelectElement>("td-task-type")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
+        const promoteButton = byId<HTMLButtonElement>("td-toggle-promote")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const tdError = byId("td-load-error")
         const copyFallback = byId("td-copy-link-fallback")
@@ -262,6 +264,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let currentTaskVersion: number | null = null
         const currentTaskActions = new Set<string>()
         let taskSaveConflict = false
+        let pendingPromotionGeneration: number | undefined
         const taskSaveQueues = new Map<string, Promise<void>>()
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
@@ -565,10 +568,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
             // P3-4: Restore focus to the element that triggered the panel
-            const kanban = byId("kanban-board")
+            const cardScope = byId("kanban-board") ?? byId("task-list")
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
               : _previouslyFocused?.id ? byId(_previouslyFocused.id)
-              : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
+              : previousCard && cardScope && _previouslyFocused ? findKanbanDetailFocus(cardScope, _previouslyFocused)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
               : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(
@@ -620,6 +623,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         function syncTaskActionControls() {
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
           if (tdTitleInput) tdTitleInput.readOnly = !editable
+          if (typeSelect) typeSelect.disabled = !editable
+          if (promoteButton) promoteButton.disabled = !editable || pendingPromotionGeneration === detailGeneration
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -655,7 +660,30 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (currentTaskId === id) renderSavedStatus(status)
         }, { signal: __signal })
 
-        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+        function renderSavedType(taskType: string) {
+          if (typeSelect) {
+            typeSelect.value = taskType
+            typeSelect.dataset.savedTaskType = taskType
+          }
+          const icon = byId("td-type-icon")
+          if (icon) {
+            icon.replaceChildren(createTypeIconElement(taskType, 16, currentTaskKind))
+            icon.title = KIND_BADGE_LABELS[currentTaskKind] ?? (taskType.charAt(0).toUpperCase() + taskType.slice(1))
+          }
+        }
+
+        document.addEventListener("meitheal:task-type-changed", event => {
+          const { taskId, taskType, version, previousVersion, status } = (event as CustomEvent<SavedTaskTypeChange>).detail ?? {}
+          if (!taskLoaded || boardWithheld || currentTaskId !== taskId ||
+              typeof version !== "number" || version < (currentTaskVersion ?? 0)) return
+
+          // Rebase local edits only when the card and the Inspector started from the same saved version.
+          if (currentTaskVersion === previousVersion) currentTaskVersion = version
+          renderSavedType(taskType)
+          if (typeof status === "string") renderSavedStatus(status)
+        }, { signal: __signal })
+
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation: boolean | "resolve" = true) {
           if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
@@ -700,7 +728,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           taskLoaded = false
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
-          if (updateLocation) setTaskLocation(taskId, false, commentTarget)
+          if (updateLocation === true) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
@@ -808,7 +836,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
-            setTaskLocation(taskId, true, commentTarget)
+            if (updateLocation) setTaskLocation(taskId, true, commentTarget)
 
             // Start independent inspector reads together. Each field keeps its own fallback.
             const requestOptions = { signal: modalSignal }
@@ -1138,12 +1166,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             currentTaskKind = taskKind;
             sections.dataset.taskKind = taskKind;
             updateSectionOrder();
-            const typeIconEl = byId("td-type-icon") as HTMLElement | null;
-            if (typeIconEl) {
-              const tt = String(t.task_type || "task").toLowerCase();
-              typeIconEl.replaceChildren(createTypeIconElement(tt, 16, taskKind));
-              typeIconEl.title = KIND_BADGE_LABELS[taskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1));
-            }
+            renderSavedType(String(t.task_type || "task").toLowerCase())
             const kindBadgeEl = byId("td-task-kind-badge") as HTMLElement | null;
             if (kindBadgeEl) {
               const label = KIND_BADGE_LABELS[taskKind] ?? "";
@@ -1392,14 +1415,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               signal: modalSignal,
               selectedId: String(t.principle_id ?? ""),
             })
-            // Phase 20: Agile hierarchy type
-            const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
-            if (tdTaskTypeEl) {
-              const ttVal = String(t.task_type ?? "task");
-              tdTaskTypeEl.value = ttVal;
-              tdTaskTypeEl.dataset.savedTaskType = ttVal;
-            }
-
             // Set recurrence select to current value with Google Calendar presets & custom RRULE support
             const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
@@ -1421,14 +1436,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             const isPromoted = Boolean(t.is_promoted);
-            const promoteBtn = byId("td-toggle-promote") as HTMLButtonElement | null;
-            if (promoteBtn) {
-              promoteBtn.setAttribute("aria-pressed", String(isPromoted));
+            if (promoteButton) {
+              promoteButton.setAttribute("aria-pressed", String(isPromoted))
               const promoteLabel = isPromoted
                 ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
-                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-              promoteBtn.title = promoteLabel;
-              promoteBtn.setAttribute("aria-label", promoteLabel);
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top")
+              promoteButton.title = promoteLabel
+              promoteButton.setAttribute("aria-label", promoteLabel)
             }
 
             // Load board-scoped custom fields (falling back to settings on household)
@@ -1572,8 +1586,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
-            if (!keepDescriptionDraft && !description) enterDescEdit()
-            else if (!keepDescriptionDraft) void renderTaskDescription(description)
+            if (!keepDescriptionDraft) {
+              void renderTaskDescription(description)
+              if (!description) enterDescEdit(false)
+            }
             resizeTitle()
             const finishLoadedTask = () => {
               const liveSignal = _modalAbortController?.signal
@@ -1747,6 +1763,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
+          const previousVersion = updatedAt ?? currentTaskVersion
           const search = searchSession
           const primaryValue = patch[primaryField]
           const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
@@ -1754,16 +1771,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           let saved = false
           setTicketSaveFeedback("saving", primaryField)
           try {
-            const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
+            const result = await saveVersionedTask(taskId, patch, previousVersion, undefined,
               scopedWrite?.signal ?? AbortSignal.timeout(7_000))
             saved = result.ok
-            if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
-            if (!result.ok && generation === detailGeneration && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
-              taskSaveConflict = true
-              showTaskWriteConflict()
-            }
-            if (saved) {
-              if (generation === detailGeneration) setTicketSaveFeedback("saved", primaryField)
+            if (result.ok) {
+              if (generation === detailGeneration) {
+                currentTaskVersion = result.version
+                setTicketSaveFeedback("saved", primaryField)
+              }
               if (Object.hasOwn(patch, "area_id")) {
                 changedAreaTask = taskId
                 if (!tdOverlay.classList.contains("active") ||
@@ -1772,38 +1787,37 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
               } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
-                if (Object.hasOwn(patch, "task_type")) {
-                  const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
-                  if (sel) sel.dataset.savedTaskType = String(patch.task_type)
-                  const typeIconEl = document.getElementById("td-type-icon")
-                  if (typeIconEl) {
-                    const tt = String(patch.task_type || "task").toLowerCase()
-                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind))
-                    typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
-                  }
+                if (typeof patch.task_type === "string" && typeof result.task.task_type === "string") {
+                  publishTaskTypeChange({ taskId, taskType: result.task.task_type, version: result.version, previousVersion,
+                    status: result.task.status })
                 }
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
               notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
               if (Object.hasOwn(patch, "status")) {
-                const task = result.ok ? result.task : {}
+                const task = result.task
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (isDoneStatus(String(patch.status)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
             }
-            if (!result.ok) {
-              if (generation === detailGeneration) setTicketSaveFeedback("idle")
-              log.warn(`Failed to save ${primaryField}:`, result.status)
+            const needsReload = result.errorCode === "conflict" || result.errorCode === "unconfirmed"
+            if (generation === detailGeneration) {
+              if (needsReload) {
+                taskSaveConflict = true
+                showTaskWriteConflict()
+              }
+              setTicketSaveFeedback("idle")
               if (Object.hasOwn(patch, "task_type")) {
-                const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
-                if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
+                const savedType = typeSelect?.dataset.savedTaskType
+                if (savedType) renderSavedType(savedType)
               }
-              if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
-                const sessionBound = search || primaryField === "description"
-                if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
-                return false
-              }
+            }
+            log.warn(`Failed to save ${primaryField}:`, result.status)
+            if (result.message && !needsReload) {
+              const sessionBound = search || primaryField === "description"
+              if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
+              return false
             }
           } catch (err) {
             if (generation === detailGeneration) setTicketSaveFeedback("idle")
@@ -1855,11 +1869,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }
 
-        function enterDescEdit() {
+        function enterDescEdit(focus = true) {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
           descView?.classList.add("hidden");
-          void descEditor?.setMode("visual", !scroller?.classList.contains("hidden"));
+          void descEditor?.setMode("visual", focus && !scroller?.classList.contains("hidden"));
         }
 
         function setDescriptionSaving(saving: boolean): void {
@@ -1944,46 +1958,76 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }
 
 
-        // Phase 23: Image attachments upload
-        document
-          .getElementById("td-attachment-input")
-          ?.addEventListener("change", async (e) => {
-            const targetTaskId = currentTaskId;
-            const openGen = detailGeneration;
-            if (!targetTaskId) return;
-            const input = e.target as HTMLInputElement;
-            const file = input.files?.[0];
-            if (!file) return;
+        const attachmentInput = byId<HTMLInputElement>("td-attachment-input")
+        let attachmentPicker: {
+          taskId: string
+          generation: number
+          context: NonNullable<ReturnType<typeof currentTaskApiContext>>
+          trigger: HTMLButtonElement
+        } | undefined
 
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.onload = async (re) => {
-              const base64Data = String(re.target?.result);
-              try {
-                await saveAttachment({
-                  id: crypto.randomUUID(),
-                  taskId: targetTaskId,
-                  filename: file.name,
-                  mimeType: file.type,
-                  base64Data,
-                  createdAt: new Date().toISOString(),
-                });
-                if (!__signal.aborted && currentTaskId === targetTaskId && detailGeneration === openGen) {
-                  loadAttachments(targetTaskId);
-                }
-              } catch (err) {
-                log.error("Failed to save attachment", err);
-                showToast(
-                  "Failed to save attachment due to storage limits or error.",
-                  "error",
-                );
-              }
-            };
-            reader.readAsDataURL(file);
+        const attachmentIsCurrent = (picker: NonNullable<typeof attachmentPicker>) =>
+          !__signal.aborted && !boardWithheld && taskLoaded && picker.taskId === currentTaskId
+          && picker.generation === detailGeneration && sameTaskApiContext(picker.context, currentTaskApiContext())
 
-            // Reset input so the same file can be selected again
-            input.value = "";
-          }, { signal: __signal });
+        for (const id of ["td-add-attachment-btn", "td-chat-attach-btn"]) {
+          const trigger = byId<HTMLButtonElement>(id)
+          trigger?.addEventListener("click", () => {
+            const context = currentTaskApiContext()
+            if (!attachmentInput || !currentTaskId || !taskLoaded || boardWithheld || !context) return
+            attachmentPicker = { taskId: currentTaskId, generation: detailGeneration, context, trigger }
+            attachmentInput.click()
+          }, { signal: __signal })
+        }
+
+        function settleAttachmentPicker() {
+          const picker = attachmentPicker
+          attachmentPicker = undefined
+          if (!picker || !attachmentIsCurrent(picker)) return
+          picker.trigger.focus({ preventScroll: true })
+          return picker
+        }
+
+        attachmentInput?.addEventListener("cancel", settleAttachmentPicker, { signal: __signal })
+        attachmentInput?.addEventListener("change", async () => {
+          const file = attachmentInput.files?.[0]
+          attachmentInput.value = ""
+          const picker = settleAttachmentPicker()
+          if (!file || !picker) return
+          if (!attachmentInput.accept.split(",").includes(file.type)) {
+            showToast("Choose a PNG, JPEG, GIF, WebP, or AVIF image.", "error")
+            return
+          }
+          try {
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result))
+              reader.onerror = () => reject(reader.error)
+              reader.readAsDataURL(file)
+            })
+            if (!attachmentIsCurrent(picker)) return
+            const attachmentId = browserUuid()
+            await saveAttachment({
+              id: attachmentId, taskId: picker.taskId, filename: file.name,
+              mimeType: file.type, base64Data, createdAt: new Date().toISOString(),
+            })
+            if (!attachmentIsCurrent(picker)) return
+            await loadAttachments(picker.taskId, picker.trigger)
+            if (!attachmentIsCurrent(picker)) return
+            const preview = document.querySelector<HTMLElement>(`[data-attachment-id="${attachmentId}"]`)
+            showToast("Image attached to task", "success", preview ? { action: {
+              label: "View image",
+              onClick: () => {
+                if (!attachmentIsCurrent(picker)) return
+                picker.trigger.focus({ preventScroll: true })
+                preview.click()
+              },
+            } } : undefined)
+          } catch (error) {
+            log.error("Failed to save attachment", error)
+            if (attachmentIsCurrent(picker)) showToast("Could not attach the image. Check browser storage and try again.", "error")
+          }
+        }, { signal: __signal })
 
         async function saveDetailStatus(next: string) {
           const id = currentTaskId
@@ -2058,17 +2102,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
           }, { signal: __signal });
         // Phase 20: task_type auto-save
-        document
-          .getElementById("td-task-type")
-          ?.addEventListener("change", (e) => {
-            const tt = (e.target as HTMLSelectElement).value;
-            const typeIconEl = document.getElementById("td-type-icon");
-            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind));
-            saveTaskField("task_type", tt);
-            window.dispatchEvent(new CustomEvent("meitheal:task-type-changed", {
-              detail: { taskId: currentTaskId, taskType: tt },
-            }));
-          }, { signal: __signal });
+        typeSelect?.addEventListener("change", () => void saveTaskField("task_type", typeSelect.value), { signal: __signal })
         byId("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
@@ -2357,38 +2391,38 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal })
 
         // Toggle promoted (sash highlight & top of lane)
-        document
-          .getElementById("td-toggle-promote")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const btn = byId("td-toggle-promote") as HTMLButtonElement | null;
-            if (!btn || btn.disabled) return;
-            const wasPromoted = btn.getAttribute("aria-pressed") === "true";
-            const nextPromoted = !wasPromoted;
-            btn.disabled = true;
-            btn.setAttribute("aria-pressed", String(nextPromoted));
-            try {
-              const saved = await saveTaskField("is_promoted", nextPromoted);
-              if (search && generation !== detailGeneration) return;
-              if (saved === false) {
-                btn.setAttribute("aria-pressed", String(wasPromoted));
-                return;
-              }
-              const promoteLabel = nextPromoted
-                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
-                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
-              btn.title = promoteLabel;
-              btn.setAttribute("aria-label", promoteLabel);
-              showToast(nextPromoted
-                ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
-                : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
-              document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
-            } finally {
-              btn.disabled = false;
+        promoteButton?.addEventListener("click", async () => {
+          const taskId = currentTaskId
+          if (!taskId || promoteButton.disabled || boardWithheld) return
+          const generation = detailGeneration
+          const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true"
+          const nextPromoted = !wasPromoted
+          pendingPromotionGeneration = generation
+          syncTaskActionControls()
+          promoteButton.setAttribute("aria-pressed", String(nextPromoted))
+          try {
+            const saved = await saveTaskField("is_promoted", nextPromoted)
+            if (__signal.aborted || boardWithheld || generation !== detailGeneration || currentTaskId !== taskId) return
+            if (!saved) {
+              promoteButton.setAttribute("aria-pressed", String(wasPromoted))
+              return
             }
-          }, { signal: __signal });
+            const promoteLabel = nextPromoted
+              ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+              : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top")
+            promoteButton.title = promoteLabel
+            promoteButton.setAttribute("aria-label", promoteLabel)
+            showToast(nextPromoted
+              ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+              : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"))
+            document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: taskId } }))
+          } finally {
+            if (pendingPromotionGeneration === generation) {
+              pendingPromotionGeneration = undefined
+              syncTaskActionControls()
+            }
+          }
+        }, { signal: __signal })
 
         // Duplicate task
         document
@@ -2623,7 +2657,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (!sameTaskLocator(taskId, currentTaskId, currentTicketKey) || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
-            void openTaskDetail(taskId, commentTarget, undefined, false)
+            void openTaskDetail(taskId, commentTarget, undefined, fromHistory ? false : "resolve")
             if (fromHistory) {
               const generation = detailGeneration
               // The browser can restore a Settings anchor after popstate finishes.
@@ -2673,7 +2707,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             return
           }
           if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return
-          if (target.closest("button, a, input, select, textarea, .task-actions, .action-btn")) return
+          if (target.closest("button, a, input, label, select, textarea, .task-actions, .action-btn")) return
           if (target instanceof HTMLElement && target.isContentEditable) return
 
           const taskEl = target.closest<HTMLElement>(

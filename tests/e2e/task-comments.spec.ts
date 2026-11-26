@@ -310,7 +310,7 @@ test("a failed comment post keeps the draft for retry in the task panel", async 
   await page.goto(`/tasks?open=${id}#kanban`)
   const panel = page.getByRole("dialog", { name: "Task detail: Comment draft fixture" })
   const input = panel.getByRole("textbox", { name: "Comment", exact: true })
-  const submit = panel.getByRole("button", { name: "Post Comment" })
+  const submit = panel.getByRole("button", { name: "Send", exact: true })
   await input.fill("Keep this draft")
   await page.route(comments, route => route.request().method() === "POST" ? route.fulfill({ status: 503 }) : route.continue())
   await submit.click()

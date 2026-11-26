@@ -49,7 +49,11 @@ Results display behavioral kind labels (`Event`, `Shopping list`, `Routine`, `Ch
 
 Relevance puts an exact task ID or ticket such as `MTH-42` first in Tasks, followed by exact and prefix title matches. The selected fields determine which results match and which snippets appear. A Comments-only result shows a matching comment. Percent signs and underscores match literally. Clear the query to see recent tasks.
 
-Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later.
+Task search ranks a bounded set of results within the selected Board. Task lists without Area or Project filters select the page before resolving related records. Lists filtered by placement check the visible relation before paging.
+
+The task reader reuses SQL templates for the same Board, principal, and access constraints. Each request still verifies current access and reads the current data. The cache holds SQL templates and bound inputs.
+
+Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later. Browser Back and Forward restore the destination page and its open ticket, if any. This also preserves a Settings section and its ticket query through Home Assistant ingress.
 
 ## Home Assistant Parity
 

@@ -84,19 +84,18 @@ export function downloadBlob(content: BlobPart, mimeType: string, filename: stri
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Defer initial fetches for collapsed Settings sections until revealed. */
-export function whenSectionVisible(target: Element | null, run: () => void): void {
+/** Defer work until a Settings section is shown, optionally on each reveal. */
+export function whenSectionVisible(target: Element | null, run: () => void, repeatOnReveal = false): void {
   if (!target) return
   const section = target.closest<HTMLElement>("[data-settings-shell-section]")
-  if (!section || !section.hidden) {
-    run()
-    return
-  }
-  let done = false
+  let visible = !section?.hidden
+  if (visible) run()
+  if (!section || (visible && !repeatOnReveal)) return
   const observer = new MutationObserver(() => {
-    if (!section.hidden && !done) {
-      done = true
-      observer.disconnect()
+    const revealed = !section.hidden && !visible
+    visible = !section.hidden
+    if (revealed) {
+      if (!repeatOnReveal) observer.disconnect()
       run()
     }
   })

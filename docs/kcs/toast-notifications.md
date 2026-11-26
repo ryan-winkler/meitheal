@@ -33,6 +33,11 @@ Meitheal renders transient status toasts, transactional Undo/Retry prompts, and 
 
 ## Timer lifecycle checks
 
+Browser notification preferences in **People & Notifications** apply to the
+signed-in account across its Boards in this browser. The app keeps earlier
+browser-wide preferences without assigning them to an account. If a browser
+denies storage, the controls show the saved values and report the failure.
+
 When updating a toast from persistent to timed, synchronize both focus and document visibility pauses before starting its timer. To check this, update a persistent toast while the tab is hidden, wait longer than its duration, then return: it should remain until visible and then expire.
 
 For the Pomodoro controller, an action response from a previous mount must not decrement the current mount's active action counter. Keep the generation check and positive-counter guard together in request cleanup.

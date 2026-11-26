@@ -103,7 +103,8 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   const dirtyBar = form.querySelector<HTMLElement>("[data-appearance-dirty-bar]")
   const dirtyText = form.querySelector<HTMLElement>("[data-appearance-dirty-text]")
   const discardBtn = form.querySelector<HTMLButtonElement>("[data-appearance-discard]")
-  const resetLayoutBtn = form.querySelector<HTMLButtonElement>("[data-appearance-reset-layout]")
+  const resetBtn = form.querySelector<HTMLButtonElement>("[data-appearance-reset]")
+  const resetSurfaceBtn = form.querySelector<HTMLButtonElement>("[data-appearance-reset-surface]")
   const saveBtns = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-appearance-save]"))
   if (!status) return
 
@@ -235,7 +236,11 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         applyTheme(themePreview)
         showCustomThemeSection(snap.theme === "custom")
       }
-      const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
+      const preview = {
+        ...(themePreview ? { theme: themePreview } : {}),
+        matchHaTheme: Boolean(snap.matchHaTheme),
+        accent: snap.accent ?? null,
+      }
       setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
       refreshHAThemeMatch(preview)
       // The bridge re-applies the saved theme when matching changes; keep the draft preview.
@@ -252,41 +257,35 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     return fields.some((f) => (snap.appearance[f.name] ?? f.defaultValue) !== f.defaultValue)
   }
 
-  const pulseDirtyBar = (): void => {
-    if (!dirtyBar) return
-    dirtyBar.classList.remove("is-attention")
-    void dirtyBar.offsetWidth
-    dirtyBar.classList.add("is-attention")
-  }
-
-  const updateDirtyUi = (themeJustChanged = false): void => {
+  const updateDirtyUi = (): void => {
     const changes = countAppearanceDraftChanges(committed, draft)
     const dirty = changes > 0
     const themeChanged = isLookAndFeel && Boolean(draft.theme && draft.theme !== committed.theme)
     const hasOverrides = hasCustomLayoutOrAccentOverrides(draft)
 
     form.dataset.dirty = dirty ? "true" : "false"
+    if (!dirty && dirtyBar?.contains(document.activeElement)) {
+      form.querySelector<HTMLElement>('[data-visual-field="theme"][aria-checked="true"]')?.focus({ preventScroll: true })
+    }
     if (dirtyBar) dirtyBar.hidden = !dirty
-    if (resetLayoutBtn) {
-      resetLayoutBtn.hidden = !(isLookAndFeel && dirty && (themeChanged || hasOverrides))
+    if (resetBtn) {
+      if (!hasOverrides && dirty && document.activeElement === resetBtn) saveBtns[0]?.focus({ preventScroll: true })
+      resetBtn.hidden = !hasOverrides
     }
     if (dirtyText && dirty) {
       if (themeChanged) {
         const selectedOption = themeSelect?.selectedOptions?.[0]?.textContent?.trim() || draft.theme
-        dirtyText.textContent = hasOverrides
-          ? `Previewing ${selectedOption} — save to keep, or reset layout & accent to match.`
-          : `Previewing ${selectedOption} — click Save to keep this theme.`
+        dirtyText.textContent = `Previewing ${selectedOption}. Save to keep this theme.`
       } else {
         dirtyText.textContent = `${changes === 1 ? "1 unsaved change" : `${changes} unsaved changes`} — previewing live. Save to commit.`
       }
     }
-    if (dirty && themeJustChanged) pulseDirtyBar()
   }
 
-  const previewDraft = (themeJustChanged = false): void => {
+  const previewDraft = (): void => {
     status.textContent = ""
     applySnapshotPreview(draft)
-    updateDirtyUi(themeJustChanged)
+    updateDirtyUi()
   }
 
   // Initial sync
@@ -316,11 +315,10 @@ function bindAppearanceForm(form: HTMLFormElement): void {
 
   const selectVisualOption = (fieldName: string, value: string): void => {
     if (fieldName === "theme") {
-      const changed = draft.theme !== value
       draft.theme = value
       if (themeSelect) themeSelect.value = value
       syncVisualGroup("theme", value)
-      previewDraft(changed)
+      previewDraft()
       return
     }
     const field = fields.find((f) => f.name === fieldName)
@@ -407,6 +405,24 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     })
   }
 
+  const previewReset = () => {
+    syncInputsFromSnapshot(draft)
+    applySnapshotPreview(draft)
+    updateDirtyUi()
+    status.textContent = isAppearanceDraftDirty(committed, draft)
+      ? (status.dataset.reset ?? "Defaults previewed — save to commit.")
+      : ""
+  }
+
+  if (resetSurfaceBtn) {
+    pageLifecycle.on(resetSurfaceBtn, "click", () => {
+      for (const name of ["base", "radius", "width", "header", "panelStyle"] as const) {
+        draft.appearance[name] = APPEARANCE_PREFERENCES[name].defaultValue
+      }
+      previewReset()
+    })
+  }
+
   // Reset previews defaults live so user sees them before committing
   pageLifecycle.on(form, "reset", (event) => {
     event.preventDefault()
@@ -415,28 +431,8 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       draft.accent = null
       draft.matchHaTheme = false
     }
-    syncInputsFromSnapshot(draft)
-    applySnapshotPreview(draft)
-    updateDirtyUi()
-    status.textContent = isAppearanceDraftDirty(committed, draft)
-      ? (status.dataset.reset ?? "Defaults previewed — save to commit.")
-      : ""
+    previewReset()
   })
-
-  // Inline reset layout & defaults while keeping the previewed theme selected
-  if (resetLayoutBtn) {
-    pageLifecycle.on(resetLayoutBtn, "click", () => {
-      for (const field of fields) draft.appearance[field.name] = field.defaultValue
-      if (isLookAndFeel) {
-        draft.accent = null
-        draft.matchHaTheme = false
-      }
-      syncInputsFromSnapshot(draft)
-      applySnapshotPreview(draft)
-      updateDirtyUi(true)
-      showToast("Layout, hover, and accent reset to defaults — click Save to keep", "info")
-    })
-  }
 
   // Discard reverts live preview back to committed snapshot
   if (discardBtn) {

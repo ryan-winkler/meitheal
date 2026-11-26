@@ -48,6 +48,8 @@ export interface InlineDatePickerOptions {
   hasTime?: boolean
   /** Accessible label for the input/trigger */
   ariaLabel?: string
+  /** Place a newly opened panel within a parent dialog before positioning it. */
+  onPanelOpen?: (panel: HTMLElement) => void
   /** AbortSignal for cleanup */
   signal?: AbortSignal
 }
@@ -265,6 +267,8 @@ export class InlineDatePicker {
     const commitTyped = (fromEnter: boolean) => {
       const raw = textInput.value.trim()
       textInput.classList.remove("idp-text-input--invalid")
+      textInput.removeAttribute("aria-invalid")
+      textInput.setCustomValidity("")
       if (!raw) {
         if (this.options.value) {
           this.options.onClear()
@@ -284,18 +288,12 @@ export class InlineDatePicker {
         }
       } else {
         textInput.classList.add("idp-text-input--invalid")
-        if (!fromEnter) {
-          // Restore last valid value after brief visual feedback
-          setTimeout(() => {
-            if (this.textInput === textInput) {
-              textInput.classList.remove("idp-text-input--invalid")
-              textInput.value = this.formatDisplayValue(this.options.value)
-            }
-          }, 900)
-        }
+        textInput.setAttribute("aria-invalid", "true")
+        textInput.setCustomValidity("Enter a valid date or clear the field.")
       }
     }
 
+    textInput.addEventListener("input", () => textInput.setCustomValidity(""), listenerOpts(this.options.signal))
     textInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault()
@@ -303,14 +301,18 @@ export class InlineDatePicker {
         commitTyped(true)
       } else if (e.key === "ArrowDown" && !this.panel) {
         e.preventDefault()
-        this.openPanel()
+        this.openPanel(true)
       } else if (e.key === "Escape" && this.panel) {
         e.stopPropagation()
         this.closePanel()
       }
     }, listenerOpts(this.options.signal))
 
-    textInput.addEventListener("blur", () => {
+    textInput.addEventListener("blur", (event) => {
+      if (event.relatedTarget instanceof HTMLElement) {
+        if (!this.panel?.contains(event.relatedTarget) && this.textInput === textInput) commitTyped(false)
+        return
+      }
       // Do not clobber click into open popover
       setTimeout(() => {
         if (this.panel && this.panel.contains(document.activeElement)) return
@@ -418,9 +420,8 @@ export class InlineDatePicker {
     if (!triggerRect) return
 
     const margin = 8
-    const panelRect = panel.getBoundingClientRect()
-    const panelWidth = panelRect.width || 420
-    const panelHeight = panelRect.height || 340
+    const panelWidth = panel.offsetWidth || 420
+    const panelHeight = panel.offsetHeight || 340
 
     const preferredLeft = triggerRect.left
     const maxLeft = Math.max(margin, window.innerWidth - panelWidth - margin)
@@ -435,18 +436,19 @@ export class InlineDatePicker {
     const maxTop = Math.max(margin, window.innerHeight - panelHeight - margin)
     const top = Math.max(margin, Math.min(preferredTop, maxTop))
 
-    panel.style.position = "fixed"
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
     panel.style.bottom = ""
-    panel.style.zIndex = "10000"
   }
 
-  private openPanel() {
+  private openPanel(focusFirst = false) {
     this.closePanel()
 
     const panel = document.createElement("div")
     panel.className = "idp-panel"
+    // Measure the floating panel after mounting it outside the host's flex layout.
+    panel.style.position = "fixed"
+    panel.style.zIndex = "10000"
     panel.setAttribute("role", "dialog")
     panel.setAttribute("aria-label", this.options.enableTime ? "Choose date and time" : "Choose date")
 
@@ -496,7 +498,9 @@ export class InlineDatePicker {
     this.panel = panel
     this.container.querySelector(".idp-cal-toggle")?.setAttribute("aria-expanded", "true")
     document.body.appendChild(panel)
+    this.options.onPanelOpen?.(panel)
     this.clampPanelPosition(panel)
+    if (focusFirst) panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
     requestAnimationFrame(() => {
       if (this.panel === panel) this.clampPanelPosition(panel)
     })
@@ -507,6 +511,7 @@ export class InlineDatePicker {
       }
     }
     setTimeout(() => {
+      if (this.panel !== panel) return
       document.addEventListener("click", closeHandler as EventListener, listenerOpts(this.options.signal))
       this.panelCleanups.push(() => document.removeEventListener("click", closeHandler as EventListener))
     }, 0)

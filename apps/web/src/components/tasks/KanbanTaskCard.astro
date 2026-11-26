@@ -16,7 +16,7 @@ import type { Locale } from "../../lib/locale"
 import type { DateFormat } from "../../lib/date"
 import { formatRegionalDate } from "../../lib/regional-date"
 import { priorityTablerIcon } from "../../lib/priority-config"
-import { formatCardCustomFieldValue } from "../../lib/custom-field-defs"
+import { cardCustomFieldLabel, formatCardCustomFieldValue, MAX_KANBAN_CARD_CUSTOM_FIELDS } from "../../lib/custom-field-defs"
 import { taskDetailPath } from "../../lib/task-page-url"
 import { taskSurface } from "../../lib/task-surface"
 
@@ -39,6 +39,7 @@ interface Props {
   dueLabel?: string | null
   description?: string | null
   rice?: number | null
+  cardFieldNames?: string[]
   childCount?: number
   area?: { id: string; name: string; color?: string; icon?: string } | null
   showAreaBadge?: boolean
@@ -70,6 +71,7 @@ const {
   dueLabel = null,
   description = null,
   rice = null,
+  cardFieldNames,
   childCount = 0,
   area = null,
   showAreaBadge = false,
@@ -101,10 +103,9 @@ try {
   }
 } catch { /* ignore malformed checklists */ }
 
-let customFieldState:
-  | { kind: "shopping"; quantity?: string; category?: string; itemNames: string[] }
-  | { kind: "generic"; entries: Array<[string, string]> }
-  | null = null
+let shopping: { quantity?: string; category?: string; itemNames: string[] } | null = null
+const customFields: Array<{ name: string; label: string; value: string; hidden: boolean }> = []
+let extraCustomFields = 0
 try {
   const cf = typeof task.custom_fields === "string"
     ? JSON.parse(String(task.custom_fields ?? "{}"))
@@ -113,19 +114,41 @@ try {
     const itemNames = cf.items
       .map((item: { name?: string }) => item?.name)
       .filter((name: unknown): name is string => typeof name === "string" && name.length > 0)
-    customFieldState = {
-      kind: "shopping",
+    shopping = {
       quantity: cf.quantity ? String(cf.quantity) : undefined,
       category: cf.category ? String(cf.category) : undefined,
       itemNames,
     }
-  } else {
-    const entries: Array<[string, string]> = []
-    for (const key of Object.keys(cf)) {
-      const formatted = formatCardCustomFieldValue(cf[key])
-      if (formatted !== null) entries.push([key, formatted])
+  }
+  const keys = Object.keys(cf)
+  if (keys.length && (cardFieldNames || !shopping)) {
+    // Board fields follow the picker order. Older stored keys can differ in casing.
+    const storedNames = cardFieldNames && new Map(keys.map(key => [key.trim().toLowerCase(), key]))
+    for (const [index, name] of (cardFieldNames ?? keys).entries()) {
+      const key = storedNames ? storedNames.get(name.toLowerCase()) : name
+      const value = formatCardCustomFieldValue(key === undefined ? undefined : cf[key])
+      if (value === null) continue
+      if (!cardFieldNames && customFields.length >= MAX_KANBAN_CARD_CUSTOM_FIELDS) {
+        extraCustomFields++
+        continue
+      }
+      const position = cardFieldNames ? index : customFields.length
+      customFields.push({ name, label: cardCustomFieldLabel(name), value, hidden: position >= MAX_KANBAN_CARD_CUSTOM_FIELDS })
     }
-    if (entries.length > 0) customFieldState = { kind: "generic", entries }
+    // Keep imported fields in unused default slots until the user chooses fields.
+    if (cardFieldNames && !shopping) {
+      let slots = MAX_KANBAN_CARD_CUSTOM_FIELDS - customFields.filter(field => !field.hidden).length
+      if (slots > 0) {
+        const configured = new Set(cardFieldNames.map(name => name.toLowerCase()))
+        for (const name of keys) {
+          if (configured.has(name.trim().toLowerCase())) continue
+          const value = formatCardCustomFieldValue(cf[name])
+          if (value === null) continue
+          customFields.push({ name, label: name, value, hidden: false })
+          if (--slots === 0) break
+        }
+      }
+    }
   }
 } catch { /* ignore malformed custom fields */ }
 ---
@@ -138,6 +161,7 @@ try {
   data-title={title}
   data-desc={task.description ? String(task.description).slice(0, 200) : ""}
   data-priority={String(priority)}
+  data-rice={rice ?? ""}
   data-promoted={String(promoted)}
   data-status={status}
   data-deferral-version={task.task_version != null ? String(task.task_version) : undefined}
@@ -303,28 +327,28 @@ try {
     </div>
   )}
   <LabelBadges labels={task.labels as string} compact max={3} />
-  {customFieldState?.kind === "shopping" && (
+  {shopping && (
     <div class="kanban-custom-fields">
-      {customFieldState.quantity && <span class="kanban-cf-chip" title={`qty: ${customFieldState.quantity}`}>×{customFieldState.quantity}</span>}
-      {customFieldState.category && <span class="kanban-cf-chip" title={`category: ${customFieldState.category}`}>{customFieldState.category}</span>}
-      {customFieldState.itemNames.length > 0 && <span class="kanban-cf-chip" title={customFieldState.itemNames.join(", ")}>{customFieldState.itemNames.length} items</span>}
+      {shopping.quantity && <span class="kanban-cf-chip" title={`qty: ${shopping.quantity}`}>×{shopping.quantity}</span>}
+      {shopping.category && <span class="kanban-cf-chip" title={`category: ${shopping.category}`}>{shopping.category}</span>}
+      {shopping.itemNames.length > 0 && <span class="kanban-cf-chip" title={shopping.itemNames.join(", ")}>{shopping.itemNames.length} items</span>}
     </div>
   )}
-  {customFieldState?.kind === "generic" && (
-    <div class="kanban-custom-fields">
-      {customFieldState.entries.slice(0, 8).map(([key, formatted], idx) => (
+  {customFields.length > 0 && (
+    <div class="kanban-custom-fields" data-card-fields hidden={customFields.every(field => field.hidden)}>
+      {customFields.map(({ name, label, value, hidden }) => (
         <span
           class="kanban-cf-chip"
-          data-cf-name={key}
-          data-cf-default-hidden={idx >= 4 ? "true" : undefined}
-          hidden={idx >= 4}
-          title={`${key}: ${formatted}`}
+          data-cf-name={name}
+          data-cf-default-hidden={hidden ? "true" : undefined}
+          hidden={hidden}
+          title={`${label}: ${value}`}
         >
-          {key}: {formatted}
+          {label}: {value}
         </span>
       ))}
-      {customFieldState.entries.length > 4 && (
-        <span class="kanban-cf-chip kanban-cf-more">+{customFieldState.entries.length - 4} more</span>
+      {extraCustomFields > 0 && (
+        <span class="kanban-cf-chip kanban-cf-more">+{extraCustomFields} more</span>
       )}
     </div>
   )}

@@ -8,6 +8,7 @@
  */
 
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { buildIngressPagePath } from "@lib/page-shell-links"
 import { formatCalendarDay } from "@lib/calendar-day"
 import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { taskDetailPath } from "@lib/task-page-url"
@@ -193,7 +194,8 @@ function createHabitCard(habit: HabitData): HTMLElement {
   if (habit.todayTaskId) {
     const taskLink = document.createElement("a")
     taskLink.className = "badge habit-card__meta-item habit-card__task-link"
-    taskLink.href = taskDetailPath(habit.todayTaskId)
+    taskLink.href = buildIngressPagePath(taskDetailPath(habit.todayTaskId))
+    taskLink.dataset.taskDetailLink = habit.todayTaskId
     taskLink.replaceChildren(
       createSpriteIconElement("external-link", { size: 12 }),
       document.createTextNode("View task"),

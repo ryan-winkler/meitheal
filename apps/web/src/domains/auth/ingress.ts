@@ -1,3 +1,4 @@
+import { stripHtml } from "@lib/strip-html"
 import { getIngressTransport, type IngressTransport } from "../../../scripts/ingress-transport.mjs"
 
 const ingressPathPattern = /^(\/api\/hassio_ingress\/[A-Za-z0-9_-]{1,128})\/*$/
@@ -15,9 +16,8 @@ export interface IngressContext {
 function sanitizeIngressHeaderName(raw: string | null): string | undefined {
   if (!raw) return undefined
   // Supervisor may pass UTF-8 or Latin-1 encoded display names; strip HTML/control chars safely.
-  const cleaned = raw
-    .replace(/<[^>]*>/g, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
+  const cleaned = stripHtml(raw)
+    .replace(/[<>\u0000-\u001f\u007f-\u009f]/g, "")
     .trim()
     .slice(0, 128)
   return cleaned || undefined

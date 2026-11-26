@@ -33,6 +33,31 @@ export function sameTaskApiContext(a: TaskApiContext | null, b: TaskApiContext |
   return Boolean(a && b && a.boardId === b.boardId && a.session === b.session && a.actorKey === b.actorKey)
 }
 
+export interface SavedTaskTypeChange {
+  taskId: string
+  taskType: string
+  version: number
+  previousVersion: number | null
+  status?: unknown
+}
+
+export function publishTaskTypeChange(detail: SavedTaskTypeChange): void {
+  document.dispatchEvent(new CustomEvent("meitheal:task-type-changed", { detail, bubbles: true }))
+}
+
+export function readTaskFrameworkPayload(task: unknown, id: string): Record<string, unknown> {
+  if (!task || typeof task !== "object" || !("id" in task) || task.id !== id || !("framework_payload" in task)) {
+    throw new Error("Invalid task metadata response")
+  }
+  const raw = task.framework_payload
+  if (raw === null) return {}
+  const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid task framework values")
+  }
+  return parsed as Record<string, unknown>
+}
+
 export type VersionedTaskSave = { ok: true; task: Record<string, unknown>; version: number }
   | { ok: false; status: number; errorCode: "conflict" | "unavailable" | "unconfirmed" | "hierarchy_invalid" | "hierarchy_conflict"; message?: string }
 
@@ -190,8 +215,8 @@ export const taskApi = {
   },
 
   /** GET /api/tasks/:id — single task */
-  async getTask(id: string): Promise<any> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}`)
+  async getTask(id: string, context?: TaskApiContext, signal?: AbortSignal): Promise<any> {
+    const res = await safeFetch(`/api/tasks/${enc(id)}`, { headers: context ? taskApiHeaders(context) : undefined, signal })
     return parseResponse<any>(res)
   },
 

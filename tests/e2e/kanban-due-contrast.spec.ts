@@ -21,7 +21,7 @@ for (const [theme, colorScheme] of [["light", "light"], ["dark", "dark"], ["auto
       await page.emulateMedia({ colorScheme, reducedMotion: "reduce" })
       await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
       await page.goto("/tasks#kanban")
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "auto" ? colorScheme : theme)
       const selector = `[data-task-id="${id}"] .kanban-card-due.due-today`
       const due = page.locator(selector)
       await expect(due).toBeVisible()

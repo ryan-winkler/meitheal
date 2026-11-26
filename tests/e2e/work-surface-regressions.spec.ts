@@ -57,6 +57,15 @@ test("Kanban color picker is visible, saves, reloads, rejects failed changes and
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const card = page.locator(`.kanban-card[data-id="${id}"]`)
     const color = card.getByRole("button", { name: /^Set color for:/ })
+    const fill = () => card.evaluate(element => getComputedStyle(element).backgroundColor)
+    await page.mouse.move(0, 0)
+    const initialFill = await fill()
+    const expectRed = async () => {
+      await page.mouse.move(0, 0)
+      await expect(color).toHaveAttribute("data-color", "#ef4444")
+      await expect(card).toHaveAttribute("data-task-color", "")
+      await expect.poll(fill).not.toBe(initialFill)
+    }
     await color.click()
     const red = page.getByRole("radio", { name: "Set color: Red", exact: true })
     await expect(red).toBeVisible()
@@ -67,19 +76,24 @@ test("Kanban color picker is visible, saves, reloads, rejects failed changes and
         && element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
     })).toBe(true)
     await red.click()
-    await expect(card).toHaveCSS("border-inline-start-color", "rgb(239, 68, 68)")
+    await expectRed()
+    const confirmedFill = await fill()
+    expect((await (await request.get(base + `/api/tasks/${id}`)).json()).color).toBe("#ef4444")
     await page.reload()
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-    await expect(card).toHaveCSS("border-inline-start-color", "rgb(239, 68, 68)")
+    await expectRed()
+    await expect.poll(fill).toBe(confirmedFill)
     await color.click()
     await expect(red).toHaveAttribute("aria-checked", "true")
     await page.route(`**/api/tasks/${id}`, route => route.fulfill({ status: 503, json: { error: "Fixture rejected the color change" } }), { times: 1 })
     await page.getByRole("radio", { name: "Set color: Blue", exact: true }).click()
     await expect(page.locator("#toast-container")).toContainText("Failed to set color")
-    await expect(card).toHaveCSS("border-inline-start-color", "rgb(239, 68, 68)")
+    await expectRed()
+    await expect.poll(fill).toBe(confirmedFill)
     await color.click()
     await page.getByRole("button", { name: /Clear color/ }).click()
     await expect(color).toHaveAttribute("data-color", "")
+    await expect(card).not.toHaveAttribute("data-task-color")
     expect((await (await request.get(base + `/api/tasks/${id}`)).json()).color).toBeNull()
     await page.reload()
     await expect(color).toHaveAttribute("data-color", "")
@@ -89,7 +103,7 @@ test("Kanban color picker is visible, saves, reloads, rejects failed changes and
   }
 })
 
-test("legacy Projects stays inside ingress and reaches Boards", async ({ browser }) => {
+test("legacy Projects stays inside ingress and opens Planning workspaces", async ({ browser }) => {
   for (const route of ["/projects", "/areas"]) {
     const response = await request.get(origin + prefix + route, { maxRedirects: 0 })
     expect(response.status()).toBe(302)
@@ -104,8 +118,8 @@ test("legacy Projects stays inside ingress and reaches Boards", async ({ browser
     const page = await context.newPage()
     const response = await page.goto(origin + prefix + "/projects")
     expect(response!.status()).toBe(200)
-    await expect(page).toHaveURL(origin + prefix + "/boards")
-    await expect(page.getByRole("heading", { name: "Boards", exact: true })).toBeVisible()
+    await expect(page).toHaveURL(origin + prefix + "/planning#spaces")
+    await expect(page.locator("#planning-section-spaces").getByRole("link", { name: "Manage Boards" })).toBeVisible()
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(new RegExp(prefix + "/today"))
   } finally { await context.close() }
@@ -135,7 +149,7 @@ test("Home Assistant panel address follows embedded routes, bookmarks and Back",
     await page.goBack()
     await expect(app.locator("#today-overview")).toBeVisible()
     await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/today")
-    await app.getByRole("link", { name: "Meitheal Home", exact: true }).click()
+    await app.getByRole("link", { name: "meitheal. Home", exact: true }).click()
     await expect(app.locator("#dashboard-shell")).toBeVisible()
     await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/?view=dashboard")
   } finally { await context.close() }

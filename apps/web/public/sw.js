@@ -225,7 +225,7 @@ function isCaptureReceiptLookup(path, params) {
 
 const privateBoardPath = /^\/(?:api\/)?boards(?:\/|$)|^\/api\/board-intake$/
 const organizationApiPath = /^\/api\/(?:features|organization-features|organization-labels|habits|gamification|achievements|areas|projects|goals)(?:\/|$)/
-const workPagePath = /^\/(?:tasks|kanban|table|calendar|timeline|today|upcoming|planning|progress|activity|areas|projects|goals|habits|pillars|gamification|inactivity|deferred|review|pinned|mention-inbox|eisenhower|triage|tickets)(?:\/|$)/
+const workPagePath = /^\/(?:new|tasks|kanban|table|calendar|timeline|today|upcoming|planning|progress|activity|areas|projects|goals|habits|pillars|gamification|inactivity|deferred|review|pinned|mention-inbox|eisenhower|triage|tickets)(?:\/|$)/
 
 function isMutableWorkPath(path) {
   // Canonical APIs use an actor and Board header while retaining the same URL.

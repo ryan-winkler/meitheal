@@ -21,7 +21,7 @@
 - [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.
 - [Settings outline icons](settings-outline-icons.md) - Maintain the build-extracted Tabler icon catalog, SVG sprites, 5-Bucket Emoji Policy, and MIT attribution.
 - [Troubleshooting](troubleshooting.md) - Diagnose common connection, search, and sync problems.
-- [Local feedback queue](feedback-and-support.md) - Understand feedback storage, review, and export.
+- [Feedback and support](feedback-and-support.md) - Find GitHub support and preserve older installation reports.
 
 # Integrations
 

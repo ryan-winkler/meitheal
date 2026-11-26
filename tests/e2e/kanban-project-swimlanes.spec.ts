@@ -74,14 +74,17 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     await expect(label(inherited)).toContainText(title)
     await expect(qualifier(direct)).toHaveText(`#${direct.slice(-8)} · ${kitchen}`)
     await expect(qualifier(inherited)).toHaveText(`#${inherited.slice(-8)} · ${garden}`)
-    await expect(qualifier(direct)).toBeInViewport()
-    await expect(qualifier(inherited)).toBeInViewport()
-    expect(await qualifier(direct).evaluate(element => {
-      const range = document.createRange()
-      range.setStart(element.firstChild!, 0)
-      range.setEnd(element.firstChild!, 9)
-      return range.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1
-    })).toBe(true)
+    for (const id of [direct, inherited]) {
+      const heading = qualifier(id)
+      await heading.scrollIntoViewIfNeeded()
+      await expect(heading).toBeInViewport({ ratio: 0.99 })
+      expect(await heading.evaluate(element => {
+        const range = document.createRange()
+        range.setStart(element.firstChild!, 0)
+        range.setEnd(element.firstChild!, 9)
+        return range.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1
+      })).toBe(true)
+    }
     await expect(label(reserved)).toContainText("No Project")
     await expect(qualifier(reserved)).toHaveText(`#${reserved.slice(-8)} · ${kitchen}`)
     await expect(label("")).toHaveText("No Project")

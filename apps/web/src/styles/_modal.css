@@ -297,8 +297,8 @@ body:has(
 
 .shortcut-modal-close {
   flex-shrink: 0;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   margin-right: -6px;
   font-size: 18px;
   line-height: 1;
@@ -378,7 +378,7 @@ body:has(
   }
 
   .shortcut-modal-content {
-    width: min(94vw, 500px);
+    width: min(94vw, 420px);
     max-height: 88dvh;
   }
 
@@ -2466,6 +2466,11 @@ body.has-docked-inspector #task-detail-panel {
 }
 .td-chat-action-link--danger:hover {
   color: var(--danger);
+}
+
+[data-comment-editor] #td-task-reference-picker {
+  position: static;
+  margin: 0.25rem 0 0;
 }
 
 /* Converged Inline Reactions inside Chat & Comments */

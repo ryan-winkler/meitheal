@@ -2,6 +2,8 @@ import { createSpriteIconElement, type IconName } from "../generated/icon-regist
 
 /** Shared accessible Markdown / Visual (HugeRTE) / Preview description editor enhancer. */
 
+let unnamedEditorCount = 0
+
 export type DescriptionEditorMode = "markdown" | "visual" | "preview"
 
 export interface DescriptionEditorHandle {
@@ -465,7 +467,7 @@ export function enhanceDescriptionEditor(
   modesWrap.setAttribute("role", "tablist")
   modesWrap.setAttribute("aria-label", "Description editor mode")
 
-  const baseId = field.id || `md-editor-${Math.random().toString(36).slice(2, 8)}`
+  const baseId = field.id || `md-editor-${++unnamedEditorCount}`
   const modes: readonly DescriptionEditorMode[] = ["visual", "markdown", "preview"]
   const panelIds: Record<DescriptionEditorMode, string> = {
     visual: `${baseId}-panel-visual`, markdown: `${baseId}-panel-markdown`, preview: `${baseId}-panel-preview`,
@@ -709,6 +711,7 @@ export function enhanceDescriptionEditor(
   }
 
   async function setMode(nextMode: DescriptionEditorMode, focus = true): Promise<void> {
+    const focusOrigin = document.activeElement
     if (currentMode === "visual" && nextMode !== "visual") { flushVisualToTextarea(); destroyVisualInstance() }
     const seq = ++renderSeq
     currentMode = nextMode
@@ -730,7 +733,12 @@ export function enhanceDescriptionEditor(
 
     if (nextMode === "visual") {
       await mountHugeRteVisual(field.value, seq)
-      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq) activeHugeRte?.removed === false ? activeHugeRte.focus?.() : fallbackEditable?.focus()
+      const currentFocus = document.activeElement
+      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq &&
+          (currentFocus === focusOrigin || (currentFocus === document.body && !focusOrigin?.isConnected))) {
+        if (activeHugeRte?.removed === false) activeHugeRte.focus?.()
+        else fallbackEditable?.focus()
+      }
     } else if (nextMode === "preview") {
       await renderPreview(field.value, seq)
     } else if (focus) field.focus()

@@ -3,7 +3,18 @@
  * @domain kanban
  */
 
+import { createSpriteIconElement } from "../../generated/icon-registry"
+import { getGroupKey } from "../filter-state"
 import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+import { renderIconOrCustomEmoji } from "../tabler-svg"
+
+const riceGroupOrder = ["high", "medium", "low", "none"]
+const riceGroupLabels: Record<string, string> = {
+  high: "High (≥15)",
+  medium: "Medium (8–14)",
+  low: "Low (<8)",
+  none: "Needs a score",
+}
 
 function collapseKey(board: HTMLElement, group: HTMLElement): string {
   const column = group.closest<HTMLElement>(".kanban-column")
@@ -21,15 +32,107 @@ function setCollapsed(group: HTMLElement, collapsed: boolean): void {
   header.setAttribute("aria-expanded", String(!collapsed))
 }
 
-function initCollapse(board: HTMLElement, signal: AbortSignal): void {
-  const mode = board.dataset.groupBy
-  const groups = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden])")
-  groups.forEach((group, index) => {
+function groupOrderKey(board: HTMLElement, lane: HTMLElement): string {
+  const boardId = board.closest<HTMLElement>("[data-board-id]")?.dataset.boardId
+  return `meitheal-swimlane-order-${JSON.stringify([
+    document.documentElement.dataset.workspaceScope, boardId, board.dataset.groupBy, lane.dataset.laneId,
+  ])}`
+}
+
+function visibleGroups(list: HTMLElement): HTMLElement[] {
+  return Array.from(list.querySelectorAll<HTMLElement>(":scope > .swimlane-group:not([hidden])"))
+}
+
+function storedGroupOrder(key: string): string[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(key) ?? "[]")
+    return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === "string") : []
+  } catch {
+    return []
+  }
+}
+
+function restoreGroupOrder(list: HTMLElement, key: string): void {
+  const order = new Map(storedGroupOrder(key).map((value, index) => [value, index]))
+  if (!order.size) return
+  const rank = (group: HTMLElement) => order.get(group.dataset.swimlaneType ?? "") ?? Infinity
+  for (const group of visibleGroups(list).sort((a, b) => rank(a) - rank(b))) list.append(group)
+}
+
+export function storeSwimlaneOrder(board: HTMLElement, list: HTMLElement): void {
+  const lane = list.closest<HTMLElement>(".kanban-column")
+  if (!lane) return
+  const key = groupOrderKey(board, lane)
+  const current = visibleGroups(list).map(group => group.dataset.swimlaneType ?? "")
+  const currentKeys = new Set(current)
+  let index = 0
+  // The current page may omit groups that also have a saved position.
+  const order = storedGroupOrder(key).map(value => currentKeys.has(value) ? current[index++]! : value)
+  try { localStorage.setItem(key, JSON.stringify([...order, ...current.slice(index)])) } catch { /* Storage is optional. */ }
+}
+
+function attachGroupOrderControl(board: HTMLElement, group: HTMLElement, header: HTMLButtonElement, signal: AbortSignal) {
+  const toolbar = document.createElement("div")
+  toolbar.className = "swimlane-toolbar"
+  header.replaceWith(toolbar)
+  const disclosure = document.createElement("details")
+  disclosure.className = "swimlane-order"
+  const grip = document.createElement("summary")
+  grip.className = "btn btn-icon btn-ghost swimlane-grip"
+  grip.setAttribute("aria-label", `Reorder ${header.querySelector(".swimlane-label")?.textContent?.trim() || "group"}`)
+  grip.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown")
+  grip.append(createSpriteIconElement("grip-vertical", { size: 16 }))
+  const menu = document.createElement("div")
+  menu.className = "dropdown-menu show swimlane-order-menu"
+  const move = (offset: number) => {
+    const list = group.parentElement
+    if (!list) return
+    const groups = visibleGroups(list)
+    const target = groups[groups.indexOf(group) + offset]
+    if (target) {
+      if (offset < 0) target.before(group)
+      else target.after(group)
+      storeSwimlaneOrder(board, list)
+    }
+    disclosure.open = false
+    grip.focus({ preventScroll: true })
+  }
+  for (const [offset, label] of [[-1, "Move up"], [1, "Move down"]] as const) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "dropdown-item"
+    button.textContent = label
+    button.addEventListener("click", () => move(offset), { signal })
+    menu.append(button)
+  }
+  grip.addEventListener("keydown", event => {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
+    event.preventDefault()
+    event.stopPropagation()
+    move(event.key === "ArrowUp" ? -1 : 1)
+  }, { signal })
+  disclosure.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !disclosure.open) return
+    event.preventDefault()
+    event.stopPropagation()
+    disclosure.open = false
+    grip.focus({ preventScroll: true })
+  }, { signal })
+  disclosure.append(grip, menu)
+  toolbar.append(header, disclosure)
+}
+
+/** Group the server-selected page without replacing authoritative lane totals. */
+export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canEdit: boolean) {
+  const mode = board.dataset.groupBy ?? "none"
+  if (mode === "none") return destinationList
+  let nextGroupId = 0
+
+  function initGroup(group: HTMLElement) {
     const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
     const cards = group.querySelector<HTMLElement>(".swimlane-cards")
     if (!header || !cards) return
-
-    cards.id = `kanban-swimlane-cards-${index}`
+    cards.id = `kanban-swimlane-cards-${nextGroupId++}`
     header.setAttribute("aria-controls", cards.id)
     const key = collapseKey(board, group)
     try {
@@ -45,12 +148,8 @@ function initCollapse(board: HTMLElement, signal: AbortSignal): void {
       setCollapsed(group, collapsed)
       try { localStorage.setItem(key, collapsed ? "collapsed" : "expanded") } catch { /* Storage is optional. */ }
     }, { signal })
-  })
-}
-
-/** Group the server-selected page without replacing authoritative lane totals. */
-export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): void {
-  const mode = board.dataset.groupBy ?? "none"
+    if (canEdit) attachGroupOrderControl(board, group, header, signal)
+  }
 
   if (mode === "type") {
     // Use the pre-rendered type swimlane groups
@@ -58,7 +157,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       const cardsContainer = col.querySelector(".kanban-cards")
       if (!cardsContainer) return
       cardsContainer.querySelectorAll<HTMLElement>(".flat-card").forEach((card) => {
-        const type = card.dataset.taskType || "task"
+        const type = ["epic", "story"].includes(card.dataset.taskType ?? "") ? card.dataset.taskType! : "task"
         const swimlane = cardsContainer.querySelector(
           `.swimlane-group[data-swimlane-type="${CSS.escape(type)}"] .swimlane-cards`,
         )
@@ -77,33 +176,30 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project") {
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project" || mode === "rice") {
     const byProject = mode === "project"
     const byAssignee = mode === "assigned"
-    const icons: Record<string, string> =
+    const priorityLabels: Record<string, string> =
       mode === "priority"
         ? {
-            "1": "🔴 P1 — Critical",
-            "2": "🟠 P2 — High",
-            "3": "🟡 P3 — Medium",
-            "4": "🟢 P4 — Low",
-            "5": "⚪ P5 — Minimal",
+            "1": "P1 — Critical",
+            "2": "P2 — High",
+            "3": "P3 — Medium",
+            "4": "P4 — Low",
+            "5": "P5 — Minimal",
           }
         : {}
     const areaLabel = (card: HTMLElement | undefined) => card?.dataset.areaName || board.dataset.noAreaLabel || "No area"
 
-    // O1: Hoist getComputedStyle outside column loop
-    const cs = getComputedStyle(document.documentElement)
     const colorMap: Record<string, string> = mode === "priority"
       ? {
-          "1": cs.getPropertyValue("--prio-critical").trim() || "#ef4444",
-          "2": cs.getPropertyValue("--prio-high").trim() || "#f97316",
-          "3": cs.getPropertyValue("--prio-medium").trim() || "#eab308",
-          "4": cs.getPropertyValue("--prio-low").trim() || "#22c55e",
-          "5": cs.getPropertyValue("--prio-none").trim() || "#64748b",
+          "1": "var(--prio-critical)",
+          "2": "var(--prio-high)",
+          "3": "var(--prio-medium)",
+          "4": "var(--prio-low)",
+          "5": "var(--prio-none)",
         }
       : {}
-    const defaultAccent = cs.getPropertyValue("--accent").trim() || "#146C4E"
 
     board.querySelectorAll(".kanban-column").forEach((col) => {
       const cardsContainer = col.querySelector(".kanban-cards")
@@ -119,6 +215,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
           : byAssignee || mode === "area" ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (byProject) val = card.dataset.projectGroup || "unavailable-project"
+        if (mode === "rice") val = getGroupKey(card, "rice")
         if (byAssignee && card.dataset.assigneeKey) {
           try {
             const key: unknown = JSON.parse(card.dataset.assigneeKey)
@@ -142,14 +239,19 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
           : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
         if (mode === "area") return areaLabel(card)
+        if (mode === "rice") {
+          const labelKey = key === "none" ? "planning_rice.unscored" : `tasks.rice_${key}`
+          return window.mI18n?.get(labelKey) ?? riceGroupLabels[key]
+        }
         if (mode === "status") {
           const status = getStatusDef(key)
           return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
         }
-        return icons[key] || "🟡 P3 — Medium"
+        return priorityLabels[key] || "P3 — Medium"
       }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
+        if (mode === "rice") return riceGroupOrder.indexOf(a) - riceGroupOrder.indexOf(b)
         if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
         if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
         return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)
@@ -161,9 +263,6 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         group.className = "swimlane-group dynamic-group"
         group.dataset.swimlaneType = key
 
-        const accentColor = colorMap[key] || defaultAccent
-        group.style.borderTop = `3px solid ${accentColor}`
-
         const header = document.createElement("button")
         header.type = "button"
         header.className = "swimlane-header"
@@ -171,16 +270,21 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
         toggleSpan.setAttribute("aria-hidden", "true")
-        toggleSpan.textContent = "▼"
+        toggleSpan.append(createSpriteIconElement("chevron-down", { size: 14 }))
 
-        // Color dot (matches static .swimlane-type-dot)
-        const dotSpan = document.createElement("span")
-        dotSpan.className = "swimlane-type-dot"
-        dotSpan.style.background = accentColor
+        const indicator = document.createElement("span")
+        indicator.setAttribute("aria-hidden", "true")
+        if (mode === "area") {
+          indicator.className = "swimlane-area-icon"
+          renderIconOrCustomEmoji(indicator, cards[0]?.dataset.areaIcon, "folder", 14)
+        } else {
+          indicator.className = "swimlane-type-dot"
+          if (colorMap[key]) indicator.style.backgroundColor = colorMap[key]
+        }
 
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
-        labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
+        labelSpan.textContent = label
         let heading = labelSpan
         if (byProject) {
           heading = document.createElement("span")
@@ -204,7 +308,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
-        header.append(toggleSpan, dotSpan, heading, countSpan)
+        header.append(toggleSpan, indicator, heading, countSpan)
 
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"
@@ -220,5 +324,48 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       }) // end sortedKeys.forEach
     }) // end col.forEach
   } // end else if
-  initCollapse(board, signal)
+  for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
+    const list = lane.querySelector<HTMLElement>(".kanban-cards")
+    if (!list) continue
+    for (const group of visibleGroups(list)) initGroup(group)
+    restoreGroupOrder(list, groupOrderKey(board, lane))
+  }
+
+  return destinationList
+
+  function destinationList(
+    lane: HTMLElement, sourceGroup?: HTMLElement | null, typeGroup?: HTMLElement,
+  ): HTMLElement | null {
+    if (typeGroup) return typeGroup.querySelector<HTMLElement>(".swimlane-cards")
+    const list = lane.querySelector<HTMLElement>(".kanban-cards")
+    if (!list || !sourceGroup) return list
+    const key = mode === "status" ? normalizeStatus(lane.dataset.status ?? STATUS.PENDING) : sourceGroup.dataset.swimlaneType
+    const existing = visibleGroups(list).find(group => group.dataset.swimlaneType === key)
+    if (existing) return existing.querySelector<HTMLElement>(".swimlane-cards")
+    const sourceHeader = sourceGroup.querySelector<HTMLButtonElement>(".swimlane-header")
+    if (!sourceHeader || !sourceGroup.classList.contains("dynamic-group")) return list
+
+    // A group with no cards on this lane's page is created when its first card arrives.
+    const group = sourceGroup.cloneNode(false) as HTMLElement
+    group.classList.remove("swimlane-collapsed")
+    group.dataset.swimlaneType = key ?? ""
+    group.dataset.temporarySwimlane = ""
+    const header = sourceHeader.cloneNode(true) as HTMLButtonElement
+    if (mode === "status") {
+      const def = getStatusDef(key ?? "")
+      const label = def ? window.mI18n?.get(def.i18nKey) ?? def.label : key ?? ""
+      const heading = header.querySelector<HTMLElement>(".swimlane-label")
+      if (heading) {
+        heading.textContent = label
+        heading.title = label
+      }
+    }
+    const cards = document.createElement("div")
+    cards.className = "swimlane-cards"
+    group.append(header, cards)
+    list.append(group)
+    initGroup(group)
+    restoreGroupOrder(list, groupOrderKey(board, lane))
+    return cards
+  }
 }

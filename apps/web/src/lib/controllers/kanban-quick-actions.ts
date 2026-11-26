@@ -37,6 +37,7 @@ export function initQuickActions(
   buildTaskApiUrl: (taskId: string | number | null, suffix?: string) => string,
   __signal: AbortSignal,
   refreshBoard: (focus?: KanbanRefreshFocus) => Promise<void>,
+  root: ParentNode = document,
 ): QuickActionApi {
   // =============================================
   // Shared Popover Utility (P4-1)
@@ -241,7 +242,7 @@ export function initQuickActions(
   // =============================================
   // Quick Action: Add Child Task (P1-3, P1-6, P3-6)
   // =============================================
-  document.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation()
       const parentId = btn.dataset.id
@@ -318,7 +319,7 @@ export function initQuickActions(
   // =============================================
   // Quick Action: Assign User (P1-5, P2-7, P3-4)
   // =============================================
-  document.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation()
 
@@ -464,7 +465,7 @@ export function initQuickActions(
       { color: "#6b7280", label: "Gray" },
     ]
 
-    document.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
+    root.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation()
 

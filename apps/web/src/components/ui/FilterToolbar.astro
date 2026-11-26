@@ -82,7 +82,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const prefix = view
-const compactOnPhone = view === "calendar" || view === "timeline"
+const compactOnPhone = view === "timeline"
 const tableState = view === "table" ? readTableFilterParams(Astro.url.searchParams) : {}
 const calendarState = view === "calendar" ? readCalendarTaskFilters(Astro.url.searchParams) : {}
 const calendarStatus = calendarState.status ?? ""
@@ -374,12 +374,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       <form class="table-created-range">
         <label>
           {t("table.created_date_from", locale)}
-          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdFrom} data-table-created-from />
+          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdFrom}
+            data-native-date="true" data-table-created-from />
         </label>
         <label>
           {t("table.created_date_through", locale)}
           <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdThrough}
-            data-table-created-through />
+            data-native-date="true" data-table-created-through />
         </label>
         <p id="table-created-date-error" role="alert" hidden>{t("table.created_date_invalid", locale)}</p>
         <div class="flex flex-wrap gap-2">

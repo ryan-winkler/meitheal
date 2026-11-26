@@ -17,10 +17,13 @@ import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migration
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../apps/web/drizzle/migrations/task-schema-prerequisites.mjs"
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
-import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
+
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
@@ -44,15 +47,9 @@ function migrate(databasePath: string, ...args: string[]) {
   })
 }
 
-async function qualifyOwnedPredecessor(databasePath: string) {
-  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations:.*0016_ordinary_boards/)
-  const proof = await enrollCurrentOwnedLegacyFixture({ database: databasePath, markerPath: databasePath + ".board-grants.json",
-    provenance: "created-in-this-test-and-never-restored" })
-  try {
-    await migrate(databasePath, "--check")
-  } finally {
-    await rm(proof.custodyDirectory, { recursive: true, force: true })
-  }
+async function expectAutomaticallyEnrolled(databasePath: string) {
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
 }
 
 async function bootstrapRuntime(databasePath: string) {
@@ -238,9 +235,10 @@ test("CLI check detects missing predecessor prerequisites without writing", asyn
   expect((await readdir(directory)).sort()).toEqual(beforeFiles)
 
   await migrate(databasePath)
-  await qualifyOwnedPredecessor(databasePath)
+  await expectAutomaticallyEnrolled(databasePath)
   withDatabase(databasePath, database => {
-    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION))
+    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name").all()
+      .filter(entry => !upgradeMigrations.has(String(entry.name))))
       .toEqual(ledger)
     expect(lanes(database).map(lane => lane.key)).toEqual(["backlog", "pending", "active", "complete"])
   })
@@ -390,7 +388,7 @@ test("CLI restores the default Area before backfilling an imported Project", asy
     UPDATE goals SET area_id = 'default';
   `))
   await migrate(databasePath)
-  await qualifyOwnedPredecessor(databasePath)
+  await expectAutomaticallyEnrolled(databasePath)
   withDatabase(databasePath, database => {
     expect(database.prepare("SELECT area_id FROM projects WHERE id = 'legacy-project'").get()).toEqual({ area_id: "default" })
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
@@ -433,7 +431,7 @@ test("legacy names, project Area, Backlog positions and ticket numbers upgrade o
     return currentLanes
   })
 
-  await qualifyOwnedPredecessor(databasePath)
+  await expectAutomaticallyEnrolled(databasePath)
   await bootstrapRuntime(databasePath)
   await migrate(databasePath)
   await migrate(databasePath, "--check")
@@ -465,7 +463,7 @@ test("failed Backlog insertion rolls back the shared schema upgrade", async ({ d
     database.exec("DROP TRIGGER refuse_backlog")
   })
   await migrate(databasePath)
-  await qualifyOwnedPredecessor(databasePath)
+  await expectAutomaticallyEnrolled(databasePath)
   withDatabase(databasePath, database => {
     expect(lanes(database).map(lane => [lane.id, lane.position])).toEqual([
       ["lane-backlog", 0], ["old-pending", 1], ["old-active", 2], ["old-complete", 3], ["old-custom", 6],

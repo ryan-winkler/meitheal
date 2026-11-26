@@ -69,6 +69,7 @@ export function applyOptimisticBarDates<T extends GanttBarDateTarget>(
   nextEnd: Date,
   today: Date = startOfLocalDay(new Date()),
   clonedBar?: T,
+  fields?: Partial<Pick<GanttBarDateTarget["original"], "start_date" | "end_date" | "due_date">>,
 ): BarDateSnapshot | null {
   const canonical = bars.find(b => b.id === barId)
   const target = canonical ?? clonedBar
@@ -99,9 +100,7 @@ export function applyOptimisticBarDates<T extends GanttBarDateTarget>(
     b.isOverdue = isOverdue
     b.isMilestone = isMilestone
     b.colour = colour
-    b.original.start_date = startIso
-    b.original.end_date = endIso
-    b.original.due_date = endIso
+    Object.assign(b.original, fields ?? { start_date: startIso, end_date: endIso, due_date: endIso })
   }
 
   if (canonical) applyTo(canonical)

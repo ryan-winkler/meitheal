@@ -1,9 +1,4 @@
 import { readCurrentHACoreUsers } from "./core-user-lookup"
-import {
-  currentSupervisorFingerprint,
-  readFreshCachedHARole,
-  readOutageCachedHARole,
-} from "./ha-user-cache"
 
 type AdminVerification = "allowed" | "denied" | "unavailable"
 type CurrentHARole = "admin" | "member" | "denied" | "unavailable"
@@ -26,46 +21,24 @@ function currentRole(result: unknown, userId: string, ownerOnly = false): Curren
   return user.is_owner || (!ownerOnly && user.group_ids.includes("system-admin")) ? "admin" : "member"
 }
 
-/**
- * Resolve active membership and administrator status.
- * When `allowCachedFallback` is true (default for standard workspace requests), uses the 60s
- * in-memory Core cache to avoid per-request WebSocket churn and falls back to the local SQLite
- * `ha_user_cache` ONLY if HA Core is unreachable ("unavailable") — never overriding explicit denials.
- */
-export async function readCurrentHARole(
-  userId: string,
-  signal: AbortSignal,
-  { allowCachedFallback = false }: { allowCachedFallback?: boolean } = {},
-): Promise<CurrentHARole> {
-  const fingerprint = currentSupervisorFingerprint()
-  if (allowCachedFallback && fingerprint) {
-    const fresh = readFreshCachedHARole(userId, fingerprint)
-    if (fresh) return fresh
-  }
-
-  const liveRole = currentRole(await readCurrentHACoreUsers(signal), userId)
-  if (liveRole !== "unavailable") return liveRole
-
-  if (allowCachedFallback && fingerprint) {
-    const cached = await readOutageCachedHARole(userId, fingerprint)
-    if (cached) return cached
-  }
-  return "unavailable"
+/** Resolve active membership and administrator status from the same Core response. */
+export async function readCurrentHARole(userId: string, signal: AbortSignal): Promise<CurrentHARole> {
+  return currentRole(await readCurrentHACoreUsers(signal), userId)
 }
 
-/** Check Core's current role on a bounded connection (falls back to verified local cache during HA outage). */
+/** Check Core's current role on a bounded, uncached connection. */
 export async function verifyCurrentHAAdministrator(userId: string, signal: AbortSignal): Promise<AdminVerification> {
-  const role = await readCurrentHARole(userId, signal, { allowCachedFallback: true })
+  const role = await readCurrentHARole(userId, signal)
   return role === "admin" ? "allowed" : role === "unavailable" ? role : "denied"
 }
 
-/** Check active, nonsystem membership with resilient outage fallback. */
+/** Check active, nonsystem membership without using retained ingress roles. */
 export async function verifyCurrentHAParticipant(userId: string, signal: AbortSignal): Promise<AdminVerification> {
-  const role = await readCurrentHARole(userId, signal, { allowCachedFallback: true })
+  const role = await readCurrentHARole(userId, signal)
   return role === "admin" || role === "member" ? "allowed" : role
 }
 
-/** Whole-database custody is held by Home Assistant's current owner (strict live Core check). */
+/** Whole-database custody is held by Home Assistant's current owner. */
 export async function verifyCurrentHAOwner(userId: string, signal: AbortSignal): Promise<AdminVerification> {
   const role = currentRole(await readCurrentHACoreUsers(signal), userId, true)
   return role === "admin" ? "allowed" : role === "unavailable" ? role : "denied"

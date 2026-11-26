@@ -65,7 +65,7 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
     stage = "opening mobile drawer"
     let pinRequests = 0
     page.on("request", request => { if (new URL(request.url()).pathname === path) pinRequests++ })
-    await page.goto(origin + prefix + "/tasks")
+    await page.goto(origin + prefix + "/tasks?view=kanban#kanban")
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     expect(pinRequests).toBe(0)
     await page.locator("#menu-toggle").tap()

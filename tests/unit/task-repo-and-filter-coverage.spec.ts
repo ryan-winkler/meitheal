@@ -297,7 +297,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: tomorrowStr,
     progress: 10,
     color: "#3b82f6",
-    is_favorite: 1,
+    is_promoted: 1,
     task_type: "epic",
     assigned_to: "ryan",
   }, now)
@@ -320,7 +320,6 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: tomorrowStr,
     progress: 0,
     color: "#ef4444",
-    is_favorite: 0,
     task_type: "task",
     assigned_to: "ryan",
     recurrence_rule: "FREQ=WEEKLY;INTERVAL=1",
@@ -343,7 +342,6 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: null,
     progress: 0,
     color: null,
-    is_favorite: 0,
     task_type: "task",
     assigned_to: null,
   }, now)
@@ -364,7 +362,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: todayStr,
     progress: 50,
     color: null,
-    is_favorite: 1,
+    is_promoted: 1,
     task_type: "task",
     assigned_to: "ryan",
   }, now)
@@ -376,7 +374,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   expect((await repo.getRecentTasks(5)).length).toBeGreaterThanOrEqual(4)
   expect((await repo.findByProjectId("proj-1")).length).toBe(2)
   expect((await repo.getProjectTaskCounts()).get("proj-1")?.total).toBe(2)
-  expect((await repo.getFavoriteTasks(5)).length).toBeGreaterThanOrEqual(1)
+  expect((await repo.getPromotedTasks(5)).length).toBeGreaterThanOrEqual(1)
   expect((await repo.getOpenTasks(10)).length).toBeGreaterThanOrEqual(3)
   expect((await repo.getStatusCounts()).total).toBeGreaterThanOrEqual(4)
   expect(await repo.getOverdueCount(todayStr)).toBeGreaterThanOrEqual(1)
@@ -415,6 +413,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   })).total).toBe(1)
   expect((await repo.searchCatalog({ query: `MTH-${epicTicket}`, limit: 10 })).some(r => r.id === "epic-1")).toBe(true)
   expect((await repo.searchCatalog({ query: "radiator", status: "pending", sort: "relevance" })).some(r => r.id === "child-1")).toBe(true)
+  expect(await repo.searchCatalog({ query: "radiator".repeat(65) })).toEqual([])
   expect((await repo.exportAll()).length).toBeGreaterThanOrEqual(4)
 
   // Updates, NFC, Activity log, Deferral, Comments, Kanban reorder
@@ -508,7 +507,7 @@ test("Kanban groups visible Household descendants under an Epic outside the lane
       repo.createTask({
         id, title, status, task_type: taskType, parent_id: parentId,
         description: "", priority: 3, area_id: null, labels: "[]",
-        framework_payload: "{}", custom_fields: "{}", progress: 0, is_favorite: 0,
+        framework_payload: "{}", custom_fields: "{}", progress: 0,
         due_date: null, start_date: null, end_date: null, color: null, assigned_to: null,
       })
 

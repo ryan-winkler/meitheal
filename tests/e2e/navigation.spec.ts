@@ -133,6 +133,88 @@ test.describe("Responsive Navigation", () => {
     expect(await bottomNav.locator(".shortcut-badge").count()).toBe(0);
   });
 
+  test("Mobile: the Board Area picker stays on screen when the header wraps", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 812 })
+    await page.goto("/boards/household?area=#kanban")
+    const trigger = page.getByRole("button", { name: "All Areas", exact: true })
+    const dropdown = page.getByRole("listbox", { name: "Available Areas" })
+    await trigger.press("Enter")
+    await expect(dropdown.getByRole("option", { selected: true })).toBeFocused()
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 812 })
+      await expect.poll(async () => {
+        const bounds = await dropdown.boundingBox()
+        return !!bounds && bounds.x >= 8 && bounds.x + bounds.width <= width - 8
+      }).toBe(true)
+    }
+    const options = dropdown.getByRole("option")
+    await page.keyboard.press("ArrowDown")
+    await expect(options.nth(1)).toBeFocused()
+    await page.keyboard.press("ArrowUp")
+    await expect(options.first()).toBeFocused()
+    await page.keyboard.press("End")
+    await expect(options.last()).toBeFocused()
+    await page.keyboard.press("Home")
+    await expect(options.first()).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(options.nth(1)).toBeFocused()
+    await expect(options.first()).toHaveAttribute("aria-selected", "true")
+    await page.keyboard.press("Escape")
+    await expect(dropdown).toBeHidden()
+    await expect(trigger).toBeFocused()
+  })
+
+  test.describe("Area catalog recovery", () => {
+    test.use({ serviceWorkers: "block" })
+
+    for (const destination of ["outside the picker", "an existing Area option"] as const) {
+      test(`Area catalog retry preserves focus on ${destination}`, async ({ page }) => {
+        await page.route(url => url.pathname === "/boards/household", async route => {
+          const response = await route.fetch()
+          const body = (await response.text())
+            .replace('data-area-catalog-ready="true"', 'data-area-catalog-ready="false"')
+            .replace(/data-area-endpoint="([^"]+)"/, 'data-area-endpoint="$1&amp;focusFixture=1"')
+          await route.fulfill({ response, body })
+        }, { times: 1 })
+
+        let releaseCatalog!: () => void
+        const release = new Promise<void>(resolve => { releaseCatalog = resolve })
+        let catalogRequest = 0
+        await page.route(url => url.pathname === "/api/boards/household" && url.searchParams.has("focusFixture"), async route => {
+          if (++catalogRequest === 1) {
+            await route.fulfill({ status: 503, json: {} })
+            return
+          }
+          await release
+          await route.fulfill({ json: { items: [{ id: "default", name: "Loaded Default" }] } })
+        })
+
+        try {
+          await page.goto("/boards/household?area=#kanban")
+          const trigger = page.getByRole("button", { name: "All Areas", exact: true })
+          await trigger.press("Enter")
+          const dropdown = page.getByRole("listbox", { name: "Available Areas" })
+          const retry = dropdown.getByRole("button", { name: "Retry loading Areas" })
+          await expect(retry).toBeEnabled()
+          await retry.press("Enter")
+          await expect(retry).toHaveAttribute("aria-disabled", "true")
+          await expect(retry).toBeFocused()
+
+          const outside = page.locator("#kanban-bar-new-task")
+          const inside = dropdown.getByRole("option", { name: "Default", exact: true })
+          await (destination === "outside the picker" ? outside : inside).focus()
+          releaseCatalog()
+          const loaded = dropdown.getByRole("option", { name: "Loaded Default", exact: true })
+          await expect(loaded).toBeVisible()
+          await expect(destination === "outside the picker" ? outside : loaded).toBeFocused()
+          await expect(dropdown.getByRole("option", { name: "All Areas", exact: true })).toHaveAttribute("aria-selected", "true")
+        } finally {
+          releaseCatalog()
+        }
+      })
+    }
+  })
+
   test("Mobile: Calendar and Tasks tabs identify the active view on the Household Board", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
@@ -312,7 +394,14 @@ test.describe("Responsive Navigation", () => {
       const pinBtn = page.locator('#tasks-nav-submenu [data-task-view-pin="calendar"]');
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator('.nav-item--tasks ~ [data-sidebar-group="view-calendar"]')).toBeVisible();
+      const pinned = page.locator('.nav-item--tasks ~ [data-sidebar-group="view-calendar"]');
+      await expect(pinned).toBeVisible();
+      await expect(pinned.getByRole("button", { name: "Unpin Calendar from navigation", exact: true })).toHaveCount(1);
+      await page.reload({ waitUntil: "networkidle" });
+      const unpin = pinned.getByRole("button", { name: "Unpin Calendar from navigation", exact: true });
+      await expect(unpin).toBeVisible();
+      await unpin.click();
+      await expect(pinned).toBeHidden();
     } finally {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs")).catch(() => {});
       await request.put("/api/settings", {
@@ -381,15 +470,12 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     const navSection = page.locator("#navigation-settings");
-    const taskTypesDetails = navSection.locator("#nav-task-types-section");
-    await taskTypesDetails.locator(":scope > summary").click();
+    const taskTypes = navSection.locator("#nav-task-types-section > summary");
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
     const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
-    // Task type pins live in the collapsed Task types accordion.
-    const taskTypes = page.locator("#nav-task-types-section > summary");
 
-    await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await taskTypes.click();
+    await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
@@ -398,12 +484,11 @@ test.describe("Responsive Navigation", () => {
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.reload({ waitUntil: "networkidle" });
-    await taskTypesDetails.locator(":scope > summary").click();
+    await taskTypes.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
-    if (!(await pinBtn.isVisible())) await taskTypes.click();
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await expect(pinnedRow).toBeHidden();
@@ -426,7 +511,6 @@ test.describe("Responsive Navigation", () => {
 
     try {
       await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
-      await page.locator("#nav-task-types-section > summary").click();
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
       await expect(pinnedRow).toBeVisible();

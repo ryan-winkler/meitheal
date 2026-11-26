@@ -6,7 +6,7 @@ description: "Send a private inbox item to another active Home Assistant member.
 
 # Mention someone in a comment
 
-Open the task in Meitheal through Home Assistant. In a new comment or an edit, type `@` and choose a person from the suggestions. Use the arrow keys and Enter, or select the name by touch. Use `#` to link a task in the same comment.
+Open the task in Meitheal through Home Assistant. In a new comment or an edit, type `@` to find a person or `#` to link a task. Suggestions appear beside the comment field. Tap a result, or use the arrow keys and Enter to insert it.
 
 When the comment is saved, the person can open **Mention inbox** in Meitheal, follow the link to the comment, and mark it read or unread. The inbox keeps up to 1,000 mentions per person for 30 days. It shows current comments and clears withdrawn mentions. Editing other text keeps the existing read state. Removing and restoring a mention within retention brings back the same item. Deleting the comment or task removes the inbox item.
 

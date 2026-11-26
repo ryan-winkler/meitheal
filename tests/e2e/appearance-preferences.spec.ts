@@ -35,6 +35,10 @@ test.describe("Appearance preferences", () => {
     // One Look and Feel form holds the theme and every appearance category.
     const visualForm = page.locator("#appearance-preferences-form")
     const save = page.locator("#appearance-save-btn")
+    const reset = visualForm.getByRole("button", { name: "Reset to defaults", exact: true })
+    await expect(visualForm.locator("[data-appearance-save]")).toHaveCount(1)
+    await expect(visualForm.locator("[data-appearance-reset]")).toHaveCount(1)
+    await expect(save).toBeHidden()
     await expect(visualForm.locator("select")).toHaveCount(1 + Object.keys(APPEARANCE_PREFERENCES).length)
     const visualChoices = {
       font: "comic", base: "mist", radius: "1.5",
@@ -83,8 +87,10 @@ test.describe("Appearance preferences", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/)
     // Reset previews every default, including the personal accent, until saved. The theme stays.
-    await page.getByRole("button", { name: "Reset to defaults" }).click()
+    await expect(reset).toBeVisible()
+    await reset.press("Enter")
     await expect(page.locator("html")).toHaveAttribute("data-appearance-font", "sans")
+    await expect(save).toBeFocused()
     await save.click()
     await expect(page.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.")
     for (const name of Object.keys(choices)) await expect(visualForm.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name as keyof typeof APPEARANCE_PREFERENCES].defaultValue)
@@ -130,6 +136,41 @@ test.describe("Appearance preferences", () => {
     await form.locator('[name="sidebar"]').selectOption("remember")
     await save.click()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
+  })
+
+  test("reset surface style keeps the font, accent, and navigation choices", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openLookAndFeel(page)
+    const form = page.locator("#appearance-preferences-form")
+    const root = page.locator("html")
+    const save = form.getByRole("button", { name: "Save appearance", exact: true })
+    const resetSurface = form.getByRole("button", { name: "Reset surface style", exact: true })
+    for (const [name, value] of Object.entries({
+      font: "comic", base: "mist", radius: "1.5", width: "boxed",
+      header: "default", panelStyle: "floating", navStyle: "floating",
+    })) {
+      await form.locator(`[name="${name}"]`).selectOption(value)
+    }
+    await form.locator('.accent-swatch[data-color="#f59e0b"]').click()
+    await save.click()
+    await expect(save).toBeHidden()
+
+    await resetSurface.press("Enter")
+    await expect(resetSurface).toBeFocused()
+    await expect(root).toHaveAttribute("data-appearance-panel-style", "attached")
+    await form.getByRole("button", { name: "Discard", exact: true }).click()
+    await expect(root).toHaveAttribute("data-appearance-panel-style", "floating")
+
+    await resetSurface.press("Enter")
+    await save.click()
+    await expect(save).toBeHidden()
+    await page.reload()
+    for (const name of ["base", "radius", "width", "header", "panelStyle"] as const) {
+      await expect(form.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name].defaultValue)
+    }
+    await expect(form.locator('[name="font"]')).toHaveValue("comic")
+    await expect(form.locator('[name="navStyle"]')).toHaveValue("floating")
+    await expect(form.locator("#accent-color-custom")).toHaveValue("#f59e0b")
   })
 
   test("neutral palette follows Light and Auto while fluid width and sticky headers remain effective", async ({ page }) => {

@@ -41,7 +41,7 @@ export function setupBulkActions(deps: BulkDeps): void {
   }, { signal: deps.signal })
 
   selectAll?.addEventListener("change", () => {
-    table?.querySelectorAll<HTMLInputElement>(".row-check").forEach(box => {
+    table?.querySelectorAll<HTMLInputElement>(".table-row .row-check").forEach(box => {
       box.checked = selectAll.checked && isSelectableTableRow(box.closest(".table-row"))
     })
     updateBulkBar()

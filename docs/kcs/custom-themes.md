@@ -1,10 +1,14 @@
 ---
-okf_version: "0.2"
+type: Guide
+title: Creating a Custom Theme
+description: Build a custom CSS theme and check contrast in Meitheal.
 ---
 
 # Creating a Custom Theme
 
 Use this guide to build a custom CSS theme for Meitheal or contribute a built-in preset theme. All Meitheal themes use CSS custom properties (design tokens) with WCAG AA contrast guarantees and work completely offline inside Home Assistant ingress and standalone installations.
+
+The legacy **Auto** setting follows the Home Assistant panel's light or dark appearance when it can read the panel. It falls back to the device's appearance when the panel is unavailable. A personal workspace theme set to **Auto** follows the device directly.
 
 ## Quick Start: Upload a Custom CSS File
 

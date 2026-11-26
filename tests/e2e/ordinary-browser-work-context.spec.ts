@@ -99,6 +99,16 @@ async function browser(page: Page, board: string, query = "", widget = false) {
       const raw = await readFile(join(packageRoot, filename === "status-values" ? "task-status-values.mjs" : filename + ".ts"), "utf8")
       return route.fulfill({ contentType: "text/javascript", body: ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText })
     }
+    if (url.pathname.startsWith("/package-strategy/")) {
+      const filename = url.pathname.slice("/package-strategy/".length)
+      if (!/^[\w-]+$/.test(filename)) return route.fulfill({ status: 404 })
+      const raw = await readFile(resolve(import.meta.dirname, "../../packages/domain-strategy/src", filename + ".ts"), "utf8")
+      return route.fulfill({ contentType: "text/javascript", body: ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText })
+    }
+    if (url.pathname === "/sortablejs") return route.fulfill({
+      contentType: "text/javascript",
+      body: await readFile(resolve(source, "../node_modules/sortablejs/modular/sortable.esm.js"), "utf8"),
+    })
     if (url.pathname === "/styles/tabler-surface.scss") return route.fulfill({ contentType: "text/javascript", body: 'export default "/fixture-tabler.css"' })
     if (url.pathname === "/fixture-tabler.css") return route.fulfill({ contentType: "text/css", body: await readFile(resolve(source, "../node_modules/@tabler/core/dist/css/tabler.min.css"), "utf8") })
     if (url.pathname.startsWith("/tabler/")) {
@@ -117,6 +127,8 @@ async function browser(page: Page, board: string, query = "", widget = false) {
         .replaceAll('"@lib/', '"/lib/').replaceAll('"@domains/', '"/domains/')
         .replaceAll('"@meitheal/domain-tasks/status-values"', '"/package-task/status-values"')
         .replaceAll('"@meitheal/domain-tasks"', '"/package-task/browser-values"')
+        .replaceAll('"@meitheal/domain-strategy"', '"/package-strategy/index"')
+        .replaceAll('"sortablejs"', '"/sortablejs"')
         .replaceAll('"@tabler/core/js/src/bootstrap/modal"', '"/tabler/modal"')
         .replaceAll("import.meta.env", '{ DEV: false, PROD: true }')
       return route.fulfill({ contentType: "text/javascript", body: compiled })
@@ -146,7 +158,10 @@ for (const encoding of ["legacy", "ordinary"] as const) {
       const fields = { description: document.querySelector<HTMLTextAreaElement>("#local-input")!.value }
       return saveVersionedTask(id, fields, version)
     }, { id: created.id, version: readerA.task_version })
-    expect(stale).toEqual({ ok: false, status: 409, errorCode: "conflict" })
+    expect(stale).toEqual({
+      ok: false, status: 409, errorCode: "conflict",
+      message: "Conflict: task was modified since your last read",
+    })
     await expect(page.locator("#local-input")).toHaveValue("Retained local input")
     expect((await load(created.id, board)).description).toBe("Saved by another reader")
     const saved = await page.evaluate(async ({ id, version }) => {
@@ -185,9 +200,11 @@ test("selected Project Routine check-ins use the selected Board and real current
   const project = await call(createProject, "/api/projects", work, { title: "Unfiled Project" })
   expect(project.status).toBe(201)
   const projectId = (await project.json()).id
+  let selectedTaskId: string | undefined
   for (const [board, name, selectedProject] of [["household", "Capture default routine", null], [work, "Work other routine", null], [work, "Selected Project routine", projectId]]) {
     const result = await call(manageRoutine, "/api/habits", board!, { action: "create", name, project_id: selectedProject })
     expect(result.status, await result.clone().text()).toBe(201)
+    if (selectedProject) selectedTaskId = (await result.json()).taskId
   }
   await browser(page, work, "project_id=" + projectId, true)
   await page.evaluate(async () => {
@@ -203,7 +220,14 @@ test("selected Project Routine check-ins use the selected Board and real current
   await expect(section).toContainText("Done")
   expect(calls.filter(call => call.path.includes("/api/boards/")).every(call => call.board === work)).toBe(true)
   expect(calls.some(call => call.method === "POST" && call.path === `/api/boards/${work}/planning`)).toBe(true)
-  expect(Number((await getPersistenceClient().execute("SELECT COUNT(*) AS count FROM tasks WHERE source_template_id IS NOT NULL")).rows[0]?.count)).toBe(1)
+  const occurrences = (await getPersistenceClient().execute(
+    "SELECT id, status FROM tasks WHERE source_template_id IS NOT NULL",
+  )).rows
+  expect(occurrences).toHaveLength(3)
+  expect(occurrences.filter(row => row.status !== "pending")).toEqual([
+    { id: selectedTaskId, status: "complete" },
+  ])
+  expect(await load(selectedTaskId!, work)).toMatchObject({ project_id: projectId })
 })
 
 test("unfiled Project links, receiving placement validation and capture retain the original Project", async ({ page }) => {
@@ -325,7 +349,7 @@ for (const key of ["d", "y", "u"] as const) {
   })
 }
 
-test("Timeline proposed dates survive genuine unchanged focus verification and clear on proven revocation", async ({ page }) => {
+test("Timeline proposed dates survive reconnection verification and clear on proven revocation", async ({ page }) => {
   const created = await task(work)
   const authority = await call(verifyBoard, `/api/boards/${work}?view=authority`, work, undefined, "HEAD", { id: work })
   expect(authority.status).toBe(200)
@@ -361,7 +385,10 @@ test("Timeline proposed dates survive genuine unchanged focus verification and c
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
   beforeVerify = () => held
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("offline"))
+    window.dispatchEvent(new Event("online"))
+  })
   await expect(page.locator("#actual-board")).toHaveCount(0)
   await expect(proposed).toHaveCount(0)
   release()
@@ -392,7 +419,8 @@ test("the actual inspector keeps stale deletion input and sends its loaded versi
   await page.evaluate(elements => {
     document.body.insertAdjacentHTML("beforeend", `<div id="task-detail-overlay"><section id="task-detail-panel"><div id="td-loaded-content"><textarea id="td-title"></textarea><textarea id="td-description"></textarea><select id="td-status"></select><div id="td-sections"></div><div id="td-labels"></div><div id="td-cf-list"></div><button id="td-delete">Delete task</button></div><p id="td-load-error"></p></section></div>`)
     for (const [tag, id] of elements) {
-      if (document.getElementById(id)) continue
+      // Reactions render a separate component with its own markup; this fixture exercises deletion.
+      if (id === "td-task-reactions" || document.getElementById(id)) continue
       const node = document.createElement(tag)
       node.id = id
       document.getElementById("td-sections")!.append(node)

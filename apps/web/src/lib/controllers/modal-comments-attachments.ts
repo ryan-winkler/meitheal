@@ -20,7 +20,7 @@ import { mountReactions } from "./modal-reactions"
 const log = createClientLogger("tasks", "comments-attachments")
 
 function attachCommentManagement(
-  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
+  wrapper: HTMLElement, bubble: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
 ): void {
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
@@ -37,7 +37,7 @@ function attachCommentManagement(
   error.id = `${wrapper.id}-error`
   hint.id = `${wrapper.id}-reference-hint`
   input.setAttribute("aria-describedby", `${error.id} ${hint.id}`)
-  wrapper.append(controls)
+  bubble.append(controls)
 
   const isCurrent = () => !signal.aborted && wrapper.isConnected
   function endEdit() {
@@ -239,7 +239,7 @@ export async function loadComments(
       wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
       wrapper.setAttribute("aria-describedby", body.id)
       bubble.append(title, body, footer)
-      if (isMine) attachCommentManagement(bubble, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
+      if (isMine) attachCommentManagement(wrapper, bubble, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
       mountReactions(footer, `${url}/${c.id}/reactions`, signal)
 
       if (isMine) {
@@ -259,29 +259,40 @@ export async function loadComments(
 
 let attachmentsLoadSeq = 0
 
+function replaceAttachmentContents(container: HTMLElement, contents: Node, anchor?: HTMLElement): void {
+  const scroller = anchor ? container.closest<HTMLElement>(".td-scroller") : null
+  const bounds = anchor && scroller?.contains(anchor) ? anchor.getBoundingClientRect() : undefined
+  const viewport = bounds ? scroller?.getBoundingClientRect() : undefined
+  const top = bounds && viewport && bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
+    ? bounds.top
+    : undefined
+
+  container.replaceChildren(contents)
+
+  // Keep the visible trigger at its current position when Attachments grows above it.
+  if (anchor && scroller && top !== undefined) {
+    const shift = anchor.getBoundingClientRect().top - top
+    if (shift) scroller.scrollTop += shift
+  }
+}
+
 /**
  * Load and render image attachment thumbnails for a task.
  */
-export async function loadAttachments(taskId: string): Promise<void> {
+export async function loadAttachments(taskId: string, anchor?: HTMLElement): Promise<void> {
   const container = document.getElementById(
     "td-attachments",
   ) as HTMLElement
   if (!container) return
   const seq = ++attachmentsLoadSeq
+  if (!anchor || container.dataset.activeTaskId !== taskId) container.replaceChildren()
   container.dataset.activeTaskId = taskId
-  container.replaceChildren()
+  const isCurrent = () => seq === attachmentsLoadSeq && container.dataset.activeTaskId === taskId && container.isConnected
 
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
-    if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
-    if (attachments.length === 0) {
-      const emptyLabel = document.createElement("span")
-      emptyLabel.className = "text-[10px] text-text-muted italic"
-      emptyLabel.textContent = "No attachments."
-      container.appendChild(emptyLabel)
-      return
-    }
-
+    if (!isCurrent()) return
+    const contents = document.createDocumentFragment()
     const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i
 
     attachments.forEach((att) => {
@@ -296,6 +307,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
       thumb.style.width = "64px"
       thumb.style.height = "64px"
       thumb.tabIndex = 0
+      thumb.dataset.attachmentId = att.id
       thumb.setAttribute("role", "button")
       thumb.setAttribute("aria-label", `Preview ${att.filename || "attachment"}`)
 
@@ -333,6 +345,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
       const openLightbox = () => {
         const dialog = document.createElement("dialog")
         dialog.className = "m-attachment-lightbox"
+        dialog.setAttribute("aria-label", "Image preview")
         dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
         const fullImg = document.createElement("img")
         fullImg.src = safeSrc
@@ -362,13 +375,21 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       thumb.appendChild(img)
       thumb.appendChild(delOverlay)
-      container.appendChild(thumb)
+      contents.appendChild(thumb)
     })
+    if (!contents.childElementCount) {
+      const emptyLabel = document.createElement("span")
+      emptyLabel.className = "text-[10px] text-text-muted italic"
+      emptyLabel.textContent = attachments.length ? "There is no preview for the saved image format." : "No attachments."
+      contents.appendChild(emptyLabel)
+    }
+    replaceAttachmentContents(container, contents, anchor)
   } catch (e) {
+    if (!isCurrent()) return
     log.error("Failed to load attachments", e)
     const errLabel = document.createElement("span")
     errLabel.className = "text-xs text-danger"
     errLabel.textContent = "Failed to load attachments"
-    container.appendChild(errLabel)
+    replaceAttachmentContents(container, errLabel, anchor)
   }
 }

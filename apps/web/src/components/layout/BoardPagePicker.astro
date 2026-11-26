@@ -1,0 +1,155 @@
+---
+import { getParentPage } from "@lib/parent-page-registry"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  page: "planning" | "progress"
+  boardId: string
+  boardName: string
+  boardLabel: string
+  boards: readonly { id: string; name: string; state: string }[]
+  area?: string | undefined
+  project?: string | undefined
+  personal?: boolean
+  canSelectPersonal?: boolean
+}
+
+const { page, boardId, boardName, boardLabel, boards, area, project, personal, canSelectPersonal } = Astro.props
+const descriptor = getParentPage(page)!
+const fragment = "#" + descriptor.defaultHash
+const options = boards.filter(board => board.state === "active" || board.id === boardId)
+const activeName = personal ? "Personal & Household" : boardName
+---
+
+<div class="board-page-context">
+  {options.length > 1 || canSelectPersonal ? (
+    <details class="board-page-picker" data-board-page-picker>
+      <summary class="btn btn-outline-secondary" aria-label={`Switch ${boardLabel}: ${activeName}`}>
+        <Icon name="layout-kanban" size={16} sprite />
+        <span class="board-page-picker__name">{activeName}</span>
+        <Icon name="chevron-down" size={14} sprite />
+      </summary>
+      <ul class="dropdown-menu show board-page-picker__menu" aria-label={`Available ${boardLabel}s`}>
+        {canSelectPersonal && (
+          <li>
+            {personal ? (
+              <span class="dropdown-item active" aria-current="true">Personal &amp; Household <Icon name="check" size={16} sprite /></span>
+            ) : (
+              <a class="dropdown-item" data-board-page-choice href={descriptor.route + fragment}>Personal &amp; Household</a>
+            )}
+          </li>
+        )}
+        {options.map(board => (
+          <li>
+            {board.id === boardId && !personal ? (
+              <span class="dropdown-item active" aria-current="true">{board.name} <Icon name="check" size={16} sprite /></span>
+            ) : (
+              <a class="dropdown-item" data-board-page-choice href={`${descriptor.route}?board_id=${encodeURIComponent(board.id)}${fragment}`}>{board.name}</a>
+            )}
+          </li>
+        ))}
+      </ul>
+      <script is:inline data-astro-rerun>
+        (() => {
+          const picker = document.currentScript.parentElement
+          const summary = picker.querySelector("summary")
+          picker.addEventListener("toggle", () => {
+            if (!picker.open) return
+            const active = picker.closest("[data-parent-config]").querySelector("[data-parent-section]:not([hidden])")
+            if (active) {
+              for (const link of picker.querySelectorAll("[data-board-page-choice]")) link.hash = active.dataset.parentSection
+            }
+            if (!picker.contains(document.activeElement)) summary.focus({ preventScroll: true })
+          })
+          picker.addEventListener("keydown", event => {
+            if (event.key !== "Escape" || !picker.open) return
+            event.preventDefault()
+            event.stopPropagation()
+            picker.open = false
+            summary.focus()
+          })
+          picker.addEventListener("focusout", event => {
+            if (!picker.contains(event.relatedTarget)) picker.open = false
+          })
+        })()
+      </script>
+    </details>
+  ) : (
+    <span class="board-page-context__label">
+      <Icon name="layout-kanban" size={16} sprite /> {activeName}
+    </span>
+  )}
+  {(area || project) && <span class="board-page-context__placement">{[area, project].filter(Boolean).join(" / ")}</span>}
+</div>
+
+<style is:inline>
+  .board-page-context {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    min-width: 0;
+  }
+  .board-page-picker { position: relative; min-width: 0; max-width: 100%; }
+  .board-page-picker > summary, .board-page-context__label {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .board-page-picker > summary {
+    list-style: none;
+    text-align: start;
+    min-height: 44px;
+    border-color: var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    transition: background-color 150ms cubic-bezier(.23, 1, .32, 1), transform 150ms cubic-bezier(.23, 1, .32, 1);
+  }
+  .board-page-picker > summary::-webkit-details-marker { display: none; }
+  .board-page-picker > summary:active { transform: scale(.98); }
+  .board-page-picker > summary:focus-visible, .board-page-picker__menu a:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: -2px;
+  }
+  .board-page-picker svg, .board-page-context__label svg { flex: 0 0 auto; }
+  .board-page-picker__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-page-picker__menu {
+    position: absolute;
+    z-index: 250;
+    inset: calc(100% + .25rem) auto auto 0;
+    margin: 0;
+    width: max-content;
+    max-width: min(calc(100vw - 5rem), 24rem);
+    max-height: min(18rem, 45vh);
+    min-width: 0;
+    overflow: auto;
+    padding: .25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+  }
+  .board-page-picker__menu .dropdown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    min-height: 44px;
+    padding: .5rem .65rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+  }
+  .board-page-picker__menu .dropdown-item.active { background: var(--bg-hover); color: var(--accent-text); }
+  @media (hover: hover) {
+    .board-page-picker > summary:hover, .board-page-picker__menu a:hover { background: var(--bg-hover); }
+  }
+  .board-page-context__placement { color: var(--text-secondary); font-size: .8125rem; overflow-wrap: anywhere; min-width: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .board-page-picker > summary { transition: none; }
+    .board-page-picker > summary:active { transform: none; }
+  }
+</style>

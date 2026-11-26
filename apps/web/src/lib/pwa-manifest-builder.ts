@@ -248,7 +248,7 @@ export function buildPwaManifest(
     theme_color: "#10231b",
     categories: ["productivity", "utilities"],
     prefer_related_applications: false,
-    launch_handler: { client_mode: "focus-existing" },
+    launch_handler: { client_mode: "navigate-new" },
     share_target: {
       action: prefix("/new"),
       method: "GET",

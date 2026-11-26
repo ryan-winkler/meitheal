@@ -100,7 +100,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       const groupBy = toolbar.locator('details[aria-label="Group tasks by"]')
       await groupBy.locator("summary").click()
       await groupBy.getByRole("button", { name: "By Status", exact: true }).click()
-      await expect(timeline.locator('.gantt-sidebar-row[data-task-id="group-active"]')).toBeVisible()
+      await expect(timeline.getByRole("heading", { name: "Group: Active", exact: true })).toBeVisible()
       const status = toolbar.getByRole("combobox", { name: "Filter by status" })
       await status.selectOption("active")
       await expect(paint).toHaveCount(0)
@@ -215,7 +215,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await expect(bar(firstTask)).toBeVisible()
       await expect(bar(secondTask)).toBeVisible()
 
-      // Put the second project beyond the first virtual window.
+      // Put the second project beyond the visible chart rows.
       const extraTasks = 22
       for (let index = 1; index <= extraTasks; index++) {
         const day = start + index * 86_400_000
@@ -231,7 +231,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await page.setViewportSize({ width: 1440, height: 620 })
       await page.reload()
       await expect(firstToggle).toBeVisible()
-      await expect(projectRow(secondProject)).toHaveCount(0)
+      await expect(projectRow(secondProject)).not.toBeInViewport()
       await firstToggle.focus()
       // Navigate the first project's tasks and the two groups between the projects.
       for (let step = 0; step < extraTasks + 6; step++) await page.keyboard.press("ArrowDown")

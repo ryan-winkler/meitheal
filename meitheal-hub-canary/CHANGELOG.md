@@ -11,7 +11,7 @@ Continuous development snapshot built from `dev`.
 ### Added
 
 - **Canonical Kanban Cards Everywhere**: Reuse one Tabler `KanbanTaskCard` across Kanban and Dashboard Recent Tasks with top-right yellow promoted ribbon, reaction counter, `⋮` context menu, and 6-icon quick-action bar.
-- **PWA Offline Outbox & Installable Shortcuts**: Add IndexedDB offline task queuing with Background Sync replay, post-install notification prompt, App & Companion Permissions & Offline Sync controls, W3C manifest `shortcuts`, Web Share Target, `180×180` `apple-touch-icon.png`, and `/new?kind=...` Quick-Capture PWAs with Shopping and Checklist editors.
+- **Offline Tasks and App Shortcuts**: Queue tasks offline. When you reconnect, open the original Board with the same account to send queued tasks. The installed app also supports device shortcuts, shared text, notification preferences, and quick capture for Shopping and Checklist tasks.
 - **Gantt Date Steppers & Inline Field Save Feedback**: Add Previous, Today, and Next date steppers, live date-range pill, automatic edge expansion, canvas panning, `Shift+Wheel` horizontal scrolling, and inline `role="status"` save pills on ticket field updates.
 - **Tabler Icon & Color Picker**: Replace raw icon and color inputs in New Area and Board Pillars with a reusable Tabler Icon & Color Picker.
 - **Curated Light Themes & Per-User Notifications**: Add `Zen Paper`, `Catppuccin Latte`, `Nordic Frost`, and `Solarized Dawn` light themes with WCAG AA tokens and `96×64` preview tiles, plus browser-local notification settings and optional chime.
@@ -30,7 +30,7 @@ Continuous development snapshot built from `dev`.
 - **Mobile Task Detail Modal Scroll Trap & Comment Clipping**: Make `#task-detail-panel` a full-height `100dvh` flex sheet on mobile with a single `.td-scroller` container, hide desktop-only Focus Mode on mobile, and prevent `"Add a comment"` textarea vertical clipping.
 - **Recent Tasks Promote Star Overlap**: Fix overlap between Promote star/ribbon and Ask AI button by unifying Dashboard Recent Tasks onto `KanbanTaskCard`.
 - **Gantt Bar & Milestone Bounce-Back**: Persist horizontal drags, resizes, and inline date edits optimistically across canonical and hierarchy state with clean rollback on failure.
-- **Home Assistant Ingress Keepalive, Display Names & Board Verification**: Add a 15-minute same-origin ingress keepalive, extend route-restore retention to 4 hours, cache Home Assistant user display names locally, stop detaching verified Boards on `window.focus`/`online`, and auto-recover `409` work-access conflicts.
+- **Home Assistant Ingress Keepalive, Display Names & Board Verification**: Add a 15-minute same-origin ingress keepalive, extend route-restore retention to 4 hours, display names from verified Home Assistant ingress or the current roster, stop detaching verified Boards on `window.focus`/`online`, and auto-recover `409` work-access conflicts.
 - **Pre-0016 Upgrade Migrations & Calendar Sync Loops**: Allow legacy `tasks_stall_transition` triggers and `vikunja_labels_title_idx` during schema v28 upgrades, and stop bidirectional calendar sync from duplicating tickets.
 
 ### Security

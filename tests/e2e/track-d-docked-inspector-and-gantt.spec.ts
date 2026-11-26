@@ -53,12 +53,9 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     const checklistDraft = "Unsaved checklist item draft"
-    let appendStarted = false
     let renameAttempts = 0
-    let releaseAppend!: () => void
     let releaseRename!: () => void
     let releaseRetry!: () => void
-    const holdAppend = new Promise<void>(resolve => { releaseAppend = resolve })
     const holdRename = new Promise<void>(resolve => { releaseRename = resolve })
     const holdRetry = new Promise<void>(resolve => { releaseRetry = resolve })
     await page.route(`**/api/tasks/${id}`, async route => {
@@ -66,10 +63,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       const { checklists } = route.request().postDataJSON()
       if (typeof checklists !== "string") return route.continue()
       const [item] = JSON.parse(checklists) as Array<{ text: string }>
-      if (item?.text === "New Item") {
-        appendStarted = true
-        await holdAppend
-      } else if (item?.text === checklistDraft) {
+      if (item?.text === checklistDraft) {
         renameAttempts++
         if (renameAttempts === 1) {
           await holdRename
@@ -130,12 +124,14 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       })
       await titleInput.fill("Unsaved docked draft title")
       await page.locator("#td-desc-edit-btn-hover").dispatchEvent("click")
+      await page.getByRole("tab", { name: "Markdown", exact: true }).click()
       await expect(descInput).toBeVisible()
       await descInput.fill("Unsaved docked markdown body")
       await page.locator("#td-add-checklist-item").click()
       await expect(checklistInput).toBeVisible()
       await checklistInput.fill(checklistDraft)
-      await expect.poll(() => appendStarted).toBe(true)
+      await checklistInput.blur()
+      await expect.poll(() => renameAttempts).toBe(1)
 
       // Resize 1600px -> 1200px (transitions to modal dialog without unmounting or losing drafts)
       await page.setViewportSize({ width: 1200, height: 900 })
@@ -167,11 +163,10 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await commentsDisclosure.focus()
       await page.keyboard.press("Escape")
       await expect(page.locator("#td-desc-edit-container")).toHaveAttribute("aria-busy", "true")
-      releaseAppend()
-      await expect(descInput).toBeHidden()
       await expect(overlay).toHaveClass(/active/)
       await expect.poll(() => renameAttempts).toBe(1)
       releaseRename()
+      await expect(descInput).toBeHidden()
       const retry = page.getByRole("button", { name: "Retry checklist save", exact: true })
       await expect(retry).toBeVisible()
       await expect(overlay).toHaveClass(/active/)
@@ -201,21 +196,19 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await page.goto(`/tickets/${id}`)
       await expect(titleInput).toHaveValue(savedTask.title)
       await page.locator("#td-desc-edit-btn-hover").dispatchEvent("click")
+      await page.getByRole("tab", { name: "Markdown", exact: true }).click()
       await descInput.fill("Local draft after another session edits")
       const externalDescription = "Saved from another task session"
       const external = await request.put(`/api/tasks/${id}`, {
         headers, data: { description: externalDescription, updated_at: savedTask.task_version },
       })
       expect(external.status()).toBe(200)
-      await page.locator("#td-add-checklist-item").click()
-      await expect.poll(async () => JSON.parse((await (await request.get(`/api/tasks/${id}`)).json()).checklists).length).toBe(2)
       await commentsDisclosure.focus()
       await page.keyboard.press("Escape")
       await expect(page.locator("#td-write-conflict")).toBeVisible()
       await expect(descInput).toHaveValue("Local draft after another session edits")
       expect((await (await request.get(`/api/tasks/${id}`)).json()).description).toBe(externalDescription)
     } finally {
-      releaseAppend()
       releaseRename()
       releaseRetry()
       await request.delete(`/api/tasks/${id}`, { headers })

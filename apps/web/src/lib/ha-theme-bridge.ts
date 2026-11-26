@@ -2,7 +2,7 @@ import { applyPersonalAccent } from "./accent-colors"
 import { applyHAThemePalette, HA_THEME_MATCH_KEY, readHAThemePalette } from "./ha-theme-palette"
 import { pageLifecycle } from "./page-lifecycle"
 import { type ThemeMode } from "./theme-mode"
-import { applyTheme, readAppearanceValue } from "./theme-watcher"
+import { applyTheme, readAppearanceValue, readStoredThemeMode } from "./theme-watcher"
 
 type Appearance = "light" | "dark"
 
@@ -61,7 +61,8 @@ export function refreshHAThemeMatch(preview: HAThemePreview | undefined = active
     : readAppearanceValue("meitheal-accent-color")
   const match = readHAThemePalette(matchEnabled, Boolean(parent))
   applyHAThemePalette(root, match, accent, applyPersonalAccent)
-  if (wasMatched || match.state === "active" || (parent && root.dataset.theme === "auto")) applyTheme(preview?.theme)
+  const mode = preview?.theme ?? readStoredThemeMode()
+  if (wasMatched || match.state === "active" || mode === "auto") applyTheme(mode)
   document.dispatchEvent(new Event("meitheal:ha-theme-match"))
 }
 

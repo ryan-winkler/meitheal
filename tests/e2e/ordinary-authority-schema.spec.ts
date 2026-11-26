@@ -31,6 +31,9 @@ import {
 } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { resolveIntakeSubmissionScope } from "../../apps/web/src/domains/tasks/intake-scope"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION, TASK_EXPERIENCE_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
+
+const schema25Upgrade = ["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION]
 
 let directory: string
 let db: Awaited<ReturnType<typeof openDatabaseForStartup>>
@@ -198,25 +201,29 @@ test("legacy propose-only tokens retain proposals without generic editing or pri
   ).toEqual({ ok: false, errorCode: "unavailable" })
 })
 
-test("epochless reopened schema25 remains controlled pending26 without policy conversion", async () => {
+test("an eligible local schema25 upgrade enrolls Board authority and applies the current migrations", async () => {
   await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
   db.close()
   db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
   const result = await initialize()
   expect(result).toMatchObject({
-    state: "continuity_locked",
-    pending: ["0016_ordinary_boards.mjs"],
-    revision: null
+    state: "ready",
+    pending: [],
+    applied: schema25Upgrade,
+    revision: expect.any(String),
   })
   expect(
     (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
-  ).toBe("25")
+  ).toBe(String(TASK_EXPERIENCE_SCHEMA_VERSION))
   expect(
     (await db.execute("PRAGMA table_info(task_boards)")).rows.some(
       (row) => row.name === "storage_encoding"
     )
-  ).toBe(false)
-  await expect(validateStartupTaskSchema(db)).rejects.toThrow("Pending migrations")
+  ).toBe(true)
+  await validateStartupTaskSchema(db)
+  db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  expect(await initialize()).toMatchObject({ state: "ready", revision: result.revision, applied: [] })
 })
 
 test("an independently current schema25 upgrade converts policy and journals the next epoch atomically", async () => {
@@ -231,7 +238,7 @@ test("an independently current schema25 upgrade converts policy and journals the
   const result = await initialize()
   expect(result.state).toBe("ready")
   expect(result.revision).not.toBe(oldRevision)
-  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION])
+  expect(result.applied).toEqual(schema25Upgrade)
   await validateStartupTaskSchema(db)
 })
 

@@ -222,7 +222,7 @@ function init(signal: AbortSignal) {
       const row = focused?.closest<HTMLElement>(".table-row")
       const id = row?.dataset.id
       const control = ["[data-open-table-task]", ".row-check", ".editable-cell", "select[data-field=status]",
-        "select[data-field=priority]", ".delete-row", ".subtree-toggle", "[data-open-table-parent]"]
+        "select[data-field=priority]", ".delete-row", ".subtree-toggle", "[data-open-table-parent]", ".table-row-drag-handle"]
         .find(selector => focused?.matches(selector))
       const titleEditor = control === ".editable-cell" && focused instanceof HTMLElement ? focused : null
       const titleDraft = titleEditor?.textContent
@@ -375,7 +375,7 @@ function init(signal: AbortSignal) {
     }
   }
 
-  const applyOptimisticRowPatch = (row: HTMLElement, patch: Record<string, unknown>) => {
+  const applySavedGroupFields = (row: HTMLElement, patch: Record<string, unknown>) => {
     if (typeof patch.status === "string") {
       row.dataset.status = patch.status
       row.classList.toggle("row-done", patch.status === "complete")
@@ -406,6 +406,7 @@ function init(signal: AbortSignal) {
   const persistTableOrder = async (movedRow: HTMLElement, rollback: () => void) => {
     const isGrouped = Boolean(desired.groupBy && desired.groupBy !== "none")
     const groupPatch: Record<string, unknown> = {}
+    let destinationGroup: string | undefined
 
     if (isGrouped) {
       const { primary, sub } = findEnclosingGroupHeaders(movedRow)
@@ -420,7 +421,7 @@ function init(signal: AbortSignal) {
           return
         }
         Object.assign(groupPatch, patch)
-        movedRow.dataset.groupValue = primaryKey
+        destinationGroup = primaryKey
       }
       if (sub && desired.subGroupBy && desired.subGroupBy !== "none") {
         const subKey = sub.dataset.groupKey ?? ""
@@ -435,16 +436,17 @@ function init(signal: AbortSignal) {
     if (!orderedIds.length) return
 
     const hasGroupChange = Object.keys(groupPatch).length > 0
-    if (hasGroupChange) {
-      applyOptimisticRowPatch(movedRow, groupPatch)
-      updateGroupHeaderCounts()
-    }
+    if (hasGroupChange) updateGroupHeaderCounts()
     triggerRowSettle(movedRow)
 
+    let groupSaved = false
     try {
       if (hasGroupChange) {
         const updated = await writes.edit(movedRow, groupPatch)
         if (!updated) throw new Error("Group update failed")
+        groupSaved = true
+        if (destinationGroup !== undefined) movedRow.dataset.groupValue = destinationGroup
+        applySavedGroupFields(movedRow, groupPatch)
         if (groupPatch.status === "complete") onTaskCompleted(updated)
       }
 
@@ -469,9 +471,18 @@ function init(signal: AbortSignal) {
         showToast(targetLabel ? `Moved to ${targetLabel}` : "Group updated", "success")
       }
     } catch {
-      rollback()
-      updateGroupHeaderCounts()
-      if (!signal.aborted) showToast("Could not save table order", "error")
+      if (!groupSaved) {
+        rollback()
+        updateGroupHeaderCounts()
+      }
+      if (!signal.aborted) {
+        if (groupSaved) {
+          showToast("Group saved. Could not save row order.", "warning")
+          void refresh()
+        } else {
+          showToast(hasGroupChange ? "Could not save the group change" : "Could not save table order", "error")
+        }
+      }
     }
   }
 

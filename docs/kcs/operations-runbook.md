@@ -18,9 +18,11 @@ When Home Assistant is unconfigured, startup checks retry at most once every fiv
 
 For repeated startup logging or delayed activation, check `ha.startup.skipped`, then save complete Home Assistant URL and token settings and confirm connection status. Never copy token values into diagnostics. Run `e2e/ha-standalone-connection.spec.ts` to verify repeated unconfigured requests, configuration changes, database replacement and failed-authentication recovery. Physical Green qualification still uses the unchanged resource and latency limits.
 
-## Eisenhower scoring saves
+## Scoring Triage saves
 
-Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
+Scoring Triage reads the task's existing framework values from the selected Board before saving. A failed or malformed read keeps the dialog and its inputs open so you can retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save. If someone edits the task while triage is open, reopen the dialog to review its latest score.
+
+RICE Triage accepts confidence from 0% to 100%. A complete set of estimates with 0% confidence has a score of zero and appears in Kanban's Low group.
 
 A review action saves its primary change first. The optional review timestamp does not block a successful action. If its metadata read fails, no timestamp update is sent. Deleted tasks receive no metadata update. Closing or replacing either wizard retires its pending metadata continuation.
 
@@ -79,6 +81,7 @@ Use this after changing dashboard shell, search-launcher, or top-level navigatio
 
 4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
 5. Check the Dashboard heading and workload tiles at 320 px and on desktop. Active and Overdue show keyboard focus and open their corresponding task filters inside ingress.
+6. Follow a Dashboard achievement badge and the Best streak link. Confirm each retains its Board query and achievement fragment, opens the Achievements section, and moves focus to the gallery or streaks. Reload the destination and check that the bookmark still restores the target.
 
 ## Habits Shell Verification
 
@@ -173,6 +176,7 @@ Use this after changing the Upcoming shell or `upcoming-controller.ts`.
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking an Upcoming task opens the shared task detail surface without routing away from `/upcoming`.
+6. With a long title, check that the details link and its neighboring completion label have separate hit areas of at least 44 by 44 pixels. Click the edge of the completion label to verify it activates the checkbox while details remain closed.
 
 ## Calendar Shell Verification
 
@@ -264,6 +268,8 @@ Help and **Settings → Navigation & Shortcuts → Keyboard shortcuts** render t
 Check that `K` still moves to the previous task after navigating to Today and after changing Timeline zoom. Use at least two dated tasks to verify the selection moves within the current view.
 
 Open a Timeline bar popup and press `?` with **View Details** focused. Help covers the popup until Escape or **Close shortcuts** returns focus to **View Details**. Native dialogs, popovers and blocking prompts keep keyboard control while open, including when you press `K`.
+
+In the New Task form, press Down Arrow in **Due Date** to reach the calendar choices. Escape closes that calendar and returns focus to the field. Changing the due date updates the repeat presets for that weekday. If an event ends before it starts, submitting the form focuses the editable **Ends** field and leaves the task unsaved.
 
 With a Today AI handoff request pending, open Help and hold the pointer down on its text before the confirmation arrives. When the confirmation appears, release the pointer and use Tab and Escape in the confirmation. Escape returns focus to **Close shortcuts**, and a second Escape returns to **Ask AI**.
 
@@ -367,7 +373,7 @@ Through Home Assistant, open Meitheal from a session that verifies the user. If 
 
 To retrieve one comment, use `GET /api/tasks/{id}/comments/{commentId}`. To edit or delete it, send `PATCH` with the same JSON body or `DELETE` to that URL. The original verified Home Assistant user or the original automation credential owns the comment. API reads require `tasks:read` and mutations require `tasks:write`. An administrator, a replacement credential with the same name, or a matching display name cannot claim another author's comment. Comments recorded without a verified owner, including existing comments and anonymous standalone comments, remain readable. If an edit or deletion returns 404, check the task and comment IDs and use the original account or credential.
 
-In the task panel, **Edit comment** and **Delete comment** appear on comments you wrote as a verified Home Assistant user. Edit opens a text field. Cancel returns to the saved comment, and a failed save keeps your draft for retry. In the deletion confirmation, Tab stays within the dialog and Escape cancels. After deletion, keyboard focus moves to the next available comment or the composer. The comments list API returns a caller-specific `can_manage` boolean and is never cached.
+In the task panel, **Edit comment** and **Delete comment** appear on comments you wrote as a verified Home Assistant user. Edit opens a text field. Cancel returns to the saved comment, and a failed save keeps your draft for retry. In the deletion confirmation, Tab stays within the dialog and Escape cancels. After a successful deletion, the full comment row disappears. Keyboard focus moves to an adjacent comment or the composer. The comments list API returns a caller-specific `can_manage` boolean and is never cached.
 
 **If Home Assistant cannot verify your account**, reopen Meitheal through Home Assistant. The app checks with Core before comment or reaction changes and before returning a keyed comment retry. A revoked, system-generated or unverifiable account gets `403 active-task-participant-required`. If the message persists, an administrator can check whether the account is active and whether the add-on can reach Core. Existing comments remain readable where the task is accessible. Management controls refresh on the next load, and drafts in an open composer or editor stay in place if a write is denied. Reaction lists and counts also require an active account and can use a Core check from the previous five seconds. Comments and reactions bypass the current worker’s Cache Storage.
 
@@ -378,6 +384,8 @@ Short ticket links use the ticket key. `/t/MTH-4` and `/mth-4` redirect to `/tic
 Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references save the task ID, such as `[MTH-4](/tickets/<task-id>)`, so they keep working after a Board prefix change. Opening one shows the current key in the address bar. The current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
+
+Open a task with an empty description and begin typing in Comments while Details loads. The description editor should keep focus in the comment composer, including while the people picker opens.
 
 ## Task history
 
@@ -620,9 +628,14 @@ unchanged by this build-entry command.
 
 MCP completion acknowledgements require the expected task ID or exact ticket key and a completed native status. A JSON object alone does not prove completion. Empty acknowledgements remain valid for native operations such as deletion that deliberately return204/205; they do not fabricate a completed task result.
 
-### Local Feedback access and request failures
+### Help and support
 
-For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.
+Use the GitHub links in **Settings → App & Companion → Help & Support** for new
+reports and questions. Earlier local reports stay in the installation database.
+If the existing local API returns 503, check connectivity to Home Assistant
+Core and current account availability before checking storage. A 403 indicates
+that the account lacks the role for that operation.
+[Feedback and support](feedback-and-support.md).
 
 Household task lists, task exports, Routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Today separately links authorized due work from named Boards. Named Board task and Routine endpoints check current grants, and their ticket links open the owning Board.
 
@@ -654,11 +667,11 @@ This section records the pre-26 migration and its compatibility checks. For the 
 
 Schema 25 retains the reserved Household identity and MTH ticket counter while allowing an active/retired lifecycle. It replaces the Household state guard and installs storage guards that reject writes to retired Household tasks, Areas, Projects, Goals, templates, workflow lanes, drafts, pins, reactions, comments and mention receipts, Home Assistant locations, Calendar/Todo confirmation links and shared Pillars/Principles. Personal Pillars remain available. The migration and web startup share the same transaction and validation; startup does not reseed or repair retired Household work. Activity, mentions, reminders and inactivity views exclude retired Household work. Shared Goal reads and the Routine library continue to show authorized work from active named Boards.
 
-Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. The check caps aggregate generated assets at 1,875,000 bytes, common assets at 1,825,000 bytes (covering the unified toast and swipe notification subsystem in [toast reference](toast-notifications.md)), and the optional Setup, Quick Add and Dashboard customization assets at 50,000 bytes. Existing custom `clientBytesMax` settings continue to limit the aggregate. The separate common-assets allowance is configured with `commonClientBytesMax`. The benchmark starts the official `scripts/serve.mjs` wrapper and gets the local fixture operator’s Board session to measure complete authorized task-create responses. The physical Green benchmark has its own limits. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) and [the continuity decision](../decisions/0026-board-continuity-enrollment.md) for the measured allowances.
+Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. The [checked-in budget](../../apps/web/scripts/perf-budget-baseline.json) sets the aggregate, common and optional workspace asset limits. Existing custom `clientBytesMax` settings continue to limit the aggregate. The separate common-assets allowance is configured with `commonClientBytesMax`. The benchmark starts the official `scripts/serve.mjs` wrapper and gets the local fixture operator’s Board session to measure complete authorized task-create responses. The physical Green benchmark has its own limits. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) and [the continuity decision](../decisions/0026-board-continuity-enrollment.md) for the measured allowances.
 
 In a disposable database, run `tests/e2e/board-lifecycle.spec.ts`. Delete populated and empty named Boards, verify owners can restore them, and confirm a member, deletion-blocked child and agent cannot delete them. Delete Household as the verified browser administrator. Confirm named Boards remain usable, global shared counts disappear, legacy capture returns the explicit paused message, and calendar/Todo import and write-back create no changes. Restart and verify Household stays deleted, then restore it and compare exact task IDs, ticket numbers, planning relationships, draft receipts and sync identifiers. Require `PRAGMA integrity_check` and `PRAGMA foreign_key_check` after restart and recovery.
 
-Use Supervisor App backups with the separately retained [current operator checkpoint](./home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint) for governed recovery. Refresh that checkpoint after every committed grant or Board lifecycle change. Supervisor restore can remove the excluded marker; missing or unknown current custody must stay locked. Deleted Boards are retained named records, so raw DB download remains protected. Do not restore a database snapshot alone to an older App: retain the exact predecessor App and its matching cold backup. Board grant marker and pending publication journal remain excluded from App backups; a missing or mismatched restored revision must keep governed reads, writes and delivery locked. A live marker publication interruption can finish only from its exact committed pending marker.
+Use Supervisor App backups with the separately retained [current operator checkpoint](./home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint) for governed recovery. Refresh that checkpoint after every committed grant or Board lifecycle change. A cold backup includes the committed Board grant marker and excludes the pending publication journal. Verify a clean stop and an empty pending journal before backing up. A missing or mismatched restored revision keeps governed reads, writes and delivery locked. Retain the exact predecessor App and its matching cold backup. A live marker publication interruption can finish only from its exact committed pending marker.
 
 ### Board navigation and recovery controls
 

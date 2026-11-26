@@ -1,4 +1,4 @@
-import { scopePermits, scopeLimits, type BoardScope } from "../board-scope"
+import { scopePermits, scopeLimits, scopeServiceDestination, type BoardScope } from "../board-scope"
 import { ownedPlanning, storageBoardId, taskField, taskOwnedBy, taskPlacementJoin, taskProjection } from "./board-storage"
 import { sql, sourceSql, type SqlFragment } from "./sql-fragment"
 import { featureAudienceAllowed } from "../board-feature-policy"
@@ -85,8 +85,14 @@ const taskColumns = [
   "task_board_id", "board_column_id", "ticket_ref", "source", "created_by",
 ] as const
 
+const searchTaskColumns = [
+  "id", "ticket_number", "ticket_ref", "title", "status", "priority", "task_kind",
+  "deferred_at", "updated_at", "assigned_to", "description", "labels", "custom_fields",
+] as const
+
 export type TaskReadProjection = "full" | "minimal" | "records" | "search" | "kanban-order"
-const readModelPrefixes = new WeakMap<BoardScope, Map<TaskReadProjection, SqlFragment>>()
+const MAX_READ_MODEL_PREFIXES = 128
+const readModelPrefixes = new Map<string, SqlFragment>()
 
 /**
  * Shared read model, composed explicitly by repository source queries. This does
@@ -94,23 +100,31 @@ const readModelPrefixes = new WeakMap<BoardScope, Map<TaskReadProjection, SqlFra
  * their bound arguments follow this prefix's arguments in lexical order.
  */
 export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select", projection: TaskReadProjection = "full"): SqlFragment {
-  let prefixes = readModelPrefixes.get(scope)
-  if (!prefixes) {
-    prefixes = new Map()
-    readModelPrefixes.set(scope, prefixes)
-  }
-  let prefix = prefixes.get(projection)
+  const destination = scopeServiceDestination(scope)
+  const key = JSON.stringify([
+    projection, scope.boardId, storageBoardId(scope), scope.principal.kind, scope.principal.id,
+    destination?.areaId, destination?.projectId,
+    scopePermits(scope, { resource: "task", action: "read" }),
+    scopeLimits(scope).map(({ principal }) => [principal.kind, principal.id]),
+  ])
+  let prefix = readModelPrefixes.get(key)
   if (!prefix) {
     prefix = taskReadPrefix(scope, projection)
-    prefixes.set(projection, prefix)
+    if (readModelPrefixes.size >= MAX_READ_MODEL_PREFIXES) {
+      const oldest = readModelPrefixes.keys().next().value
+      if (oldest !== undefined) readModelPrefixes.delete(oldest)
+    }
+    readModelPrefixes.set(key, prefix)
   }
   return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} ${prefix}
     ${sourceSql(continuation === "select" ? "" : ",")} ${query}`
 }
 
-/** Reuse only the query template for the same issued scope. SQL still checks the current audiences. */
+/** Cache SQL with the same bound scope inputs. Queries still check current audiences and authority. */
 function taskReadPrefix(scope: BoardScope, projection: TaskReadProjection): SqlFragment {
-  const columns = projection === "kanban-order" ? ["id", "is_promoted", "deferred_at", "status", "kanban_position", "priority", "created_at", "assigned_to"] : taskColumns
+  const columns = projection === "kanban-order"
+    ? ["id", "is_promoted", "deferred_at", "status", "kanban_position", "priority", "created_at", "assigned_to"]
+    : projection === "search" ? searchTaskColumns : taskColumns
   const references = projection === "full" ? sql`, ${publicPlanningReferences(scope)}` : sourceSql("")
   const ticketPrefix = projection === "kanban-order" ? sourceSql("NULL") : sourceSql("scoped_storage.board_ticket_prefix")
   const unrestricted = sql`(NOT EXISTS (SELECT 1 FROM organization_access_policies
@@ -136,23 +150,19 @@ function taskReadPrefix(scope: BoardScope, projection: TaskReadProjection): SqlF
       THEN (SELECT parent.id FROM scoped_task_records AS parent WHERE parent.id = child.parent_id) ELSE NULL END AS public_parent_id
     FROM scoped_task_records AS child
   )`
-    : projection === "records"
+    : projection === "records" || projection === "search"
       ? sql`scoped_task_records AS NOT MATERIALIZED (
     ${baseQuery}
   )`
-      : projection === "search"
-        ? sql`scoped_task_records AS NOT MATERIALIZED (
-    ${baseQuery}
-  ), scoped_tasks AS NOT MATERIALIZED (
-    SELECT * FROM scoped_task_records
-  )`
-        : sql`scoped_tasks AS NOT MATERIALIZED (
+      : sql`scoped_tasks AS NOT MATERIALIZED (
     ${baseQuery}
   )`
+  const planning = projection === "search" ? sourceSql("") : sql`,
+    scoped_areas AS (SELECT * FROM areas WHERE ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")}),
+    scoped_projects AS (SELECT * FROM projects WHERE ${ownedPlanning(scope, "projects")} AND ${planningVisible(scope, "projects")}),
+    scoped_goals AS (SELECT * FROM goals WHERE ${ownedPlanning(scope, "goals")} AND ${planningVisible(scope, "goals")})`
   return sql`scoped_storage AS MATERIALIZED (
     SELECT ${scope.boardId} AS board_id, ${storageBoardId(scope)} AS owner_board_id,
       ${storageFields}
-  ), ${scopedTasksCte}, scoped_areas AS (SELECT * FROM areas WHERE ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")}),
-  scoped_projects AS (SELECT * FROM projects WHERE ${ownedPlanning(scope, "projects")} AND ${planningVisible(scope, "projects")}),
-  scoped_goals AS (SELECT * FROM goals WHERE ${ownedPlanning(scope, "goals")} AND ${planningVisible(scope, "goals")})`
+  ), ${scopedTasksCte}${planning}`
 }

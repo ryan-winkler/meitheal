@@ -175,8 +175,7 @@ const anchorDateObj = new Date(`${cal.anchorDate}T00:00:00Z`)
 const anchorDayNum = anchorDateObj.getUTCDate()
 const anchorWeekdayShort = anchorDateObj.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })
 const todayDayNum = Number(todayStr.slice(8, 10)) || new Date().getDate()
-const hourlySlots = Array.from({ length: 17 }, (_, i) => {
-  const hour = i + 6 // 6 AM to 10 PM
+const hourlySlots = Array.from({ length: 24 }, (_, hour) => {
   const suffix = hour >= 12 ? "PM" : "AM"
   const h12 = hour % 12 === 0 ? 12 : hour % 12
   return { hour, label: `${h12} ${suffix}` }
@@ -252,7 +251,8 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
                 class="btn cal-nav-btn cal-mobile-filter-toggle"
                 aria-expanded="false"
                 aria-controls="cal-filter-island"
-                aria-label="Toggle calendar filters"
+                aria-label={filter.hasFilters ? "Filters Active" : "Filters"}
+                data-filters-active={String(filter.hasFilters)}
                 title="Filters"
               >
                 <Icon name="adjustments-horizontal" size={16} />
@@ -318,54 +318,19 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
                   <span class="cal-hourly-date-badge__num">{anchorDayNum}</span>
                   <span class="cal-hourly-date-badge__dow">{anchorWeekdayShort}</span>
                 </div>
-                <div id="cal-day-allday-strip" class="cal-hourly-allday" aria-label="All-day tasks and events"></div>
+                <div id="cal-day-allday-strip" class="cal-hourly-allday" role="group" aria-label="All-day tasks and events"></div>
               </div>
-              <div class="cal-hourly-grid-wrap">
-                <div class="cal-hourly-gutter" aria-hidden="true">
-                  {hourlySlots.map(slot => (
-                    <div class="cal-hourly-gutter__label">{slot.label}</div>
-                  ))}
-                </div>
-                <div class="cal-hourly-track" id="cal-day-hourly-track">
-                  {hourlySlots.map(slot => (
-                    <div class="cal-hourly-slot" data-hour={slot.hour}></div>
-                  ))}
-                  <div id="cal-day-hourly-blocks" class="cal-hourly-blocks"></div>
-                  <div id="cal-day-now-line" class="cal-now-line" hidden>
-                    <span class="cal-now-line__dot" aria-hidden="true"></span>
+              <div class="cal-hourly-grid-wrap" role="region" aria-label="Hourly schedule" tabindex="0">
+                {hourlySlots.map(slot => (
+                  <div class="cal-hourly-slot" data-hour={slot.hour}>
+                    <span class="cal-hourly-gutter__label" aria-hidden="true">{slot.label}</span>
+                    <div class="cal-hourly-items"></div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
-
-            <div class="cal-day-view__columns">
-              <section class="cal-day-view__panel" aria-labelledby="cal-day-tasks-heading">
-                <h3 id="cal-day-tasks-heading" class="day-drawer-section-title flex items-center gap-1.5">
-                  <Icon name="clipboard-list" size={14} />
-                  <span>Scheduled Tasks &amp; Local Events</span>
-                </h3>
-                <div id="cal-day-view-tasks" class="day-drawer-list" aria-busy="true">
-                  <div class="cal-skeleton-row" aria-hidden="true"></div>
-                  <div class="cal-skeleton-row" aria-hidden="true"></div>
-                  <div class="cal-skeleton-row cal-skeleton-row--short" aria-hidden="true"></div>
-                </div>
-                <div id="cal-day-view-task-status" class="day-drawer-read-status" role="status"></div>
-              </section>
-
-              {filter.showConnectedEvents && (
-                <section class="cal-day-view__panel" aria-labelledby="cal-day-events-heading">
-                  <h3 id="cal-day-events-heading" class="day-drawer-section-title flex items-center gap-1.5">
-                    <Icon name="calendar-event" size={14} />
-                    <span>Connected Calendar Events</span>
-                  </h3>
-                  <div id="cal-day-view-events" class="day-drawer-list" aria-busy="true">
-                    <div class="cal-skeleton-row" aria-hidden="true"></div>
-                    <div class="cal-skeleton-row cal-skeleton-row--short" aria-hidden="true"></div>
-                  </div>
-                  <div id="cal-day-view-event-status" class="day-drawer-read-status" role="status"></div>
-                </section>
-              )}
-            </div>
+            <div class="day-drawer-read-status" id="cal-day-view-task-status" role="status">Loading…</div>
+            {filter.showConnectedEvents && <div class="day-drawer-read-status" id="cal-day-view-event-status" role="status">Loading…</div>}
           </div>
         )}
 
@@ -609,14 +574,13 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       </div>
     </div>
 
-    {/* Floating + FAB for quick mobile event/task creation */}
+    {/* Floating task capture for compact calendar views */}
     <button
       type="button"
       id="cal-mobile-fab"
       class="cal-mobile-fab"
-      data-fab-date={cal.anchorDate}
-      aria-label="Add task or event"
-      title="Add task or event"
+      aria-label="Add Task"
+      title="Add Task"
     >
       <Icon name="plus" size={24} />
     </button>
@@ -815,21 +779,7 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
     gap: 8px;
     flex-wrap: wrap;
   }
-  .cal-day-view__columns {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-    gap: 16px;
-  }
-  .cal-day-view__panel {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--bg-secondary) 55%, var(--bg-card));
-    border: 1px solid var(--border);
-    min-height: 220px;
-  }
+
   .cal-empty-state {
     display: flex;
     flex-direction: column;
@@ -1367,37 +1317,36 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
     justify-content: center;
   }
   .cal-hourly-grid-wrap {
-    display: grid;
-    grid-template-columns: 60px minmax(0, 1fr);
     max-height: 520px;
     overflow-y: auto;
     position: relative;
   }
-  .cal-hourly-gutter {
-    border-right: 1px solid var(--border);
-    background: color-mix(in srgb, var(--bg-secondary) 40%, var(--bg-card));
+  .cal-hourly-slot {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    min-height: 48px;
+    border-bottom: 1px solid var(--border);
   }
   .cal-hourly-gutter__label {
-    height: 48px;
-    padding: 4px 8px 0 0;
-    text-align: right;
+    padding: 6px 6px 0;
+    text-align: end;
     font-size: 11px;
-    font-weight: 500;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
-  .cal-hourly-track {
-    position: relative;
+  .is-current-hour .cal-hourly-gutter__label {
+    color: var(--accent-text);
+    font-weight: 700;
+  }
+  .cal-hourly-items {
+    display: grid;
+    gap: 4px;
     min-width: 0;
+    padding: 2px 6px;
+    border-inline-start: 1px solid var(--border);
   }
-  .cal-hourly-slot {
-    height: 48px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  }
-  .cal-hourly-blocks {
-    position: absolute;
-    inset: 0 8px 0 8px;
-    pointer-events: none;
+  .cal-hourly-shell .day-drawer-item {
+    min-height: 44px;
   }
   .cal-gcal-event {
     display: flex;
@@ -1420,13 +1369,6 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
   .cal-gcal-event:active {
     transform: scale(0.985);
   }
-  .cal-gcal-event--timed {
-    position: absolute;
-    left: 0;
-    right: 0;
-    pointer-events: auto;
-    overflow: hidden;
-  }
   .cal-gcal-event__title {
     font-size: 13px;
     font-weight: 600;
@@ -1439,24 +1381,6 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
     font-size: 11px;
     opacity: 0.88;
     line-height: 1.2;
-  }
-  .cal-now-line {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: var(--accent, #3b82f6);
-    pointer-events: none;
-    z-index: 3;
-  }
-  .cal-now-line__dot {
-    position: absolute;
-    left: -5px;
-    top: -4px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--accent, #3b82f6);
   }
   .cal-mobile-now-divider {
     position: relative;
@@ -1504,7 +1428,12 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       align-items: center;
       justify-content: center;
     }
-    .cal-mobile-filter-toggle[aria-expanded="true"] {
+    .calendar-navigation .cal-mobile-filter-toggle {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .cal-mobile-filter-toggle[aria-expanded="true"],
+    .cal-mobile-filter-toggle[data-filters-active="true"] {
       background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
       border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
       color: var(--accent-text, var(--accent));
@@ -1650,8 +1579,8 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       font-weight: 500;
     }
     .cal-cell.cal-selected .cal-day-num {
-      background: var(--personal-accent, var(--accent));
-      color: var(--personal-accent-foreground, #ffffff);
+      background: var(--personal-accent, var(--palette-accent-hover));
+      color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
       font-weight: 700;
     }
     .cal-cell .cal-task-badge,
@@ -1740,10 +1669,15 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       gap: 0;
       border-block: 0;
     }
-    .cal-day-view__bar,
-    .cal-day-view__actions,
-    .cal-day-view__columns {
+    .cal-day-view__bar {
+      padding: 8px 12px;
+    }
+    .cal-day-view__summary,
+    #calendar-shell:has(.calendar-month[data-calendar-mode="day"]) .cal-mobile-fab {
       display: none;
+    }
+    .cal-day-view__actions .btn {
+      min-height: 44px;
     }
     .cal-hourly-shell {
       border: 0;
@@ -1756,8 +1690,7 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       background: var(--bg-card);
     }
     .cal-hourly-grid-wrap {
-      max-height: calc(100dvh - 196px);
-      min-height: 440px;
+      max-height: max(14rem, calc(100dvh - 242px));
     }
     .cal-mobile-fab {
       position: fixed;

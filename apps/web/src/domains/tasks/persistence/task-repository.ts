@@ -36,7 +36,7 @@ import { effectiveTaskScheduledDate, isValidTaskKind } from "@meitheal/domain-ta
 import { taskLabelInsert } from "./label-reference-repository"
 import { homeAssistantTaskAreaCondition } from "./home-assistant-task-area"
 import type { Client, InStatement, InValue, ResultSet, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, executeWriteWithRetry, localReaderCacheToken, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
 import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -53,6 +53,9 @@ import { discardUnappliedTaskActivity, sanitizeOriginName, taskAddedActivity, ta
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
+
+const notificationPreferencesCache = new WeakMap<object, { token: string; value: string | null }>()
+const defaultAssigneeCache = new WeakMap<object, { token: string; boards: Map<string, string | null> }>()
 
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
@@ -292,7 +295,7 @@ function toWallEpochMs(raw: string): number {
   return Date.parse(trimmed)
 }
 
-function shiftEventWindow(nextDay: string, sourceStart: string | null | undefined, sourceEnd: string | null | undefined): {
+function shiftEventWindow(nextOccurrence: string, sourceStart: string | null | undefined, sourceEnd: string | null | undefined): {
   start_date: string | null
   end_date: string | null
 } {
@@ -301,7 +304,8 @@ function shiftEventWindow(nextDay: string, sourceStart: string | null | undefine
   }
   const startTrimmed = sourceStart.trim()
   const match = startTrimmed.match(/^(\d{4}-\d{2}-\d{2})([T ].*)?$/)
-  const nextStart = match ? `${nextDay}${match[2] ?? ""}` : nextDay
+  const timedOccurrence = nextOccurrence.includes("T")
+  const nextStart = timedOccurrence ? nextOccurrence : `${nextOccurrence}${match?.[2] ?? ""}`
   if (typeof sourceEnd !== "string" || !sourceEnd.trim()) {
     return { start_date: nextStart, end_date: null }
   }
@@ -311,13 +315,16 @@ function shiftEventWindow(nextDay: string, sourceStart: string | null | undefine
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
     return { start_date: nextStart, end_date: null }
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(startTrimmed) && /^\d{4}-\d{2}-\d{2}$/.test(endTrimmed)) {
+  if (!timedOccurrence && /^\d{4}-\d{2}-\d{2}$/.test(startTrimmed) && /^\d{4}-\d{2}-\d{2}$/.test(endTrimmed)) {
     const daySpan = Math.round((endMs - startMs) / 86_400_000)
-    return { start_date: nextStart, end_date: shiftCalendarDay(nextDay, daySpan) }
+    return { start_date: nextStart, end_date: shiftCalendarDay(nextOccurrence, daySpan) }
   }
   const durationMs = endMs - startMs
-  const nextStartMs = toWallEpochMs(nextStart)
+  const nextStartMs = timedOccurrence ? Date.parse(`${nextStart}Z`) : toWallEpochMs(nextStart)
   const shiftedIso = new Date(nextStartMs + durationMs).toISOString()
+  if (timedOccurrence) {
+    return { start_date: nextStart, end_date: shiftedIso.slice(0, shiftedIso.endsWith(":00.000Z") ? -8 : -1) }
+  }
   if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(endTrimmed)) {
     return { start_date: nextStart, end_date: shiftedIso }
   }
@@ -1533,13 +1540,22 @@ export class TaskRepository {
       }
     }
 
-    const selectSql = `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
-    const countSql = `SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`;
-    const countProjection = !opts.areaId && !opts.workspaceAreaId ? "minimal" : "full"
+    // Apply record-only filters and paging before computing public relations.
+    // Placement filters need those relations in the candidate projection.
+    const useRecordFilter = !opts.areaId && !opts.workspaceAreaId && !opts.projectId
+    const selectSql = useRecordFilter
+      ? `SELECT ${projection}
+         FROM (SELECT id FROM scoped_task_records AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}) AS page_ids
+         CROSS JOIN scoped_tasks AS tasks
+         WHERE tasks.id = page_ids.id
+         ${ordering}`
+      : `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
+    const countSource = useRecordFilter ? "scoped_task_records" : "scoped_tasks"
+    const countSql = `SELECT COUNT(*) AS cnt FROM ${countSource} AS tasks${where}`
 
     const [result, countResult] = await this.forOperation("read").batch([
       tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(selectSql, args)), "task-list"),
-      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args), "select", countProjection), "task-count"),
+      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args), "select", useRecordFilter ? "records" : "full"), "task-count"),
     ], "read")
 
     const total = Number(countResult?.rows[0]?.cnt ?? 0)
@@ -1592,10 +1608,11 @@ export class TaskRepository {
     const projection = "tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at"
     const updatedAt = taskTimestampMs("tasks.updated_at")
     if (!query) {
-      const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
-              FROM scoped_tasks AS tasks ${where}
+      const read = scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
+              FROM scoped_task_records AS tasks ${where}
               ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
-              LIMIT ?`, [...args, limit]), "select", "minimal"))
+              LIMIT ?`, [...args, limit]), "select", "search")
+      const result = await this.forOperation(operation).execute(tagTaskProjectionRead(read, "task-search"))
       return result.rows as unknown as TaskCatalogRow[]
     }
 
@@ -1738,7 +1755,7 @@ export class TaskRepository {
                 ${selected("custom_fields", `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND ${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
                 ${hasCommentsField ? "((SELECT v FROM has_comments) AND tasks.id IN comment_hits)" : "0"} AS comments_hit,
                 (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
-              FROM scoped_tasks AS tasks CROSS JOIN needle ${where}
+              FROM scoped_task_records AS tasks CROSS JOIN needle ${where}
             ),
             page AS (
               SELECT hits.*,
@@ -1753,7 +1770,8 @@ export class TaskRepository {
               ORDER BY ${orderBy}updated_at_ms DESC, priority ASC, id ASC
               LIMIT ?
             )
-            SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
+            SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
+              page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
             FROM page CROSS JOIN needle
             ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit])
@@ -1766,13 +1784,30 @@ export class TaskRepository {
   /** Look up the default assignee from app_settings (nullable) */
   async getDefaultAssignee(): Promise<string | null> {
     try {
-      const result = await this.forOperation("create").execute(sql`SELECT value FROM app_settings
-        WHERE key = ${`default_assignee:${this.scope.boardId}`} LIMIT 1`)
-      if (result.rows.length > 0) {
-        return String((result.rows[0] as Record<string, unknown>).value);
+      const intent = { resource: "task", action: "create" } as const
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const state = localReaderCacheToken(this.client)
+      const boardId = this.scope.boardId
+      const cached = state && defaultAssigneeCache.get(state.owner)
+      if (cached && cached.token === state?.token) {
+        const value = cached.boards.get(boardId)
+        if (value !== undefined) return value
       }
+      const { rows: [row] } = await this.client.execute(sql`SELECT value FROM app_settings
+        WHERE key = ${`default_assignee:${boardId}`} LIMIT 1`)
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const value = row ? String(row.value) : null
+      if (state && localReaderCacheToken(this.client)?.token === state.token) {
+        let entry = defaultAssigneeCache.get(state.owner)
+        if (entry?.token !== state.token) {
+          entry = { token: state.token, boards: new Map() }
+          defaultAssigneeCache.set(state.owner, entry)
+        }
+        entry.boards.set(boardId, value)
+      }
+      return value
     } catch { /* ignore — default is optional */ }
-    return null;
+    return null
   }
 
   /** Look up a parent task's type for nesting validation */
@@ -1892,8 +1927,10 @@ export class TaskRepository {
             String(current.cadence ?? "daily") !== occurrence.expectedCadence ||
             routinePeriod(String(current.cadence ?? "daily"), new Date(), periodTimezone) !== occurrence.period) throw new BoardOperationError("stale")
         })
+        const periodDay = occurrence.period.slice(0, 10)
         const { rows: [identity] } = await tx.execute(sql`SELECT id FROM tasks WHERE task_board_id IS ${storageBoardId(this.scope)}
-          AND source_template_id = ${occurrence.templateId} AND due_date = ${occurrence.period} ORDER BY created_at, id LIMIT 1`)
+          AND source_template_id = ${occurrence.templateId} AND due_date >= ${periodDay}
+          AND due_date < ${shiftCalendarDay(periodDay, 1)} ORDER BY created_at, id LIMIT 1`)
         const { rows: [existing] } = identity ? await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${String(identity.id)}`)) : { rows: [] }
         if (identity && !existing) return { ok: false, errorCode: "unavailable" }
         if (existing) {
@@ -2972,7 +3009,9 @@ export class TaskRepository {
     if (next === null) return
     if (!Number.isFinite(next.getTime())) return "invalid"
 
-    const dueDate = next.toISOString().split("T")[0]!
+    const iso = next.toISOString()
+    // RRULE clock values are local wall time, like a timed Routine occurrence.
+    const dueDate = parsed.byHour === undefined ? iso.split("T")[0]! : iso.slice(0, -8)
     const completionVersion = Number((await tx.execute(scopedTaskRead(this.scope, sql`SELECT ${sourceSql(taskTimestampMs("updated_at"))} AS version FROM scoped_tasks WHERE id = ${id}`))).rows[0]?.version)
     if (!Number.isSafeInteger(completionVersion)) throw new BoardOperationError("stale")
     const created = await this.createRecurrenceInWriter(tx, source, dueDate, rule, `recurrence:${id}:${completionVersion}:${dueDate}`, assignment)
@@ -3182,20 +3221,32 @@ export class TaskRepository {
       disabledUsers: new Set<string>(),
       channels: { sidebar: true, mobile_push: false },
       mobileTargets: [] as string[],
-    };
+    }
     try {
-      const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1", []), "select"));
-      if (result.rows.length > 0) {
-        const raw = JSON.parse(String((result.rows[0] as Record<string, unknown>).value));
+      const intent = { resource: "task", action: "read" } as const
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults
+      const state = localReaderCacheToken(this.client)
+      const cached = state && notificationPreferencesCache.get(state.owner)
+      let value = cached && cached.token === state?.token ? cached.value : undefined
+      if (value === undefined) {
+        const { rows: [row] } = await this.client.execute("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1")
+        if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults
+        value = row ? String(row.value) : null
+        if (state && localReaderCacheToken(this.client)?.token === state.token) {
+          notificationPreferencesCache.set(state.owner, { token: state.token, value })
+        }
+      }
+      if (value !== null) {
+        const raw = JSON.parse(value)
         if (typeof raw === "object" && raw !== null) {
-          defaults.enabled = raw.enabled !== false;
-          if (Array.isArray(raw.disabled_users)) defaults.disabledUsers = new Set(raw.disabled_users);
-          if (raw.channels) defaults.channels = raw.channels;
-          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = raw.mobile_targets;
+          defaults.enabled = raw.enabled !== false
+          if (Array.isArray(raw.disabled_users)) defaults.disabledUsers = new Set(raw.disabled_users)
+          if (raw.channels && typeof raw.channels === "object") defaults.channels = { ...raw.channels }
+          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = [...raw.mobile_targets]
         }
       }
     } catch { /* settings not available */ }
-    return defaults;
+    return defaults
   }
 
   // ── Comment Methods ─────────────────────────────────────────────────

@@ -60,7 +60,12 @@ export function appliedTaskRules(params: URLSearchParams, view: TaskView) {
   }
 }
 
-export function taskViewUrl(current: URL, view: TaskView, explicitFilters = false): URL {
+export function taskViewUrl(
+  current: URL,
+  view: TaskView,
+  explicitFilters = false,
+  userAgent = typeof window === "undefined" ? "" : window.navigator.userAgent,
+): URL {
   const url = new URL(current)
   const previousView = requestedTaskView(url.searchParams, url.hash) ?? "kanban"
   if (previousView !== view) {
@@ -81,7 +86,12 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
       else url.searchParams.delete("advancedFilter")
     }
   }
-  url.searchParams.set("view", view)
+  if (view === "kanban" && !isMobileUserAgent(userAgent) &&
+    url.searchParams.get("view") !== "kanban" && !readTableTaskTypeParam(url.searchParams)) {
+    url.searchParams.delete("view")
+  } else {
+    url.searchParams.set("view", view)
+  }
   if (view !== "table") {
     const params = url.searchParams
     const groupBy = params.get("groupBy")

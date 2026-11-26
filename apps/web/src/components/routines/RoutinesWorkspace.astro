@@ -10,15 +10,14 @@
  */
 import Icon from "../ui/Icon.astro"
 import { scopeBoardAccess, scopePermits, type BoardScope } from "@domains/tasks/board-scope"
-import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
+import type { RoutineWithStats } from "@domains/tasks/persistence/template-repository"
 import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { describeRule, cadenceToRRule, parseRRule } from "@domains/tasks/recurrence"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { formatCalendarDay } from "@lib/calendar-day"
-import { isValidTimezone } from "@lib/date"
-import { readStoredHouseholdTimezone } from "@lib/task-queries"
+import { readRoutineWorkspace } from "@lib/routine-workspace-data"
 import { serializeForScript } from "../../lib/safe-html"
 import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { taskDetailPath } from "@lib/task-page-url"
@@ -31,6 +30,7 @@ export interface Props {
   project?: { id: string; name?: string; title?: string } | undefined
   areas?: AreaRow[] | undefined
   projects?: ProjectRow[] | undefined
+  initialRoutines?: RoutineWithStats[] | null
   embedded?: boolean
   openNew?: boolean
 }
@@ -66,6 +66,7 @@ const {
   project,
   areas: providedAreas,
   projects: providedProjects,
+  initialRoutines,
   embedded = false,
   openNew = false,
 } = Astro.props
@@ -151,20 +152,16 @@ function summarizeCadences(items: RoutineViewModel[]): string {
 }
 
 try {
-  await ensureSchema()
-  const client = getPersistenceClient()
   if (!providedAreas || !providedProjects) {
-    const hierarchy = new HierarchyRepository(client, workScope)
+    await ensureSchema()
+    const hierarchy = new HierarchyRepository(getPersistenceClient(), workScope)
     ;[areas, projects] = await Promise.all([hierarchy.findAllAreas(), hierarchy.findAllProjects()])
   }
-  const rawTz = Astro.locals.timezone?.trim() ?? ""
-  const timezone = isValidTimezone(rawTz) ? rawTz : await readStoredHouseholdTimezone()
-  const repo = new TemplateRepository(client, workScope)
-  if (boardActive && scopePermits(workScope, { resource: "task", action: "create" })) {
-    await repo.ensureDueRoutineTasks(timezone).catch(() => 0)
-  }
-  const routines = await repo.getRoutinesWithStats(area?.id, project?.id, timezone)
-  routinesList = routines.map((routine) => ({
+  const routines = initialRoutines === undefined ? await readRoutineWorkspace(workScope, {
+    areaId: area?.id, projectId: project?.id, timezone: Astro.locals.timezone,
+  }) : initialRoutines
+  loadFailed = routines === null
+  routinesList = (routines ?? []).map((routine) => ({
     ...routine,
     ...parseTemplateDetails(routine),
   }))
@@ -192,7 +189,7 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
   data-can-complete={String(canCompleteRoutine)}
   data-board-id={workScope.boardId}
   data-board-active={String(boardActive)}
-  data-open-new={openNew && !loadFailed && boardActive ? "true" : undefined}
+  data-open-new={openNew && !loadFailed && boardActive && canCreateRoutine ? "true" : undefined}
   data-embedded={embedded ? "true" : undefined}
 >
   {area && (
@@ -376,7 +373,7 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
                         <span class="badge habit-card__meta-item habit-card__inactive">Paused project</span>
                       )}
                       {habit.todayTaskId && (
-                        <a class="badge habit-card__meta-item habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>
+                        <a class="badge habit-card__meta-item habit-card__task-link" href={taskDetailPath(habit.todayTaskId)} data-task-detail-link={habit.todayTaskId}>
                           <Icon name="external-link" size={12} sprite />
                           <span>View task</span>
                         </a>
@@ -959,6 +956,10 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
   @media (hover: none), (pointer: coarse), (max-width: 720px) {
     .habit-card__actions {
       opacity: 1;
+    }
+
+    .habit-card__task-link {
+      min-height: 44px;
     }
   }
 

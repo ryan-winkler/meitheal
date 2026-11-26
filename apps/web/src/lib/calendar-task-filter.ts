@@ -63,6 +63,7 @@ export function createCalendarTaskFilter(params: URLSearchParams, timezone: stri
 
   const hasFilters = Boolean(projectId) || hasCalendarTaskFilters(filters)
   return {
+    hasFilters,
     matches: hasFilters ? matches : undefined,
     matchesAgenda: hasFilters ? matches : (task: CalendarFilterRow) => normalizeStatus(task.status) !== "archived",
     includeCompletedInCounts,

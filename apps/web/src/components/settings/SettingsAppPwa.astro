@@ -13,7 +13,6 @@ import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
-import SettingsFeedback from "./SettingsFeedback.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
@@ -117,7 +116,6 @@ const aboutDocs = await readRepoAboutDocs()
     </div>
   </SettingsPanelCard>
 
-  <SettingsFeedback version={version} />
   <!-- App Readiness & Companion -->
   <SettingsPanelCard
     title={t("settings.app_readiness_title", locale)}
@@ -232,7 +230,7 @@ const aboutDocs = await readRepoAboutDocs()
                 <span>Offline Sync Queue</span>
                 <span id="pwa-sync-queue-badge" class="badge badge-active">0 pending</span>
               </span>
-              <span id="pwa-storage-estimate" class="pwa-perm-row__desc">Changes captured offline replay automatically when back online.</span>
+              <span id="pwa-storage-estimate" class="pwa-perm-row__desc">Open the original Board while online to send offline tasks.</span>
             </div>
             <div class="pwa-perm-row__actions">
               <button type="button" id="pwa-sync-now-btn" class="btn btn-secondary btn-sm">
@@ -382,31 +380,6 @@ const aboutDocs = await readRepoAboutDocs()
         </div>
       </div>
     </div>
-    <SettingsActionRow
-      style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
-    >
-      <a
-        href="https://github.com/ryan-winkler/meitheal/issues/new/choose"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
-      >
-      <a
-        href="https://github.com/ryan-winkler/meitheal/discussions"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
-      >
-      <a
-        href="https://github.com/ryan-winkler/meitheal"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
-      >
-    </SettingsActionRow>
   </SettingsPanelCard>
 
   <!-- Home Screen Shortcuts & Quick-Capture PWAs (W3C Manifest Shortcuts) -->
@@ -451,6 +424,7 @@ const aboutDocs = await readRepoAboutDocs()
 
   <!-- Help & Support -->
   <SettingsPanelCard
+    id="help-support-card"
     icon="book"
     title={t("settings.help_support_title", locale)}
     subtitle={t("settings.help_support_subtitle", locale)}
@@ -506,12 +480,32 @@ const aboutDocs = await readRepoAboutDocs()
     </SettingsActionRow>
     <SettingsActionRow class="mt-2">
       <a
-        href="#local-feedback"
-        data-settings-section-link
+        href="https://github.com/ryan-winkler/meitheal/issues/new/choose"
+        target="_blank"
+        rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_local_feedback", locale)}</a
+        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal/discussions"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
       >
     </SettingsActionRow>
+    <p class="mt-3 mb-0">
+      <a class="settings-security-link" href="mailto:hi@meitheal.io">
+        {t("settings.help_private_security", locale)}
+      </a>
+    </p>
   </SettingsPanelCard>
 
   <!-- License (Tabler License Page Pattern) -->
@@ -679,6 +673,11 @@ const aboutDocs = await readRepoAboutDocs()
 </section>
 
 <style is:inline>
+  .settings-security-link {
+    color: var(--color-text-primary);
+    text-decoration: underline;
+  }
+
   .pwa-compact-row {
     padding: 8px 0;
     border-top: 1px solid var(--border);
@@ -1648,10 +1647,12 @@ const aboutDocs = await readRepoAboutDocs()
           showToast(`Synced ${res.synced} offline ${res.synced === 1 ? "change" : "changes"}`, "success")
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed"))
         } else if (res.remaining > 0) {
-          showToast("Still offline — changes will sync automatically when connected.", "info")
+          showToast("Pending changes remain saved for the original Board.", "info")
         } else {
           showToast("Everything is already synced", "success")
         }
+      } catch {
+        showToast("Could not check the offline queue. Try again on the original Board.", "warning")
       } finally {
         syncBtn.disabled = false
       }

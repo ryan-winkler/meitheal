@@ -239,23 +239,28 @@ test("Dashboard workload links fit at 320px and preserve ingress filters", async
       await expect(link).toHaveCSS("outline-style", "solid")
     }
 
-    for (const [status, included, excluded] of [
-      ["overdue", overdueTask.id, activeTask.id],
-      ["active", activeTask.id, overdueTask.id],
-    ]) {
-      // A new tab isolates this ingress deep link from the last route remembered by the first one.
-      const dashboardTab = await context.newPage()
-      await dashboardTab.goto(dashboard, { waitUntil: "domcontentloaded" })
-      const link = dashboardTab.locator("#dashboard-overview #stat-" + status)
-      await expect(link.locator(".stat-value")).toHaveText("1")
-      await link.press("Enter")
-      await expect(dashboardTab.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-      const destination = new URL(ingress + "/boards/household?status=" + status + "#kanban")
-      await expect(dashboardTab).toHaveURL(url => url.origin === destination.origin &&
-        url.pathname === destination.pathname && url.search === destination.search && url.hash === destination.hash)
-      await expect(dashboardTab.locator(`.kanban-card[data-id="${included}"]`)).toBeVisible()
-      await expect(dashboardTab.locator(`.kanban-card[data-id="${excluded}"]`)).toHaveCount(0)
-      await dashboardTab.close()
+    for (const [width, view, query, item] of [
+      [320, "table", "&view=table", ".table-row"],
+      [1440, "kanban", "", ".kanban-card"],
+    ] as const) {
+      for (const [status, included, excluded] of [
+        ["overdue", overdueTask.id, activeTask.id],
+        ["active", activeTask.id, overdueTask.id],
+      ]) {
+        // A new tab isolates this ingress deep link from the last remembered route.
+        const dashboardTab = await context.newPage()
+        await dashboardTab.setViewportSize({ width, height: 780 })
+        await dashboardTab.goto(dashboard, { waitUntil: "domcontentloaded" })
+        const link = dashboardTab.locator("#dashboard-overview #stat-" + status)
+        await expect(link.locator(".stat-value")).toHaveText("1")
+        await link.press("Enter")
+        await expect(dashboardTab).toHaveURL(`${ingress}/boards/household?status=${status}${query}#${view}`)
+        const tasks = dashboardTab.locator(`#tasks-view-${view}`)
+        await expect(tasks).toBeVisible()
+        await expect(tasks.locator(`${item}[data-id="${included}"]`)).toBeVisible()
+        await expect(tasks.locator(`${item}[data-id="${excluded}"]`)).toHaveCount(0)
+        await dashboardTab.close()
+      }
     }
   } finally {
     await context.close()

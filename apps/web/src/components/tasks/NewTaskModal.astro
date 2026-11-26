@@ -184,7 +184,7 @@ try {
           </div>
           <div id="nt-layout-panel" hidden>
             <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
-            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} showEntityForms={false} />
+            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} showEntityForms={false} fieldLayoutOnly />
           </div>
           <div class="nt-form-grid" data-layout-order="properties">
             <div class="nt-field nt-field--full" data-layout-item="status">
@@ -274,8 +274,8 @@ try {
               </select>
             </div>}
           </div>
-          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling">
-            <div id="nt-ctx-due-row" class="nt-field" data-layout-item="due">
+          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling" data-layout-group-label={t("task_modal.details_group", locale)}>
+            <div id="nt-ctx-due-row" class="nt-field" data-layout-item="due" data-layout-exclude-kind="calendar_event">
               <label id="nt-due-label" data-layout-field-label>{t("tasks.due_date", locale)}</label>
               <input type="hidden" id="nt-contextual-due" name="due_date" />
               <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
@@ -296,7 +296,7 @@ try {
         <details class="nt-options" id="nt-options">
           <summary>{t("task_modal.more_options", locale)}</summary>
           <div class="nt-options-content">
-            <div class="nt-form-grid" data-layout-order="scheduling">
+            <div class="nt-form-grid" data-layout-order="scheduling" data-layout-group-label={t("task_modal.more_options", locale)}>
               {available("goals") && <div class="nt-field">
                 <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
                 <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
@@ -521,7 +521,7 @@ try {
   import { CUSTOM_RECURRENCE_SENTINEL, enhanceRecurrenceSelect } from "@lib/recurrence-picker"
   import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
   type SortableInstance = { destroy(): void }
-  type SortableFactory = (typeof import("sortablejs"))["default"]
+  type SortableFactory = typeof import("sortablejs")
   let sortableModulePromise: Promise<SortableFactory> | null = null
   function loadSortable(): Promise<SortableFactory> {
     if (!sortableModulePromise) {
@@ -570,7 +570,6 @@ try {
     const checklistDiv = document.getElementById("nt-contextual-checklist");
     const shoppingDiv = document.getElementById("nt-contextual-shopping");
     const eventDiv = document.getElementById("nt-contextual-event");
-    const dueRow = document.getElementById("nt-ctx-due-row");
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const descEditor = enhanceDescriptionEditor(descInput, { signal });
@@ -728,13 +727,18 @@ try {
       const open = ntLayoutPanel.hidden
       if (open && !ntLayoutMounted) {
         const editor = ntLayoutPanel.querySelector<HTMLElement>("[data-task-layout-editor]")
-        if (editor) {
-          initTaskDetailLayoutEditor(editor, signal)
+        if (editor && ntSections) {
+          const supportedKinds = new Set([...kindTabs].map(tab => (tab as HTMLElement).dataset.kind))
+          editor.querySelectorAll<HTMLElement>("[data-layout-target]").forEach(tab => {
+            if (tab.dataset.layoutTarget !== "default" && !supportedKinds.has(tab.dataset.layoutTarget)) tab.remove()
+          })
+          initTaskDetailLayoutEditor(editor, signal, ntSections)
           ntLayoutMounted = true
         }
       }
       ntLayoutPanel.hidden = !open
       ntLayoutToggle.setAttribute("aria-expanded", String(open))
+      if (!open) updateNtLayout?.()
     }, { signal })
 
     const prioritySelect = overlay.querySelector<HTMLSelectElement>("#new-task-priority")
@@ -764,8 +768,7 @@ try {
       splitBtnWrap?.classList.toggle("is-open", open)
     }
 
-    function syncAfterCreateControl() {
-      const pref = readWorkspacePreferences().afterTaskCreate === "open" ? "open" : "board"
+    function syncAfterCreateControl(pref = readWorkspacePreferences().afterTaskCreate ?? "board") {
       if (afterCreateSelect) afterCreateSelect.value = pref
       splitAfterRadios.forEach((btn) => {
         const checked = btn.dataset.afterCreate === pref
@@ -777,7 +780,7 @@ try {
     afterCreateSelect?.addEventListener("change", () => {
       const next = afterCreateSelect.value === "open" ? "open" : "board"
       void saveWorkspacePreferences({ afterTaskCreate: next })
-      syncAfterCreateControl()
+      syncAfterCreateControl(next)
     }, { signal })
     splitToggle?.addEventListener("click", (event) => {
       event.stopPropagation()
@@ -786,9 +789,8 @@ try {
     splitAfterRadios.forEach((btn) => {
       btn.addEventListener("click", () => {
         const next = btn.dataset.afterCreate === "open" ? "open" : "board"
-        if (afterCreateSelect) afterCreateSelect.value = next
         void saveWorkspacePreferences({ afterTaskCreate: next })
-        syncAfterCreateControl()
+        syncAfterCreateControl(next)
         setSplitMenuOpen(false)
       }, { signal })
     })
@@ -805,7 +807,7 @@ try {
         splitToggle?.focus()
       }
     }, { signal })
-    window.addEventListener("meitheal:workspace-preferences-change", syncAfterCreateControl, { signal })
+    window.addEventListener("meitheal:workspace-preferences-change", () => syncAfterCreateControl(), { signal })
 
     function createButtonLabel(kind = kindInput?.value) {
       const labels = submitBtn?.dataset
@@ -829,7 +831,6 @@ try {
       checklistDiv?.classList.toggle("hidden", !checklist)
       shoppingDiv?.classList.toggle("hidden", !shopping)
       eventDiv?.classList.toggle("hidden", !event)
-      dueRow?.classList.toggle("hidden", event)
       if (titleInput) {
         const labels = titleInput.dataset
         titleInput.placeholder = (shopping ? labels.placeholderShopping
@@ -1617,23 +1618,9 @@ try {
 
     function syncDueControls(focus = false) {
       const textInput = dueMount?.querySelector<HTMLInputElement>(".idp-text-input")
-      if (textInput) {
-        textInput.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
-        if (focus) textInput.focus({ preventScroll: true })
-        return
-      }
-      const trigger = dueMount?.querySelector<HTMLElement>(".idp-trigger")
-      if (!trigger) return
-      const clear = trigger.querySelector<HTMLButtonElement>(".idp-clear-btn")
-      if (clear) dueMount?.append(clear)
-      dueMount?.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.type = "button" })
-      if (!(trigger instanceof HTMLButtonElement)) {
-        trigger.tabIndex = 0
-        trigger.setAttribute("role", "button")
-      }
-      trigger.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
-      trigger.setAttribute("aria-haspopup", "dialog")
-      if (focus) trigger.focus({ preventScroll: true })
+      if (!textInput) return
+      textInput.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
+      if (focus) textInput.focus({ preventScroll: true })
     }
 
     function restoreDue(raw: string) {
@@ -1642,6 +1629,7 @@ try {
       const hasTime = Boolean(raw && !dateOnly.test(raw) && parsed && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0))
       duePicker?.setValue(parsed, hasTime)
       syncDueControls()
+      recurrencePicker.refreshPresets()
     }
 
     if (dueMount && dueInput) {
@@ -1652,6 +1640,18 @@ try {
         editable: true,
         enableTime: true,
         ariaLabel: dueLabel,
+        onPanelOpen(panel) {
+          panel.classList.add("nt-due-date-panel")
+          panel.setAttribute("aria-label", dueLabel)
+          overlay.append(panel)
+          panel.addEventListener("keydown", event => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            duePicker?.closePanel()
+            syncDueControls(true)
+          }, { signal })
+        },
         onChange(date, meta) {
           if (meta?.hasTime) {
             dueInput.value = date.toISOString()
@@ -1661,48 +1661,19 @@ try {
             const d = String(date.getDate()).padStart(2, "0")
             dueInput.value = `${y}-${m}-${d}`
           }
+          recurrencePicker.refreshPresets()
           markEdited()
           queueMicrotask(() => syncDueControls(false))
         },
         onClear() {
           dueInput.value = ""
+          recurrencePicker.refreshPresets()
           markEdited()
           queueMicrotask(() => syncDueControls(true))
         },
         signal,
       })
       syncDueControls()
-      // The shared picker portals to body. Keep this instance inside the modal's focus scope.
-      dueMount.addEventListener("click", () => {
-        const prior = new Set(document.querySelectorAll(".idp-panel"))
-        requestAnimationFrame(() => {
-          const panel = [...document.querySelectorAll<HTMLElement>(".idp-panel")].find(item => !prior.has(item))
-          if (!panel || signal.aborted) return
-          panel.classList.add("nt-due-date-panel")
-          panel.setAttribute("role", "dialog")
-          panel.setAttribute("aria-label", dueLabel)
-          overlay.append(panel)
-          const bounds = panel.getBoundingClientRect()
-          panel.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - bounds.width - 8))}px`
-          panel.style.top = `${Math.max(8, Math.min(bounds.top, innerHeight - bounds.height - 8))}px`
-          panel.style.bottom = ""
-          panel.addEventListener("keydown", event => {
-            if (event.key !== "Escape") return
-            event.preventDefault()
-            event.stopPropagation()
-            duePicker?.setValue(displayedDate(dueInput.value))
-            syncDueControls(true)
-          }, { signal })
-          panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
-        })
-      }, { capture: true, signal })
-      dueMount.addEventListener("keydown", event => {
-        const target = event.target as HTMLElement
-        if (target.matches(".idp-trigger:not(button)") && ["Enter", " "].includes(event.key)) {
-          event.preventDefault()
-          target.click()
-        }
-      }, { signal })
       signal.addEventListener("abort", () => duePicker?.destroy(), { once: true })
     }
 
@@ -2528,7 +2499,9 @@ try {
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {
-          document.getElementById("nt-event-end")?.focus()
+          const endField = document.getElementById("nt-event-end")
+          const endPicker = endField?.nextElementSibling?.querySelector<HTMLElement>(".idp-text-input")
+          ;(endPicker ?? endField)?.focus()
           return
         }
         if (kindInput?.value === "shopping_item" && shoppingQuantity() === null) {

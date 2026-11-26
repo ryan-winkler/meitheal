@@ -8,7 +8,7 @@
  * @bounded-context tasks (presentation)
  */
 
-import { taskApi } from "@lib/task-api-client"
+import { readTaskFrameworkPayload, taskApi } from "@lib/task-api-client"
 
 /** Derive quadrant label from urgency × importance values */
 export function quadrantPreview(urgency: number, importance: number): string {
@@ -50,15 +50,5 @@ export function setupTriageListeners(_signal: AbortSignal): void {
 
 /** Read known framework values before replacing their serialized payload. */
 export async function getExistingFrameworkPayload(taskId: string): Promise<Record<string, unknown>> {
-  const data: unknown = await taskApi.getTask(taskId)
-  if (!data || typeof data !== "object" || Array.isArray(data) || (data as Record<string, unknown>).id !== taskId) {
-    throw new Error("Invalid task metadata response")
-  }
-  const fp = (data as Record<string, unknown>).framework_payload
-  if (fp === null) return {}
-  const parsed: unknown = typeof fp === "string" ? JSON.parse(fp) : fp
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Invalid task framework values")
-  }
-  return { ...parsed as Record<string, unknown> }
+  return readTaskFrameworkPayload(await taskApi.getTask(taskId), taskId)
 }

@@ -219,14 +219,30 @@ test("verified members see committed task activity and can filter it by current 
     expect(taskActivityJson).not.toContain(tokenId)
     expect(taskActivityJson).not.toMatch(/spoofed/)
     await a.setViewportSize({ width: 320, height: 740 })
-    await expect.poll(() => a.locator(".recent-activity").evaluate(element =>
-      element.scrollWidth <= element.clientWidth)).toBe(true)
-    await a.evaluate(() => localStorage.setItem("meitheal-theme", "dark"))
-    await a.reload()
-    await expect(a.locator("html")).toHaveAttribute("data-theme", "dark")
-    const contrast = await new AxeBuilder({ page: a }).include("[data-recent-activity]")
-      .withRules(["color-contrast"]).analyze()
-    expect(contrast.violations).toEqual([])
+    await a.emulateMedia({ reducedMotion: "reduce" })
+    for (const theme of ["light", "dark"]) {
+      await a.evaluate(theme => localStorage.setItem("meitheal-theme", theme), theme)
+      await a.reload()
+      await expect(a.locator("html")).toHaveAttribute("data-theme", theme)
+      await expect.poll(() => a.locator("[data-recent-activity]").evaluate(element =>
+        element.scrollWidth <= element.clientWidth)).toBe(true)
+      const filters = a.getByRole("form", { name: "Activity filters" })
+      const targets = [
+        filters.getByRole("combobox", { name: "Current area" }),
+        filters.getByRole("combobox", { name: "Person" }),
+        filters.getByRole("button", { name: "Apply filters" }),
+        events.first().getByRole("link").first(),
+      ]
+      for (const target of targets) expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      expect(await events.first().evaluate(row => {
+        const list = row.parentElement!
+        const style = getComputedStyle(list)
+        return [style.animationName, style.transform]
+      })).toEqual(["none", "none"])
+      const contrast = await new AxeBuilder({ page: a }).include("[data-recent-activity]")
+        .withRules(["color-contrast"]).analyze()
+      expect(contrast.violations).toEqual([])
+    }
     const people = a.getByRole("combobox", { name: "Person" })
     const optionA = people.locator(`option[value="${aKey}"]`)
     const optionB = people.locator(`option[value="${bKey}"]`)
@@ -234,7 +250,8 @@ test("verified members see committed task activity and can filter it by current 
     await a.getByRole("combobox", { name: "Current area" }).selectOption(garden.body.id)
     await people.selectOption(bKey)
     await a.getByRole("button", { name: "Apply filters" }).press("Enter")
-    await expect(a).toHaveURL(url => url.pathname === prefix + "/activity" && url.searchParams.get("person") === bKey)
+    await expect(a).toHaveURL(url => url.pathname === prefix + "/activity" &&
+      url.searchParams.get("person") === bKey && url.searchParams.get("board_id") === "household")
     await expect(events).toHaveCount(1)
     await expect(events.first()).toContainText("closed a task")
 
@@ -261,12 +278,16 @@ test("verified members see committed task activity and can filter it by current 
     const firstIds = await events.evaluateAll(rows => rows.map(row => row.getAttribute("data-activity-event")))
     await a.getByRole("link", { name: "Older activity" }).click()
     await expect(events).toHaveCount(3)
+    await expect(a.getByRole("link", { name: "Latest activity", exact: true })).toHaveCount(1)
+    await expect(a.getByRole("link", { name: "Refresh activity", exact: true })).toHaveCount(0)
     const olderIds = await events.evaluateAll(rows => rows.map(row => row.getAttribute("data-activity-event")))
     expect(firstIds.filter(id => olderIds.includes(id))).toEqual([])
 
     expect((await mutate(a, task, "DELETE", {})).status).toBe(204)
     await a.reload()
     await expect(events.filter({ hasText: "Repair the fence" })).toHaveCount(0)
+    await a.getByRole("link", { name: "Clear filters" }).press("Enter")
+    await expect(a).toHaveURL(url => url.pathname === prefix + "/activity" && url.search === "?board_id=household")
     const denied = await old.goto(activity)
     expect(denied?.status()).toBe(403)
     expect(denied?.headers()["cache-control"]).toBe("private, no-store")

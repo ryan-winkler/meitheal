@@ -2,7 +2,6 @@ import { requestNotificationPermission, showTaskNotification } from "@domains/of
 import { isPwaSupported } from "@domains/offline/sw-register"
 import { initTaskDetailLayoutEditor } from "@lib/task-detail-layout-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
 import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
@@ -60,7 +59,6 @@ function bootSettingsPage(): void {
 
   initSettingsController()
   initSettingsShell()
-  initSettingsFeedback()
   initSettingsLabels(pageLifecycle.signal)
   initSettingsLabelCleanup()
   initSettingsTaskNav(pageLifecycle.signal)

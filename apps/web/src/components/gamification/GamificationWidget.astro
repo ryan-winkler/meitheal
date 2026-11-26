@@ -156,7 +156,7 @@ const streakLinkTitle = stats.currentStreak > 0
     href={todayHref}
     class="gam-progress gam-progress--link"
     title={`Completed ${stats.todayCompleted} of ${dailyGoal} daily goal — view Today's Progress`}
-    aria-label={`Completed ${stats.todayCompleted} of ${dailyGoal} daily goal — open Progress & Growth`}
+    aria-label={`${stats.todayCompleted} / ${dailyGoal} completed — open Progress & Growth`}
   >
     <svg viewBox="0 0 100 100" class={`gam-ring ${progress >= 1 ? "gam-ring--complete" : ""}`} aria-hidden="true">
       <circle cx="50" cy="50" r="42" class="gam-ring__bg" />

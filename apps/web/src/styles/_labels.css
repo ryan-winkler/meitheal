@@ -203,7 +203,7 @@
 .label-filter__chip--active,
 .label-filter__chip--active:hover {
   background: var(--bg-hover);
-  color: var(--accent-text);
+  color: var(--text-primary);
   border-color: var(--accent-text);
 }
 

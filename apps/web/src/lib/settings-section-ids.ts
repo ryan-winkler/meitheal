@@ -50,6 +50,7 @@ export const LEGACY_SETTINGS_SECTION_ALIASES: Record<string, SettingsSectionId> 
   "network-settings": "webserver-settings",
   "ports-settings": "webserver-settings",
   "app-pwa": "app-pwa-settings",
+  "local-feedback": "app-pwa-settings",
   "danger-zone-settings": "backups-reset-settings",
   "data-settings": "backups-reset-settings",
 }

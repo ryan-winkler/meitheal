@@ -10,6 +10,10 @@ A Board holds a body of work and the people allowed to use it. Household is an e
 
 Open **Boards** to choose or create a workspace. All your Boards appear together. Expand a Board in the sidebar for its Areas and Projects. **Hide from my sidebar** changes your shortcuts; it does not change membership or privacy. Reopen a hidden Board from the directory.
 
+An Area name opens the Area. Its adjacent **Projects** disclosure expands the Project list. On phones, selecting Rename or Delete keeps the drawer open so you can edit, confirm or cancel in place. Opening a pinned capture type also keeps the drawer open and closing the form returns focus to the same shortcut. Use **All Areas** in the Board header to filter the current view. The picker stays within the viewport when the header wraps on a narrow screen. In the **Tasks** submenu, pin a view to add it to navigation. Each pinned view has one unpin button.
+
+In the Area picker, use the arrow keys to browse, **Home** or **End** to jump, and **Enter** or **Space** to apply the focused choice. **Escape** closes the picker and returns focus to its button. A list refresh keeps focus on the same Area when it is still available and leaves focus on any control you moved to outside the picker.
+
 When creating a Board, you can choose workflow labels. Presets change labels on its four existing task statuses; they do not change task behavior, permissions or Routine completion. The choice applies to that Board for all members. [First-time setup](first-time-setup.md) controls personal preferences.
 
 The selected Board stays with Dashboard, Today, Upcoming, Tasks, planning and progress. On Today, the page, mobile navigation and sidebar share the same authorized Board selection for the current request. Sidebar Area preferences govern whether Area links appear and what label they use. The Board and Area menus include rename, icon and color, pin, and remove actions where the current Board grants them. Sidebar task-view shortcuts always open the task workspace; Upcoming empty actions, Triage pagination and achievement links keep the same Board and selected Area or Project. Calendar day details are reads, so a Viewer can open permitted work without task creation rights. Use Kanban, Table, Calendar or Timeline for the same work. On phones, the bottom navigation highlights Calendar when you open it on a Board. Tap Tasks to return to the same Board's Kanban. Task capture, including Quick Add, keeps the selected Area or Project. With no selected Area or Project, new work stays unfiled; no Area is invented. Keyboard shortcuts and the Dashboard queue keep the same Board and placement. Check the visible Board name before saving. An unfiled Project can hold tasks without an Area.
@@ -18,11 +22,15 @@ Hierarchy controls use the current Board and record permissions. Before restrict
 
 ## Organize and connect work
 
+Planning and Progress show the current Board and any selected Area or Project above the content. Open the Board name to switch to another Board you can access. The section stays open and filters from the previous Board clear. In Progress, choose **Personal & Household** to return to the view that includes your own Pillars. The **Back to Board** link opens Kanban with the current Board, Area, or Project.
+
 Use **Areas & Projects** to group related work. Group labels use only visible associations; unfiled or unavailable Area metadata uses the same neutral “No area” label. An Area can be Kitchen, Yard or any name you choose. A Project can associate with an Area. Organizing Areas and Home Assistant physical locations are separate fields: changing a physical location does not refile work or change its audience.
 
 Open an Area or Project for its tasks, Goals, Routines and settings. Contextual creation retains that association. Empty pages expose the relevant creation actions when you have permission. Existing links continue to open the same records.
 
 Goals can associate with Boards, Areas and Projects. A Goal shared into Home shows the progress from Projects each reader can access. Private Work Projects, their names and their contribution to totals remain hidden from Home readers without Work access. Share into the receiving contexts where the Goal should appear; sharing into a whole Board does not automatically associate it with every Area and Project.
+
+Completed Goals show a labeled status badge with a theme-aware text color for light and dark surfaces.
 
 Routines use the same templates and occurrence history on every Board. They can be Board-only, associated with an Area, or associated with an unfiled Project. Completing a Routine follows task creation and completion permissions. Existing generated chores remain ordinary tasks; changing Routine configuration does not erase their history. A retry for an already completed occurrence retains its original task. If you try to change its date through a Board ticket, the response explains that the generated task keeps its original occurrence date.
 
@@ -56,7 +64,7 @@ A concurrent change asks you to refresh rather than overwriting another person's
 
 Offline editing uses the existing actor/installation/Board queue. Work pages, APIs and capture receipts require current network verification. The static offline screen contains no personal tasks. A missing capture acknowledgement remains unconfirmed: check the original attempt when connected before creating another task.
 
-Use Home Assistant App backups for the complete instance. The separately retained current grant journal is excluded from those archives. Never reconstruct authority from restored rows or an old matching database/marker pair. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for current custody, stopped-App verification and recovery.
+Use a cold Home Assistant App backup for the instance's database, committed grant marker and App options. The archive excludes the transient pending publication journal. Governed restore also requires a separately retained current operator checkpoint. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for current custody, stopped-App verification and recovery.
 
 Retiring an Area, Project or Goal preserves historical associations in storage. Public task responses omit unavailable planning references; they do not expose a private or retired destination as an active selection. A successful retirement acknowledges its own committed change while stale readers must refresh.
 

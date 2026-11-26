@@ -7,7 +7,6 @@ import path from "node:path"
 import { finalizeStartupBoardGrant } from "./board-grant-journal.mjs"
 import { boardRouteSelection } from "./board-route-selection.mjs"
 import { isMemoryDatabase, openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
-import { attachResponsePerformanceHooks } from "./http-performance.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 import { DEFAULT_WEBSERVER_PORT, parsePortSpec } from "./port-spec.mjs"
 import { recordIngressStreamAbort } from "./runtime-counters.mjs"
@@ -303,10 +302,6 @@ function createRequestListener(boundServer) {
       recordIngressStreamAbort()
     }
   })
-
-  if (rawPath !== "/api/sse" && rawPath !== databaseExportPath) {
-    attachResponsePerformanceHooks(req, res, rawPath ?? "/")
-  }
 
   runWithIngressTransport(transportContext, () => handler(req, res))
   }

@@ -18,6 +18,19 @@ export const BUILT_IN_CUSTOM_FIELDS: readonly CustomFieldDef[] = [
   { name: "story_points", type: "number" },
 ]
 
+export function kanbanCardFieldNames(fields: readonly CustomFieldDef[]): string[] {
+  const names = new Map<string, string>()
+  for (const { name } of [...BUILT_IN_CUSTOM_FIELDS, ...fields]) {
+    const key = name.toLowerCase()
+    if (!names.has(key)) names.set(key, name)
+  }
+  return [...names.values()]
+}
+
+export function cardCustomFieldLabel(name: string): string {
+  return name === "sprint" ? "Sprint" : name === "story_points" ? "Story points" : name
+}
+
 export const VALID_CUSTOM_FIELD_TYPES = new Set<string>([
   "text", "number", "url", "select", "date", "checkbox",
 ])

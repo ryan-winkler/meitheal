@@ -8,7 +8,7 @@ import type { SidebarSectionId } from "@domains/navigation/sidebar-menu"
 const initialBoard = readBoardNavigationContext(Astro.url)
 
 const views = (["calendar", "kanban", "timeline", "table"] as const satisfies readonly TaskView[]).map(id => {
-  const href = taskViewUrl(new URL(initialBoard ? `/boards/${encodeURIComponent(initialBoard.boardId)}` : "/tasks", Astro.url), id, true)
+  const href = taskViewUrl(new URL(initialBoard ? `/boards/${encodeURIComponent(initialBoard.boardId)}` : "/tasks", Astro.url), id, true, Astro.request.headers.get("user-agent") ?? "")
   return { id, itemKey: `view-${id}`, href: href.pathname + href.search + href.hash, icon: TASK_VIEW_ICONS[id], label: TASK_VIEW_LABELS[id] }
 })
 
@@ -297,17 +297,6 @@ function isExternal(href: string): boolean {
                     title={`Unpin ${item.label}`}
                   >
                     <Icon name="pin" size={15} sprite={true} />
-                  </button>
-                )}
-                {item.taskView && (
-                  <button
-                    type="button"
-                    class="task-view-pin task-view-item-unpin"
-                    data-task-view-unpin={item.taskView}
-                    aria-label={`Unpin ${item.label} from navigation`}
-                    title={`Unpin ${item.label}`}
-                  >
-                    <Icon name="pin" size={15} />
                   </button>
                 )}
                 <div class="sidebar-edit-actions">

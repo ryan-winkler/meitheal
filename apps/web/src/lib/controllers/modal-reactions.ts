@@ -85,11 +85,6 @@ export function mountReactions(host: HTMLElement, url: string, signal: AbortSign
         panel.scrollIntoView({ block: "nearest", behavior: "smooth" })
       }
     }, { signal })
-
-    const attachBtn = document.getElementById("td-chat-attach-btn")
-    attachBtn?.addEventListener("click", () => {
-      document.getElementById("td-attachment-input")?.click()
-    }, { signal })
   }
 }
 

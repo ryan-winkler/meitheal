@@ -54,9 +54,7 @@ const unavailableArea = `${organization("group")} unavailable`
       <Icon name="folder" size={15} />
     </span>
     <span class="area-selector__label" data-area-label>{catalogReady ? allAreas : `${organization("group", true)} unavailable`}</span>
-    <svg class="area-selector__chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+    <Icon name="chevron-down" class="area-selector__chevron" size={12} />
   </button>
 
   <div
@@ -79,9 +77,7 @@ const unavailableArea = `${organization("group")} unavailable`
         <Icon name="folder" size={15} />
       </span>
       <span class="area-selector__option-label">{allAreas}</span>
-      <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-        <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <Icon name="check" class="area-selector__check" size={14} />
     </button>
 
     <p data-area-catalog-feedback role="status" hidden={catalogReady}>{organization("group", true)} unavailable. Your selection is kept.</p>
@@ -105,9 +101,7 @@ const unavailableArea = `${organization("group")} unavailable`
             {areaTabler ? <Icon name={areaTabler} size={15} /> : area.icon}
           </span>
           <span class="area-selector__option-label">{area.name}</span>
-          <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <Icon name="check" class="area-selector__check" size={14} />
         </button>
       )
     })}
@@ -176,8 +170,8 @@ const unavailableArea = `${organization("group")} unavailable`
     position: absolute;
     top: calc(100% + 6px);
     inset-inline-start: 0;
-    min-width: 200px;
-    max-width: 280px;
+    min-width: min(200px, calc(100vw - 16px));
+    max-width: min(280px, calc(100vw - 16px));
     max-height: 300px;
     overflow-y: auto;
     background: var(--bg-card);
@@ -197,6 +191,11 @@ const unavailableArea = `${organization("group")} unavailable`
       inset-inline-start: auto;
       inset-inline-end: 0;
     }
+  }
+
+  @media (max-width: 768px), (pointer: coarse) {
+    .area-selector__trigger,
+    .area-selector__option { min-block-size: 44px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
