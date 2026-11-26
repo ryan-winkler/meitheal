@@ -66,7 +66,13 @@ test("ticket and Settings share a real section and field order, and reset restor
   await expect(page.locator("#td-title")).toHaveValue("Arrange a task")
   const initial = await ids(sections)
   expect(initial.slice(0, 3)).toEqual(["description", "properties", "scheduling"])
-  await description.locator("summary").press("Enter")
+  const descriptionSummary = description.locator("summary")
+  // The title can populate while the Inspector still shows its loading state.
+  await expect(descriptionSummary).toBeVisible()
+  await descriptionSummary.focus()
+  await expect(descriptionSummary).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(description).toHaveJSProperty("open", false)
   await expect(description.locator("#td-desc-preview")).toBeHidden()
   await expect(sections.locator("#td-status")).toBeVisible()
 
