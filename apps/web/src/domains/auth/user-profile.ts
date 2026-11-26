@@ -184,11 +184,8 @@ export function validateUserProfile(input: {
 
 export function profileInitials(profile: Pick<UserProfile, "displayName" | "username">): string {
   const source = cleanText(profile.displayName, 60) || cleanUsername(profile.username) || "M"
-  const parts = source.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) {
-    return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase()
-  }
-  return (parts[0]?.[0] ?? "M").toUpperCase()
+  const [first = "M", second = ""] = source.split(/\s+/, 2)
+  return `${first.charAt(0)}${second.charAt(0)}`.toUpperCase()
 }
 
 export function profileSubtitle(profile: Pick<UserProfile, "username" | "role">): string {

@@ -108,7 +108,7 @@ export function initLaneManagementPanel(): void {
     opts: { refreshList?: boolean; onSuccess?: () => void } = {},
   ): Promise<boolean> {
     try {
-      const res = await fetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
+      const res = await window.fetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
       if (!res.ok) {
         const err = await res.json().catch(() => null) as { error?: string } | null
         notify(err?.error ?? failMessage, "error")

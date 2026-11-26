@@ -7,6 +7,7 @@ import {
   avatarContrastForeground,
   isThemeAvatarColor,
   normalizeUserProfile,
+  profileInitials,
   validateUserProfile,
 } from "./user-profile"
 
@@ -42,4 +43,10 @@ test("avatarContrastForeground chooses high-contrast text color", () => {
   assert.equal(avatarContrastForeground("#146C4E"), "#ffffff")
   assert.equal(avatarContrastForeground("#111827"), "#ffffff")
   assert.equal(avatarContrastForeground("#FACC15"), "#000000")
+})
+
+test("profile initials use the first two names and fall back to the username", () => {
+  assert.equal(profileInitials({ displayName: "  Alex   Kelly Quinn ", username: "alex" }), "AK")
+  assert.equal(profileInitials({ displayName: "", username: "alex" }), "A")
+  assert.equal(profileInitials({ displayName: "", username: "" }), "M")
 })
