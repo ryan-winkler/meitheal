@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -49,10 +49,7 @@ function toRepoRelativeCoverageMap(rawMap, repoRoot) {
   return relativeMap
 }
 
-/**
- * Merge all V8 JSON coverage dumps inside `v8Dir` into a repo-relative LCOV file at `outputFile`.
- */
-export async function generateLcovCoverage(v8Dir, outputFile, repoRoot) {
+async function collectCoverage(v8Dir, repoRoot) {
   const jsonFiles = readdirSync(v8Dir).filter(name => name.endsWith(".json")).sort()
   if (!jsonFiles.length) {
     throw new Error(`No V8 coverage files found in ${v8Dir}`)
@@ -86,19 +83,44 @@ export async function generateLcovCoverage(v8Dir, outputFile, repoRoot) {
     throw new Error(`No repository source files were captured in ${v8Dir}`)
   }
 
+  return relativeMap
+}
+
+function writeLcov(coverageMap, outputFile) {
   const resolvedOutput = resolve(outputFile)
   mkdirSync(dirname(resolvedOutput), { recursive: true })
   const context = istanbulReport.createContext({
     dir: dirname(resolvedOutput),
-    coverageMap: relativeMap,
+    coverageMap,
   })
   istanbulReports.create("lcovonly", { file: basename(resolvedOutput) }).execute(context)
 
-  const summary = relativeMap.getCoverageSummary().toJSON()
+  const summary = coverageMap.getCoverageSummary().toJSON()
   return {
     file: resolvedOutput,
-    coveredFiles: relativeMap.files().length,
+    coveredFiles: coverageMap.files().length,
     linesPct: summary.lines.pct,
     branchesPct: summary.branches.pct,
   }
+}
+
+export async function generateLcovCoverage(v8Dir, outputFile, repoRoot) {
+  return writeLcov(await collectCoverage(v8Dir, repoRoot), outputFile)
+}
+
+export async function generateCoverageMap(v8Dir, outputFile, repoRoot) {
+  const coverage = await collectCoverage(v8Dir, repoRoot)
+  writeFileSync(outputFile, JSON.stringify(coverage.toJSON()))
+}
+
+export function mergeCoverageMaps(inputs, outputFile) {
+  const coverage = istanbulCoverage.createCoverageMap({})
+  for (const file of inputs) {
+    const shard = istanbulCoverage.createCoverageMap(JSON.parse(readFileSync(file, "utf8")))
+    if (!shard.files().length) throw new Error("Empty coverage map")
+    coverage.merge(shard)
+  }
+  mkdirSync(dirname(resolve(outputFile)), { recursive: true })
+  writeFileSync(outputFile + ".json", JSON.stringify(coverage.toJSON()))
+  return writeLcov(coverage, outputFile)
 }

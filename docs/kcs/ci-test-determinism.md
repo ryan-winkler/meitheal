@@ -49,3 +49,11 @@ Search keeps one existing status region while loading, failing and recovering; R
 
 Framework backup imports retain legacy scoring payloads for round trips; new framework edits still validate bounds, options and supported formulas. AI handoff tests mock the atomic `handoff=1` policy snapshot, including Assist authority and the saved URL. Regional setting writes, imports and resets invalidate the process-local SSR cache for the next page request; changes from other processes retain the existing 60-second refresh bound.
 
+
+## Replay one CI spec
+
+Build the web app, then run `pnpm --filter @meitheal/tests test:ci --spec e2e/saved-filter-ingress.spec.ts`. Use the spec path from the failure log. The runner enables the local browser fixture and gives that spec a fresh server and database.
+
+Set `MEITHEAL_CI_LOCAL_TRACE_DIR` to an owner-only directory outside the temporary fixture to keep failure traces locally. Use synthetic data. The hosted comparison uploads only normalized test results and coverage, so raw browser captures stay on the test machine.
+
+The comparison workflow runs only on `codex/ci-sharding-pilot`. It builds one fixture for a six-shard run and a two-lane control. A successful comparison requires the same test outcomes and mapped line and branch coverage. It does not publish coverage or replace any required check. If a hosted attempt fails, rerun the whole comparison to keep the build and shard evidence from the same attempt.
