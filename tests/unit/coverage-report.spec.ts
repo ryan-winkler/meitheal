@@ -2,10 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { gunzipSync } from "node:zlib"
 
 import { expect, test } from "@playwright/test"
 
 import { generateLcovCoverage, normalizeCoveredSourcePath } from "../coverage-report.mjs"
+import { replayPilotCoverage, writePilotCoverage } from "../pilot-coverage.mjs"
 
 const repoRoot = resolve(process.cwd(), "..")
 
@@ -119,6 +121,15 @@ test("generateLcovCoverage maps transpiled TypeScript via lineLengths without so
     expect(lcov).toContain("SF:packages/domain-auth/src/agent-route-policy.ts")
     expect(lcov).toContain("FN:39,isTaskReactionRoute")
     expect(lcov).toContain("FNDA:3,isTaskReactionRoute")
+
+    const spec = "unit/coverage-report.spec.ts"
+    const archive = join(work, "pilot.json.gz")
+    writePilotCoverage([{ file: spec, directory: work }], archive, repoRoot)
+    expect(gunzipSync(readFileSync(archive)).toString("utf8")).not.toContain(repoRoot)
+    const pilotLcov = join(work, "pilot-lcov.info")
+    await replayPilotCoverage([{ path: archive, files: [spec] }], [spec], pilotLcov, repoRoot)
+    expect(readFileSync(pilotLcov, "utf8")).toBe(lcov)
+    await expect(replayPilotCoverage([{ path: archive, files: [] }], [spec], pilotLcov, repoRoot)).rejects.toThrow("Unexpected coverage input")
   } finally {
     rmSync(work, { recursive: true, force: true })
   }

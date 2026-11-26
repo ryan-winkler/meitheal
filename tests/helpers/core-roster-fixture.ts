@@ -1,4 +1,5 @@
 import { createRequire } from "node:module"
+import { closeHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 const require = createRequire(new URL("../../apps/web/package.json", import.meta.url))
 const { WebSocket, WebSocketServer } = require("ws") as typeof import("../../apps/web/node_modules/@types/ws")
 
@@ -14,7 +15,9 @@ export async function startCoreRosterFixture(ids: string[]) {
       if (command.type === "auth") socket.send(JSON.stringify({ type: "auth_ok", ha_version: "2026.11.1" }))
       else if (command.type === "config/auth/list") socket.send(JSON.stringify({ type: "result", id: command.id, success: true,
         result: ids.map(id => ({ id, name: id, is_active: true, system_generated: false, is_owner: id === "owner", group_ids: [] })) }))
-      else socket.close()
+      else if (command.type === "ping") socket.send(JSON.stringify({ type: "pong", id: command.id }))
+      else socket.send(JSON.stringify({ type: "result", id: command.id, success: false,
+        error: { code: "unknown_command", message: "Unsupported roster fixture command" } }))
     })
   })
   const address = server.address()
@@ -30,6 +33,7 @@ export async function startCoreRosterFixture(ids: string[]) {
   return async () => {
     globalThis.WebSocket = previousSocket
     if (previousToken === undefined) delete process.env.SUPERVISOR_TOKEN; else process.env.SUPERVISOR_TOKEN = previousToken
+    closeHAConnection()
     for (const socket of server.clients) socket.terminate()
     await new Promise<void>(resolve => server.close(() => resolve()))
   }

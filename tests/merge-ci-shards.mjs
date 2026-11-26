@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { mergeCoverageMaps } from "./coverage-report.mjs"
 import { artifactDigest, loadPilotShardTimings, shardIdentity, testedTree, testInventory, validateShardReports } from "./ci-shards.mjs"
+import { PILOT_COVERAGE_ARCHIVE, replayPilotCoverage } from "./pilot-coverage.mjs"
 
 const [directory, output, total] = process.argv.slice(2)
 const count = Number(total)
@@ -30,9 +30,12 @@ const timings = count > 1 ? loadPilotShardTimings() : {}
 const outcomes = validateShardReports(reports, files, cases, count, identity, timings)
 mkdirSync(output, { recursive: true })
 writeFileSync(join(output, "cases.json"), JSON.stringify(outcomes))
-const maps = shards.map(shard => join(shard, "coverage.json"))
-if (maps.some((map, position) => artifactDigest(map) !== reports[position].coverageDigest)) {
-  throw new Error("Coverage map does not match the corresponding shard report")
+const archives = shards.map((shard, index) => ({
+  path: join(shard, PILOT_COVERAGE_ARCHIVE),
+  files: reports[index].results.map(result => result.file),
+}))
+if (archives.some((archive, index) => artifactDigest(archive.path) !== reports[index].coverageDigest)) {
+  throw new Error("Coverage input does not match the corresponding shard report")
 }
-const coverage = mergeCoverageMaps(maps, join(output, "lcov.info"))
+const coverage = await replayPilotCoverage(archives, files, join(output, "lcov.info"), resolve(cwd, ".."))
 console.log(JSON.stringify({ specs: files.length, tests: cases.length, shards: count, coverage }))

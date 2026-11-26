@@ -1,11 +1,12 @@
 import { execFileSync, spawn } from "node:child_process"
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { generateCoverageMap, generateLcovCoverage } from "./coverage-report.mjs"
+import { generateLcovCoverage } from "./coverage-report.mjs"
 import { artifactDigest, loadPilotShardTimings, parseShard, planShards, shardIdentity, testedTree, testsInReport } from "./ci-shards.mjs"
+import { PILOT_COVERAGE_ARCHIVE, writePilotCoverage } from "./pilot-coverage.mjs"
 
 const cwd = fileURLToPath(new URL(".", import.meta.url))
 const repoRoot = resolve(cwd, "..")
@@ -42,8 +43,11 @@ const files = exactSpec ? [exactSpec] : planShards(allFiles, shard.count, timing
 const results = []
 if (evidenceDir) await mkdir(evidenceDir, { recursive: true })
 const output = await mkdtemp(join(tmpdir(), "meitheal-ci-"))
-const v8CoverageDir = coverageOutput || evidenceDir ? join(output, "v8-coverage") : null
+const v8CoverageDir = coverageOutput ? join(output, "v8-coverage") : null
 if (v8CoverageDir) await mkdir(v8CoverageDir, { recursive: true })
+const coverageInputs = evidenceDir ? files.map((file, index) => ({
+  file, directory: join(output, String(index), "v8-coverage"),
+})) : []
 const children = new Set()
 const stop = signal => {
   process.exitCode = signal === "SIGINT" ? 130 : 143
@@ -55,6 +59,8 @@ process.once("SIGTERM", stop)
 async function runFile(file, fixturePort, index) {
   const specDir = join(output, String(index))
   await mkdir(specDir)
+  const coverage = coverageInputs[index]?.directory ?? v8CoverageDir
+  if (evidenceDir && coverage) await mkdir(coverage)
   const reportPath = join(specDir, "playwright.json")
   const started = Date.now()
   const pattern = file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"
@@ -70,7 +76,7 @@ async function runFile(file, fixturePort, index) {
         MEITHEAL_TEST_PORT: String(fixturePort),
         TMPDIR: specDir,
         ...(evidenceDir ? { PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath } : {}),
-        ...(v8CoverageDir ? { NODE_V8_COVERAGE: v8CoverageDir } : {}),
+        ...(coverage ? { NODE_V8_COVERAGE: coverage } : {}),
       },
       stdio: "inherit",
     })
@@ -125,18 +131,22 @@ try {
   console.log(`CI specs: ${passed} passed, ${failures.length} failed, ${files.length - next} not run`)
   if (evidenceDir) {
     const identity = shardIdentity(testedTree(repoRoot))
-    const mapFile = join(evidenceDir, "coverage.json")
+    const archive = join(evidenceDir, PILOT_COVERAGE_ARCHIVE)
     let coverageDigest
     try {
-      if (v8CoverageDir && !process.exitCode && !failures.length) {
-        await generateCoverageMap(v8CoverageDir, mapFile, repoRoot)
-        coverageDigest = artifactDigest(mapFile)
+      if (!process.exitCode && !failures.length) {
+        const bytes = writePilotCoverage(coverageInputs, archive, repoRoot)
+        console.log("CI coverage inputs: " + bytes + " bytes")
+        coverageDigest = artifactDigest(archive)
       }
     } finally {
       await writeFile(join(evidenceDir, "result.json"), JSON.stringify({ identity, shard, results, coverageDigest }))
     }
   }
   if (v8CoverageDir && coverageOutput && !process.exitCode && !failures.length) {
+    for (const { directory } of coverageInputs) {
+      for (const name of await readdir(directory)) await link(join(directory, name), join(v8CoverageDir, name))
+    }
     const summary = await generateLcovCoverage(v8CoverageDir, coverageOutput, repoRoot)
     // Name the variable rather than echoing its value: nothing read from the
     // environment reaches the CI log.
