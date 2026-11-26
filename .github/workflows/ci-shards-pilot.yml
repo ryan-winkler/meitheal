@@ -16,7 +16,8 @@ env:
   PILOT_SHARD_COUNT: 10
 
 concurrency:
-  group: ci-shards-pilot-${{ github.ref }}
+  # Preserve the control result when the next comparison uses a different revision.
+  group: ci-shards-pilot-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
