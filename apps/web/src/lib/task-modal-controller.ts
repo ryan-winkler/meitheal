@@ -66,8 +66,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         } | undefined
         let boardWithheld = false
         let boardRevoked = false
+        let ticketClose: {
+          background: string
+          arrived: boolean
+          reopen?: { start: () => void; discard?: () => void }
+        } | undefined
         document.addEventListener("meitheal:board-hidden", () => {
           boardWithheld = true
+          discardTicketReopen()
           tdOverlay.hidden = true
           tdOverlay.inert = true
           _modalAbortController?.abort()
@@ -78,6 +84,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (boardId && boardId !== currentTaskApiContext()?.boardId) return
           boardRevoked = true
           boardWithheld = true
+          discardTicketReopen()
           _modalAbortController?.abort()
           detailGeneration++
           descriptionRenderSequence++
@@ -278,6 +285,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let _modalAbortController: AbortController | null = null;
         __signal.addEventListener("abort", () => {
           _modalAbortController?.abort()
+          discardTicketReopen()
+          ticketClose = undefined
           searchSession?.lifetime.abort()
           searchSession?.handoff.onDismiss("history")
           searchSession = undefined
@@ -292,8 +301,15 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
-        const drawerSession = browserUuid()
-        let drawerEntry = 0
+        const savedDrawer = history.state?.ticketDrawer
+        const savedBackground = history.state?.ticketBackground
+        const savedSession = savedDrawer?.pushed && typeof savedDrawer.session === "string" &&
+          ticketIdFromPath(location.pathname, window.__ingress_path) !== null ? savedDrawer.session : null
+        const savedEntry = savedSession && typeof savedBackground === "string" && savedBackground.startsWith(savedSession + "-")
+          ? Number(savedBackground.slice(savedSession.length + 1)) : 0
+        const restoreSession = Number.isSafeInteger(savedEntry) && savedEntry > 0
+        const drawerSession = restoreSession && savedSession ? savedSession : browserUuid()
+        let drawerEntry = restoreSession ? savedEntry : 0
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
@@ -460,8 +476,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
             saveNavigationState()
           } else if (ticket !== null) {
-            if (history.state?.ticketDrawer?.pushed) history.back()
-            else {
+            if (history.state?.ticketDrawer?.pushed) {
+              const background = history.state.ticketBackground
+              if (typeof background === "string" && background.startsWith(drawerSession + "-")) {
+                ticketClose = { background, arrived: false }
+              }
+              history.back()
+            } else {
               history.replaceState(history.state, "", taskBackgroundUrl(url))
               saveNavigationState()
             }
@@ -473,6 +494,33 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             history.replaceState(history.state, "", url)
             saveNavigationState()
           }
+        }
+
+        function reopenAfterTicketClose() {
+          const close = ticketClose
+          if (!close?.arrived || tdOverlay.classList.contains("active")) return
+          if (!close.reopen) {
+            ticketClose = undefined
+            return
+          }
+          // Finish this traversal's popstate and hashchange before opening again.
+          window.setTimeout(() => {
+            if (ticketClose !== close) return
+            ticketClose = undefined
+            close.reopen?.start()
+          }, 0)
+        }
+
+        function discardTicketReopen() {
+          const reopen = ticketClose?.reopen
+          if (ticketClose) delete ticketClose.reopen
+          reopen?.discard?.()
+        }
+
+        function queueTicketReopen(close: NonNullable<typeof ticketClose>, start: () => void, discard?: () => void) {
+          const pending = close.reopen
+          close.reopen = { start, discard }
+          pending?.discard?.()
         }
 
         const pendingAreaWrites = new Map<string, Promise<string | null>>()
@@ -593,6 +641,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             search?.handoff.onDismiss(reason)
             reconcileAreaGrouping()
             reconcileEpicGrouping()
+            reopenAfterTicketClose()
           };
 
           if (reducedMotion || immediate || focusMode || document.body.classList.contains("has-docked-inspector")) {
@@ -686,6 +735,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation: boolean | "resolve" = true) {
           if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
+          // A close's Back traversal can arrive after this open was requested.
+          if (ticketClose) {
+            queueTicketReopen(ticketClose, () => { void openTaskDetail(taskId, commentTarget, search, updateLocation) },
+              search ? () => search.onDismiss("history") : undefined)
+            return
+          }
           const newSession = !tdOverlay.classList.contains("active")
           if (search && !newSession) {
             search.onDismiss("history")
@@ -2654,6 +2709,15 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const url = new URL(window.location.href)
           const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open") ?? url.searchParams.get("ticket")
           const commentTarget = url.searchParams.get("comment")
+          if (fromHistory && ticketClose) {
+            if (taskId === null && history.state?.ticketBackground === ticketClose.background) {
+              ticketClose.arrived = true
+              reopenAfterTicketClose()
+              return
+            }
+            discardTicketReopen()
+            ticketClose = undefined
+          }
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (!sameTaskLocator(taskId, currentTaskId, currentTicketKey) || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
@@ -2680,7 +2744,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         // Expose openTaskDetail globally for cross-page use (table, index new-task flow)
         window.openTaskDetail = openTaskDetail;
         const openPinnedTaskDetail = (taskId: string, reconcile: () => void) => {
-          if (!tdOverlay.isConnected || __signal.aborted || tdOverlay.classList.contains("active")) return
+          if (!tdOverlay.isConnected || __signal.aborted || boardWithheld) return
+          if (ticketClose) {
+            queueTicketReopen(ticketClose, () => openPinnedTaskDetail(taskId, reconcile))
+            return
+          }
+          if (tdOverlay.classList.contains("active")) return
           pinnedSession = { reconcile, dirty: false, pending: 0 }
           void openTaskDetail(taskId)
         }
