@@ -10,9 +10,17 @@ Meitheal caches static assets such as scripts, CSS, fonts and icons. Work pages 
 
 The existing IndexedDB engine can retain supported task edits and pending operations for the verified account, installation and Board that created them. Switching accounts or Boards does not transfer a queue. Previously unpartitioned legacy browser data stays unclaimed for manual recovery; it is not automatically assigned to the next visitor.
 
+Open a task shortcut while connected to establish its Board context. In browsers that support opening a new app window, the shortcut opens its target there and preserves the current form. If the connection drops while the form is open, task capture can save to that Board's outbox. Reconnect in the same context to replay the original attempt. Opening a shortcut from a closed app still requires a connection. The Routine shortcut opens the connected Routine editor.
+
+Home Assistant ingress can open a shortcut directly in the browser. The form establishes the current Board and account before submission and requires current write permission when it saves.
+
 ## Pending changes
 
 A pending operation keeps its original Board, actor, placement and retry identity. Reconnect using the same account and Board. Do not create another task just because the response was lost.
+
+If you close the app while a change is pending, reopen it while connected and
+return to the original account and Board. Replay runs in the open app after it
+verifies that context.
 
 Capture receipts require a connection. The App checks the original attempt at `GET /api/tasks?captureReceipt=1`; this is the only receipt lookup route. Receipt checks bypass HTTP and service-worker caches. An offline or denied check leaves the save unconfirmed. Retry the original check when connected.
 
@@ -29,6 +37,14 @@ Use **Settings → App & Companion** for install and local-storage controls. Cle
 Opening work pages, refreshing task lists, verifying access, checking receipts, Calendar/Todo/Grocy sync and webhook delivery need a connection. Notifications and browser storage also depend on the browser's supported APIs and permissions. Do not interpret an unavailable task list as an empty Board.
 
 The app manifest provides the Meitheal icon and Today, Calendar and Settings shortcuts. The sync indicator distinguishes pending operations, an active upload, confirmed saves and offline state. A confirmed local save and a confirmed server acknowledgement are different states.
+
+## Install and Service Worker updates
+
+Meitheal prompts for PWA installation through `apps/web/src/components/pwa/PwaInstallBanner.astro` (triggered by `beforeinstallprompt` on secure origins) and **Settings → App & Companion**. Behind Home Assistant ingress, `apps/web/public/sw.js` derives its `ingressPath` scope from `self.registration.scope` and precaches `/offline.html`, `/manifest.webmanifest`, and `/icon-192.png`.
+
+Consuming an install prompt immediately clears the shared prompt and hides both install controls while the browser choice is pending. A fresh `beforeinstallprompt` event offers installation again. Only `appinstalled` shows the installed badge; accepting or declining the prompt does not confirm installation.
+
+When an updated Service Worker waits to activate, `#toast-container` shows a persistent update prompt (`#sw-update-btn`), and **Settings → App & Companion** exposes **Update & reload** (`#pwa-update-settings-btn`) and **Force App Update** (`#pwa-force-update-btn`). Clicking any of those controls sets `aria-disabled="true"` and `aria-busy="true"`, announces status via `#sync-announcer` (`announceStatus()`), and clears state on failure or timeout so the user can retry. If activation completes elsewhere (`update-activated`), the persistent toast and idle Settings update prompt clear automatically. See [Toast Notifications Reference](toast-notifications.md) for banner suppression and Top-Layer stacking rules.
 
 ## Verification
 

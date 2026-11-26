@@ -29,7 +29,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   async function create(title: string, status: string, color?: string, rice = 4): Promise<string> {
-    const framework_payload = JSON.stringify({ reach: rice, impact: 1, confidence: 100, confidence_unit: "percent", effort: 1 })
+    const framework_payload = { rice: { reach: rice, impact: 1, confidence: 100, effort: 1 } }
     const response = await request.post("/api/tasks", {
       headers: boardHeaders, data: { title, due_date: dueDate, status, color, priority: color || rice > 4 ? 3 : 1, framework_payload },
     })
@@ -157,13 +157,13 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     expect((await request.put(`/api/tasks/${activeId}`, { headers: boardHeaders, data: { status: "active" } })).ok()).toBe(true)
 
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto("/tasks#kanban")
+    await page.goto("/tasks?view=kanban#kanban")
     const card = (id: string) => page.locator(`.kanban-card[data-id="${id}"]`)
     await expect(card(activeId)).toHaveCSS("background-color", "rgb(89, 53, 65)")
     const boardBadge = card(activeId).getByText("RICE: 4", { exact: true })
     await expect(boardBadge).toBeVisible()
     expect(await badgeContrast(boardBadge, ".kanban-card")).toBeGreaterThanOrEqual(4.5)
-    await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "1px")
+    await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "3px")
     await expect(card(idleId)).toHaveCSS("background-color", "rgb(36, 36, 36)")
     expect(await card(coloredId).evaluate(el => getComputedStyle(el).backgroundColor))
       .not.toBe(await card(idleId).evaluate(el => getComputedStyle(el).backgroundColor))
@@ -179,7 +179,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await page.emulateMedia({ contrast: "no-preference" })
 
     await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({ base: "mist" })))
-    for (const [path, surface] of [["/today#today-work", ".tli"], ["/tasks#kanban", ".kanban-card"]] as const) {
+    for (const [path, surface] of [["/today#today-work", ".tli"], ["/tasks?view=kanban#kanban", ".kanban-card"]] as const) {
       await page.goto(path)
       await expect(root).toHaveAttribute("data-appearance-base", "mist")
       const checklist = page.locator(`${surface}[data-id="${paleId}"] [title="Checklist: 1/1"]`)
@@ -209,11 +209,13 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await page.goto("/")
     await page.mouse.move(0, 0)
     const recent = (id: string) => page.locator(`#task-list .dashboard-task-card[data-id="${id}"]`)
-    await expect(recent(idleId)).toHaveCSS("border-left-color", "rgb(239, 68, 68)")
-    await expect(recent(mediumId)).toHaveCSS("border-left-color", "rgb(234, 179, 8)")
+    const urgentBadge = recent(idleId).locator(".priority-label")
+    await expect(urgentBadge).toBeVisible()
+    await expect(urgentBadge).toHaveClass(/priority-critical/)
+    await expect(recent(mediumId).locator(".priority-label")).toHaveClass(/priority-medium/)
     await expect(recent(coloredId)).toHaveCSS("border-left-width", "1px")
     await recent(idleId).hover()
-    await expect(recent(idleId)).toHaveCSS("border-left-color", "rgb(239, 68, 68)")
+    await expect(urgentBadge).toHaveClass(/priority-critical/)
     const queue = page.locator("#dashboard-open")
     const queueIdle = queue.locator(`.task-item[data-id="${idleId}"]`)
     await expect(queueIdle).toBeVisible()
@@ -229,7 +231,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await themeSelect.selectOption("dark")
     await saveAppearance(page, { theme: true })
     await expect(root).toHaveAttribute("data-theme", "dark")
-    await page.goto("/tasks#kanban")
+    await page.goto("/tasks?view=kanban#kanban")
     await expect(card(activeId)).toHaveCSS("background-color", "rgb(29, 33, 31)")
     await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "3px")
     await expect(card(coloredId)).toHaveCSS("border-inline-start-color", "rgb(33, 163, 102)")

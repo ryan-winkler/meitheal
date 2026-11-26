@@ -29,6 +29,7 @@ import { safeJsonForScript, SETTINGS_HELP_TOPICS } from "@domains/navigation/set
 import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
+import settingsUtilitiesCss from "../styles/settings-utilities.css?raw"
 
 const selectedBoard = await resolveBoardPageScope(Astro).catch(() => null)
 const settingsBoard = selectedBoard?.ok ? {
@@ -182,17 +183,18 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
   </script>
 </Layout>
 
-<style>
-  :global(body:has(#settings-bar)) {
+<style is:inline set:html={settingsUtilitiesCss} />
+<style is:inline>
+  body:has(#settings-bar) {
     overflow-x: clip;
     overflow-y: visible;
   }
 
-  :global(.main-content:has(> #settings-bar)) {
+  .main-content:has(> #settings-bar) {
     animation: none;
   }
 
-  :global(#main-content:has(> #settings-shell)) {
+  #main-content:has(> #settings-shell) {
     overflow: clip;
   }
 
@@ -218,44 +220,65 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
 
   .settings-bar__actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 8px;
+    min-width: 0;
   }
 
-  .settings-bar button {
+  .settings-bar__actions > :is(button, a.btn) {
     display: inline-flex;
-    gap: 6px;
     align-items: center;
-    min-height: 44px;
-    padding: 4px 10px;
-    background: var(--bg-card);
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0 11px;
+    background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
+    border-radius: var(--radius-sm, 8px);
+    font-size: 0.8125rem;
+    font-weight: 550;
+    line-height: 1;
+    white-space: nowrap;
+    text-decoration: none;
     cursor: pointer;
+    transition:
+      background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
-  .settings-bar button:hover,
+  .settings-bar__actions > :is(button, a.btn):hover,
   .settings-bar button[aria-expanded="true"] {
     background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--text-primary);
+  }
+
+  .settings-bar__actions > :is(button, a.btn):active {
+    transform: scale(0.97);
   }
 
   .settings-bar button:focus-visible,
   .settings-bar a:focus-visible,
-  .settings-shell :global(:focus-visible) {
+  .settings-shell :focus-visible {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
 
   .settings-bar kbd {
-    margin-inline-start: 6px;
-    padding-inline: 5px;
+    margin-inline-start: 4px;
+    padding: 1px 5px;
     border: 1px solid var(--border);
     border-radius: 4px;
+    background: var(--bg-card);
     color: var(--text-secondary);
+    font-size: 0.7rem;
+    line-height: 1.3;
   }
 
   .settings-shell {
@@ -292,18 +315,18 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     min-width: 0;
   }
 
-  .settings-shell :global([data-settings-shell-section]:not([hidden])) {
+  .settings-shell [data-settings-shell-section]:not([hidden]) {
     display: grid;
     gap: 16px;
     min-width: 0;
   }
 
-  .settings-shell :global(.settings-grid) {
+  .settings-shell .settings-grid {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
     align-items: start;
   }
 
-  .settings-shell :global(.custom-field-row) {
+  .settings-shell .custom-field-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -311,12 +334,12 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     padding-block: 8px;
   }
 
-  .settings-shell :global(.custom-field-row :is(input, select)) {
+  .settings-shell .custom-field-row :is(input, select) {
     flex: 1 1 110px;
     min-width: 0;
   }
 
-  .settings-shell :global(:is(.toggle-label, .toggle-switch)) {
+  .settings-shell :is(.toggle-label, .toggle-switch) {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -326,7 +349,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     cursor: pointer;
   }
 
-  .settings-shell :global(:is(.toggle-label, .toggle-switch) input) {
+  .settings-shell :is(.toggle-label, .toggle-switch) input {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -336,7 +359,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     cursor: inherit;
   }
 
-  .settings-shell :global(.toggle-slider) {
+  .settings-shell .toggle-slider {
     width: 40px;
     height: 24px;
     position: relative;
@@ -346,7 +369,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     pointer-events: none;
   }
 
-  .settings-shell :global(.toggle-slider::before) {
+  .settings-shell .toggle-slider::before {
     content: "";
     position: absolute;
     inset-block-start: 3px;
@@ -357,32 +380,32 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     background: var(--text-secondary);
   }
 
-  .settings-shell :global(input:checked + .toggle-slider) {
+  .settings-shell input:checked + .toggle-slider {
     background: var(--accent-text);
     border-color: var(--accent-text);
   }
 
-  .settings-shell :global(input:checked + .toggle-slider::before) {
+  .settings-shell input:checked + .toggle-slider::before {
     inset-inline-start: 19px;
     background: var(--bg-primary);
   }
 
-  .settings-shell :global(input:focus-visible + .toggle-slider) {
+  .settings-shell input:focus-visible + .toggle-slider {
     outline: 2px solid var(--text-primary);
     outline-offset: 3px;
   }
 
-  .settings-shell :global(.settings-file-picker) {
+  .settings-shell .settings-file-picker {
     position: relative;
     cursor: pointer;
   }
 
-  .settings-shell :global(.settings-file-picker:focus-within) {
+  .settings-shell .settings-file-picker:focus-within {
     outline: 2px solid var(--text-primary);
     outline-offset: 2px;
   }
 
-  .settings-shell :global(.settings-file-picker input) {
+  .settings-shell .settings-file-picker input {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -390,13 +413,13 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     clip-path: inset(50%);
   }
 
-  .settings-shell :global([id]),
-  .settings-shell :global([data-settings-destination]) {
+  .settings-shell [id],
+  .settings-shell [data-settings-destination] {
     scroll-margin-block-start: 88px;
     scroll-margin-block-end: 80px;
   }
 
-  .settings-shell :global([data-settings-destination]:focus-visible) {
+  .settings-shell [data-settings-destination]:focus-visible {
     outline: 2px solid var(--text-primary);
     outline-offset: 3px;
   }
@@ -419,13 +442,55 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
   }
 
   @media (max-width: 860px) {
-    .settings-shell {
-      display: block;
+    .settings-bar {
+      min-height: 48px;
+      padding: 6px 12px;
+      gap: 8px;
     }
 
-    .settings-shell :global([id]),
-    .settings-shell :global([data-settings-destination]) {
-      scroll-margin-block-start: 132px;
+    .settings-bar h1 {
+      font-size: 1.05rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .settings-bar__actions {
+      flex-wrap: nowrap;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .settings-bar__actions::-webkit-scrollbar {
+      display: none;
+    }
+
+    .settings-bar__actions > :is(button, a.btn) {
+      min-height: 32px;
+      height: 32px;
+      padding: 0 9px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .settings-bar__actions > :is(button, a.btn) svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    #settings-sections-toggle {
+      display: none;
+    }
+
+    .settings-shell {
+      display: block;
+      padding: 0 12px 24px;
+    }
+
+    .settings-shell [id],
+    .settings-shell [data-settings-destination] {
+      scroll-margin-block-start: 118px;
     }
 
     .settings-bar kbd {
@@ -434,8 +499,9 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
   }
 
   @media (max-width: 360px) {
-    .settings-bar button {
+    .settings-bar__actions > :is(button, a.btn) {
       padding-inline: 7px;
+      font-size: 0.72rem;
     }
 
     .settings-bar button svg {

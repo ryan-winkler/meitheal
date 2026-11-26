@@ -187,7 +187,7 @@ test.describe("Dashboard layout", () => {
     await expect(page.locator("#task-list")).toHaveCount(0)
     const request = page.waitForRequest(item => item.method() === "POST" && new URL(item.url()).pathname === "/api/tasks")
     await page.locator("#quick-title").fill("Feed the cat")
-    await page.locator("#quick-add-form button").click()
+    await page.locator("#quick-add-form").getByRole("button", { name: "Add", exact: true }).click()
     expect((await request).postDataJSON().title).toBe("Feed the cat")
   })
 
@@ -197,7 +197,7 @@ test.describe("Dashboard layout", () => {
     await editor.getByRole("checkbox", { name: "Show Recent" }).uncheck()
     await page.evaluate(() => { document.documentElement.dataset.workspaceFrozen = "true" })
     await editor.getByRole("button", { name: "Save dashboard" }).click()
-    await expect(editor.getByRole("status")).toContainText("Your session changed")
+    await expect(editor.getByRole("status")).toContainText(/session changed/i)
     expect(await page.evaluate(key => localStorage.getItem(key), layoutKey)).toBeNull()
     await expect(page.locator("#dashboard-recent")).toBeVisible()
   })

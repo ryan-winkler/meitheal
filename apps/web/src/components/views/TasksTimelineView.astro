@@ -29,7 +29,11 @@ import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-reposi
 import { serializeForScript } from "@lib/safe-html"
 import { isOrganizationFeatureAvailable } from "@lib/organization-request-context"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "@lib/household-project-grouping"
+import { findAllRules } from "@domains/strategy/rule-repository"
+import { resolveActiveScoringFrameworks, resolvePrimaryScoringFramework } from "@lib/active-scoring"
 import { t } from "../../i18n/translations"
+import timelineGanttCss from "../../styles/timeline-gantt.css?raw"
+import fieldPickerCss from "../../styles/field-picker-panel.css?raw"
 
 interface TaskRecord {
   id: string;
@@ -64,11 +68,17 @@ try {
   await ensureSchema();
   const client = getPersistenceClient();
   const repo = new TaskRepository(client, scope);
-  tasks = (await repo.getTimelineTasks()).map(row => ({
-    task: projectPublicTaskFields(row as unknown as Record<string, unknown>) as TaskRecord,
-    areaAssigned: Number(row.area_assigned) === 1,
-    projectAssigned: Boolean(row.project_id),
-  }))
+  tasks = (await repo.getTimelineTasks()).map(row => {
+    const projected = projectPublicTaskFields(row as unknown as Record<string, unknown>) as TaskRecord
+    if (typeof (row as Record<string, unknown>).task_version === "number") {
+      projected.task_version = (row as Record<string, unknown>).task_version as number
+    }
+    return {
+      task: projected,
+      areaAssigned: Number(row.area_assigned) === 1,
+      projectAssigned: Boolean(row.project_id),
+    }
+  })
   const projectId = Astro.url.searchParams.get("project")
   if (projectId) tasks = tasks.filter(({ task }) => task.project_id === projectId)
   // Resolve labels from the scoped catalog even when task filters change.
@@ -85,6 +95,14 @@ try {
   }
 } catch (e) {
   fetchError = true;
+}
+
+let activeScoringFramework: string = "rice"
+try {
+  const rules = await findAllRules()
+  activeScoringFramework = resolvePrimaryScoringFramework(resolveActiveScoringFrameworks(rules)) ?? "none"
+} catch {
+  activeScoringFramework = "rice"
 }
 
 let taskCount = 0
@@ -123,10 +141,19 @@ const totalTasks = tasks.length;
       Task pane
     </button>
 
-    <button id="timeline-scroll-today" class="timeline-ctrl-btn" title="Scroll to today" aria-label="Scroll to today">
-      <Icon name="calendar-event" size={16} />
-      <span class="timeline-ctrl-label">Today</span>
-    </button>
+    <div class="timeline-date-nav" role="group" aria-label="Navigate timeline dates">
+      <button type="button" id="timeline-nav-prev" class="timeline-ctrl-btn timeline-date-nav__btn" title="Previous period (←)" aria-label="Previous period">
+        <Icon name="chevron-down" class="timeline-nav-prev-icon" size={14} />
+      </button>
+      <button type="button" id="timeline-scroll-today" class="timeline-ctrl-btn timeline-date-nav__today" title="Scroll to today (T)" aria-label="Scroll to today">
+        <Icon name="calendar-event" size={15} />
+        <span class="timeline-ctrl-label">Today</span>
+      </button>
+      <button type="button" id="timeline-nav-next" class="timeline-ctrl-btn timeline-date-nav__btn" title="Next period (→)" aria-label="Next period">
+        <Icon name="chevron-down" class="timeline-nav-next-icon" size={14} />
+      </button>
+    </div>
+    <span id="timeline-visible-range" class="timeline-visible-range" aria-live="polite"></span>
 
     <!-- Zoom dropdown with "Time period" title -->
     <details class="timeline-zoom-dropdown" id="timeline-zoom-dropdown">
@@ -145,8 +172,14 @@ const totalTasks = tasks.length;
       </div>
     </details>
 
+    <!-- Manual Refresh (in-place without page reload) -->
+    <button type="button" id="timeline-refresh-btn" class="timeline-ctrl-btn" title="Refresh timeline data" aria-label="Refresh timeline">
+      <Icon name="refresh" size={16} />
+      <span class="timeline-ctrl-label">Refresh</span>
+    </button>
+
     <!-- Export as PNG -->
-    <button id="timeline-export-btn" class="timeline-ctrl-btn" title="Export as PNG" aria-label="Export timeline as PNG">
+    <button type="button" id="timeline-export-btn" class="timeline-ctrl-btn" title="Export as PNG" aria-label="Export timeline as PNG">
       <Icon name="download" size={16} />
       <span class="timeline-ctrl-label">Export</span>
     </button>
@@ -227,6 +260,7 @@ const totalTasks = tasks.length;
     aria-label="Task timeline Gantt chart"
     aria-rowcount={String(taskCount)}
     aria-colcount="1"
+    data-active-framework={activeScoringFramework}
   ></div>
 
   <!-- Error state -->
@@ -241,22 +275,19 @@ const totalTasks = tasks.length;
   )}
 </div>
 
-<style is:global>
-  @import "../../styles/timeline-gantt.css";
-  @import "../../styles/field-picker-panel.css";
-</style>
+<style is:inline set:html={`${timelineGanttCss}\n${fieldPickerCss}`} />
 
-<style>
-  #tasks-view-timeline :global(.filter-toolbar--timeline) {
+<style is:inline>
+  #tasks-view-timeline .filter-toolbar--timeline {
     flex-wrap: wrap !important;
     margin-bottom: 12px;
   }
-  #tasks-view-timeline :global(.filter-toolbar--timeline .form-select) {
+  #tasks-view-timeline .filter-toolbar--timeline .form-select {
     width: auto;
   }
 
   @media (max-width: 640px) {
-    #tasks-view-timeline :global(.filter-toolbar__disclosure) {
+    #tasks-view-timeline .filter-toolbar__disclosure {
       margin-block: 8px;
     }
     .timeline-ctrl-label {

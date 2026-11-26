@@ -34,11 +34,13 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     })
     expect(created.status(), await created.text()).toBe(201)
     const { id: areaId } = await created.json() as { id: string }
-    // Planning and saved Area links now converge on the Board's ordinary groups workspace.
+    // The Planning hub links to the full Board management directory.
     expect((await page.goto(appUrl + "/planning#spaces"))?.ok()).toBe(true)
+    await page.locator("#planning-section-spaces").getByRole("link", { name: "Manage Boards" }).click()
     await expect(page).toHaveURL(appUrl + "/boards")
     const board = page.locator('[data-board-card="household"]')
-    const boardLink = board.getByRole("link", { name: "Household", exact: true }).first()
+    // The card identity link also names the ticket prefix and role.
+    const boardLink = board.getByRole("link", { name: "Household", exact: true })
     await expect(boardLink).toBeVisible()
     await boardLink.press("Enter")
     await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household")
@@ -192,12 +194,12 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     const goalList = page.locator("#goals-tab-root")
     await expect(goalList.locator(`[data-goal-id="${workGoal}"].goals-tab__card`)).toBeVisible()
     await expect(goalList.locator(`[data-goal-id="${homeGoal}"].goals-tab__card`)).toHaveCount(0)
-    await goalList.getByRole("button", { name: "+ New Goal" }).click()
-    await goalList.getByRole("textbox", { name: "New goal title" }).fill("Created within Work " + stamp)
+    await goalList.getByRole("button", { name: "New Goal", exact: true }).click()
+    await goalList.getByRole("textbox", { name: "Goal title", exact: true }).fill("Created within Work " + stamp)
     const goalReceipt = page.waitForResponse(response =>
       new URL(response.url()).pathname === "/api/goals" && response.request().method() === "POST",
     )
-    await goalList.getByRole("button", { name: "Create", exact: true }).click()
+    await goalList.getByRole("button", { name: "Create Goal", exact: true }).click()
     const linkedGoal = await goalReceipt
     expect(linkedGoal.status()).toBe(201)
     expect(linkedGoal.request().postDataJSON().area_id).toBe(work)
@@ -244,24 +246,25 @@ test("Area Routines open the existing editor in context and keep the generated t
     const editor = page.getByRole("dialog", { name: "New Routine" })
     await expect(editor.getByLabel("Area", { exact: true })).toHaveValue(area)
     await editor.locator("#habit-name").fill(name)
-    const receipt = page.waitForResponse(response => response.url().endsWith("/api/habits") && response.request().method() === "POST")
+    const receipt = page.waitForResponse(response => response.url().endsWith("/api/routines") && response.request().method() === "POST")
     await editor.locator("button[type=submit]").click()
     const response = await receipt
     expect(response.status()).toBe(201)
     await expect(editor).toBeHidden()
+    const scheduled = await request.get(`/api/tasks?q=${encodeURIComponent(name)}`)
+    const scheduledTasks = (await scheduled.json()).tasks as Array<{ id: string; title: string; area_id: string }>
+    expect(scheduledTasks).toEqual([expect.objectContaining({ title: name, area_id: area })])
+    const spawnedTaskId = scheduledTasks[0]!.id
+    taskId = spawnedTaskId
     const scoped = await request.get(`/api/habits?area_id=${area}`)
     const routines = (await scoped.json()).habits as Array<{ id: string; name: string }>
     expect(routines.map(routine => routine.name)).toEqual([name])
     routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
-    await expect(page).toHaveURL(new RegExp(`/progress\\?board_id=household&area_id=${area}(?:&view=groups)?#routines$`))
-    const routinesLink = page.locator("#progress-section-routines").getByRole("link", { name: "View Routines", exact: true })
-    await expect(routinesLink).toBeVisible()
-    await routinesLink.press("Enter")
-    await expect(page).toHaveURL(url => url.pathname === "/habits" &&
+    await expect(page).toHaveURL(url => url.pathname === "/progress" && url.hash === "#routines" &&
       url.searchParams.get("board_id") === "household" && url.searchParams.get("area_id") === area)
-    await expect(page.locator("#habits-list").getByText(name, { exact: true })).toBeVisible()
+    await expect(page.locator("#progress-section-routines #habits-list").getByText(name, { exact: true })).toBeVisible()
 
     const destination = await request.post("/api/areas", { headers, data: { name: name + " destination" } })
     expect(destination.status()).toBe(201)
@@ -274,10 +277,10 @@ test("Area Routines open the existing editor in context and keep the generated t
     expect(updated.ok()).toBe(true)
     const completed = await request.post("/api/habits", { headers, data: { action: "complete", templateId: routineId } })
     expect(completed.ok()).toBe(true)
-    taskId = (await completed.json()).taskId
+    expect((await completed.json()).taskId).toBe(spawnedTaskId)
     const task = await request.get(`/api/tasks/${taskId}`)
     const occurrence = await task.json()
-    expect(occurrence.area_id).toBe(nextArea)
+    expect(occurrence.area_id).toBe(area)
     expect(occurrence.routine_occurrence).toBe(1)
     const changedDate = await request.put(`/api/tasks/${taskId}`, { headers, data: { due_date: "2000-01-01" } })
     expect(changedDate.status()).toBe(409)
@@ -288,7 +291,7 @@ test("Area Routines open the existing editor in context and keep the generated t
     const replay = await request.post("/api/habits", { headers, data: { action: "complete", templateId: routineId } })
     expect(await replay.json()).toMatchObject({ taskId, alreadyExisted: true })
     const original = await request.get(`/api/tasks/${taskId}`)
-    expect((await original.json()).area_id).toBe(nextArea)
+    expect((await original.json()).area_id).toBe(area)
     await page.goto("/habits?area_id=&new=1")
     await expect(page).toHaveURL(url => url.pathname === "/boards/household" &&
       url.searchParams.get("view") === "groups" && !url.searchParams.has("new"))

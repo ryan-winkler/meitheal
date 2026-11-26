@@ -24,6 +24,7 @@ export {
   type TaskCalendarMeta
 } from "./calendar-bridge"
 export { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds } from "./resolve-calendar-entities"
+export { hasCalendarSyncOptOut } from "./calendar-policy"
 
 export type { CalDAVOperationOptions } from "./caldav-client"
 export {
@@ -31,4 +32,5 @@ export {
   stripHtmlTags,
   normalizeCalendarDescription,
   isMeithealOriginatedEvent,
+  stripCalendarReminderWrappers,
 } from "./calendar-event-identity"

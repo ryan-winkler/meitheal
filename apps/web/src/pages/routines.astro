@@ -1,0 +1,168 @@
+---
+/**
+ * /routines — Canonical Standalone Routines Page
+ *
+ * Uses the shared Tabler `RoutinesWorkspace` component (also embedded inline
+ * inside `/progress#routines` and served at `/habits` for backwards compatibility).
+ *
+ * @domain domain-tasks (routines bounded context)
+ * @bounded-context routines
+ */
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { scopeBoardAccess, scopePermits } from "@domains/tasks/board-scope"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
+import { readRoutineWorkspace } from "@lib/routine-workspace-data"
+import { isFeatureEnabled } from "../lib/feature-flags"
+import { HABITS_SECTIONS } from "../lib/habits-registry"
+import Layout from "../layouts/Layout.astro"
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
+import RoutinesWorkspace from "../components/routines/RoutinesWorkspace.astro"
+import Icon from "../components/ui/Icon.astro"
+import BoardsStyles from "../components/boards/BoardsStyles.astro"
+
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+
+const isEnabled = await isFeatureEnabled("habits")
+if (!isEnabled) {
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/`)
+}
+
+const boardActive = scopeBoardAccess(workScope).state === "active"
+const boardName = scopeBoardAccess(workScope).name
+const canCreateRoutine = scopePermits(workScope, { resource: "routine", action: "create" })
+const areaId = Astro.url.searchParams.get("area_id")
+const projectId = Astro.url.searchParams.get("project_id")
+const openNew = Astro.url.searchParams.get("new") === "1"
+
+let areas: AreaRow[] = []
+let projects: ProjectRow[] = []
+let area: AreaRow | undefined
+let project: ProjectRow | undefined
+
+try {
+  await ensureSchema()
+  const hierarchy = new HierarchyRepository(getPersistenceClient(), workScope)
+  ;[areas, projects] = await Promise.all([hierarchy.findAllAreas(), hierarchy.findAllProjects()])
+  project = projectId ? projects.find((candidate) => candidate.id === projectId) : undefined
+  if (projectId && !project) return boardScopeResponse("unavailable")
+  area = areaId ? areas.find((candidate) => candidate.id === areaId) : undefined
+  if (areaId !== null && !area) {
+    return Astro.redirect(
+      `${Astro.locals.ingressPath || ""}/boards/${encodeURIComponent(workScope.boardId)}?view=groups`,
+    )
+  }
+} catch {
+  // RoutinesWorkspace renders its own graceful load-failed state.
+}
+
+const organization = await organizationLabelsFor(Astro)
+const newRoutine = newOrganizationLabel(organization("routine"), locale)
+const initialRoutines = await readRoutineWorkspace(workScope, {
+  areaId: area?.id, projectId: project?.id, timezone: Astro.locals.timezone,
+}).catch(() => null)
+const canOpenCreate = boardActive && canCreateRoutine && initialRoutines !== null
+---
+
+<Layout title={`${organization("routine", true)} — Meitheal`}>
+  <BoardsStyles />
+  <UnifiedBar
+    title={organization("routine", true)}
+    titleIcon="repeat"
+    tabs={HABITS_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    showNewTask={false}
+    barId="habits-bar"
+    slot="custom-header"
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="btn btn-ghost habits-shell__create-bar-btn"
+      id="habits-bar-new-habit"
+      data-open-habit-modal={canOpenCreate ? "true" : undefined}
+      disabled={!canOpenCreate}
+      title={!boardActive ? "This Board is unavailable" : initialRoutines === null ? "Refresh the page to retry loading Routines" : newRoutine}
+      aria-label={newRoutine}
+    >
+      <Icon name="plus" size={18} class="unified-bar__new-task-icon" sprite />
+      <span class="unified-bar__new-task-label">{newRoutine}</span>
+    </button>
+  </UnifiedBar>
+
+  <div class="routines-board-context">
+    <a href={`/boards/${encodeURIComponent(workScope.boardId)}`} class="routines-board-context__link">
+      <Icon name="layout-kanban" size={14} sprite />
+      <span>Back to {boardName}</span>
+    </a>
+  </div>
+
+  <RoutinesWorkspace
+    {workScope}
+    {locale}
+    {area}
+    {project}
+    {areas}
+    {projects}
+    {initialRoutines}
+    {openNew}
+  />
+</Layout>
+
+<style>
+  .routines-board-context {
+    max-width: 1120px;
+    margin: 0.75rem auto 0;
+    padding: 0 clamp(16px, 2vw, 24px);
+  }
+  :global(:root[data-appearance-width="fluid"]) .routines-board-context {
+    max-width: none;
+  }
+  .routines-board-context__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    margin-left: -0.5rem;
+    border-radius: var(--radius-sm, 6px);
+    transition: color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .routines-board-context__link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+  .habits-shell__create-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 44px;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .habits-shell__create-bar-btn .unified-bar__new-task-label {
+    max-width: 14ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 1359px) {
+    .habits-shell__create-bar-btn .unified-bar__new-task-label {
+      display: none;
+    }
+  }
+</style>

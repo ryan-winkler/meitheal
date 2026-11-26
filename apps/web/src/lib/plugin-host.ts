@@ -129,7 +129,7 @@ function buildRunnerSrcdoc(entryJs: string, token: string): string {
   });
   try{
 ${safeCode}
-  }catch(e){send({kind:"error",message:String(e)});}
+  }catch(e){send({kind:"error",message:String(e)});return;}
   send({kind:"runner_ready"});
 })();
 </script></head><body></body></html>`
@@ -252,11 +252,14 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
     if (typeof patch.title === "string") body.title = patch.title.slice(0, 180)
     if (typeof patch.description === "string") body.description = patch.description.slice(0, 2000)
     if (typeof patch.status === "string") body.status = patch.status
-    if (typeof patch.priority === "number" && Number.isFinite(patch.priority)) {
-      body.priority = Math.min(5, Math.max(1, Math.round(patch.priority)))
-    } else if (typeof patch.priority === "string") {
-      const mappedPriority = ({ critical: 1, urgent: 1, high: 2, normal: 3, medium: 3, low: 4, minimal: 5, none: 5 } as Record<string, number>)[patch.priority.trim().toLowerCase()]
-      if (mappedPriority !== undefined) body.priority = mappedPriority
+    if (patch.priority !== undefined) {
+      const priorityMap: Record<string, number> = { critical: 1, urgent: 1, high: 2, medium: 3, normal: 3, low: 4, minimal: 5, none: 5 }
+      const rawP = typeof patch.priority === "number" && Number.isFinite(patch.priority)
+        ? Math.min(5, Math.max(1, Math.round(patch.priority)))
+        : typeof patch.priority === "string"
+          ? (priorityMap[patch.priority.trim().toLowerCase()] ?? Number(patch.priority))
+          : NaN
+      if (Number.isInteger(rawP) && rawP >= 1 && rawP <= 5) body.priority = rawP
     }
     if (patch.dueDate !== undefined) body.due_date = patch.dueDate
     return fetchJson(`/api/tasks/${taskId}`, { method: "PATCH", headers: getBoardHeaders(), body: JSON.stringify(body) })

@@ -20,7 +20,7 @@ from .const import DEFAULT_HOST, DEFAULT_PORT
 
 _APP_HOST = re.compile(r"(local|[a-f0-9]{8})-(meitheal(?:-canary|-hub)?)")
 _TOKEN = re.compile(r"mth_[a-f0-9]{64}")
-_TIMEOUT = aiohttp.ClientTimeout(total=10)
+_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=4, sock_read=8)
 _ORIGIN_KINDS = frozenset({
     "conversation_agent",
     "ha_automation",
@@ -340,7 +340,23 @@ async def async_credential_context(api: MeithealApi) -> dict[str, Any]:
     enrollment = data.get("enrollmentBoardId")
     if enrollment is not None and (len(ids) != 1 or enrollment not in ids):
         raise MeithealConnectionError("Meitheal did not verify the credential destination")
+    expires_at = data.get("tokenExpiresAt")
+    if expires_at is not None and not isinstance(expires_at, str):
+        data["tokenExpiresAt"] = None
     return data
+
+
+async def async_renew_token(api: MeithealApi, *, days: int = 90) -> str | None:
+    """Proactively extend an expiring integration token before it expires."""
+    data = await api.async_request(
+        "POST",
+        "/api/agent-tokens/renew",
+        payload={"days": max(1, min(365, int(days)))},
+        read_json=True,
+    )
+    if isinstance(data, dict) and isinstance(data.get("expiresAt"), str):
+        return data["expiresAt"]
+    return None
 
 
 @asynccontextmanager

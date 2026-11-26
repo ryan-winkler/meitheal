@@ -18,6 +18,7 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reaction-counts", taskRead],
   ["/api/users", { GET: "tasks:read" }],
   ["/api/agent-context", { GET: "tasks:read" }],
+  ["/api/agent-tokens/renew", { POST: "tasks:read" }],
   ["/api/habits", { GET: "tasks:read", POST: "tasks:write" }],
   ["/api/boards/routines", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],

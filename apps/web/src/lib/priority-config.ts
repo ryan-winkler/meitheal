@@ -70,7 +70,21 @@ export function getPriorityCssClass(priority: number): string {
   return PRIORITY_CSS_CLASSES[priority] ?? "priority-medium"
 }
 
+import type { IconName } from "../generated/icon-registry"
+
 /** Get accessibility icon for a priority value, with fallback */
 export function getPriorityIcon(priority: number): string {
   return PRIORITY_ICONS[priority] ?? "→"
 }
+
+/** Get Tabler SVG icon name for a priority value */
+export function priorityTablerIcon(priority: number): IconName {
+  return priority <= 1
+    ? "flame"
+    : priority === 2
+      ? "arrow-up"
+      : priority >= 4
+        ? "arrow-down"
+        : "arrows-left-right"
+}
+

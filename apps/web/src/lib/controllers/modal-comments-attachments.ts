@@ -16,29 +16,28 @@ import { isActiveParticipantProblem } from "@lib/task-participant-problem"
 import { commentMentionWriteHeaders, readCommentMentionProblem } from "@lib/comment-mention-client"
 import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
-import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const log = createClientLogger("tasks", "comments-attachments")
 
 function attachCommentManagement(
-  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
+  wrapper: HTMLElement, bubble: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
 ): void {
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
   const controls = template.content.cloneNode(true) as DocumentFragment
-  const actions = qs<HTMLElement>(controls, "[data-comment-actions]")!
-  const edit = qs<HTMLButtonElement>(controls, "[data-comment-edit]")!
-  const remove = qs<HTMLButtonElement>(controls, "[data-comment-delete]")!
-  const form = qs<HTMLFormElement>(controls, "form")!
+  const actions = controls.querySelector<HTMLElement>("[data-comment-actions]")!
+  const edit = controls.querySelector<HTMLButtonElement>("[data-comment-edit]")!
+  const remove = controls.querySelector<HTMLButtonElement>("[data-comment-delete]")!
+  const form = controls.querySelector<HTMLFormElement>("form")!
   const input = form.querySelector("textarea")!
-  const save = qs<HTMLButtonElement>(form, 'button[type="submit"]')!
-  const cancel = qs<HTMLButtonElement>(form, "[data-comment-cancel]")!
-  const error = qs<HTMLElement>(controls, '[role="alert"]')!
-  const hint = qs<HTMLElement>(controls, "[data-reference-hint]")!
+  const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+  const cancel = form.querySelector<HTMLButtonElement>("[data-comment-cancel]")!
+  const error = controls.querySelector<HTMLElement>('[role="alert"]')!
+  const hint = controls.querySelector<HTMLElement>("[data-reference-hint]")!
   error.id = `${wrapper.id}-error`
   hint.id = `${wrapper.id}-reference-hint`
-  setAttr(input, "aria-describedby", `${error.id} ${hint.id}`)
-  wrapper.append(controls)
+  input.setAttribute("aria-describedby", `${error.id} ${hint.id}`)
+  bubble.append(controls)
 
   const isCurrent = () => !signal.aborted && wrapper.isConnected
   function endEdit() {
@@ -122,7 +121,7 @@ function attachCommentManagement(
       if (!isCurrent()) return
       const next = wrapper.nextElementSibling ?? wrapper.previousElementSibling
       wrapper.remove()
-      const focusTarget = next instanceof HTMLElement ? next : byId("td-comment-input")
+      const focusTarget = next instanceof HTMLElement ? next : document.getElementById("td-comment-input")
       focusTarget?.focus()
     } catch {
       if (isCurrent()) {
@@ -141,14 +140,14 @@ function attachCommentManagement(
  * Load and render comments for a task.
  */
 export async function loadComments(
-  task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number, prefetched?: Promise<Response>,
+  task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number,
 ): Promise<void> {
   const taskId = task.id
-  const container = byId("td-comments")
-  const status = byId("td-comment-link-status")
+  const container = document.getElementById("td-comments")
+  const status = document.getElementById("td-comment-link-status")
   if (!container) return
   const taskLabel = container.dataset.taskLabel ?? "Task"
-  if (postedCommentId !== undefined && byId(`td-comment-${postedCommentId}`)) return
+  if (postedCommentId !== undefined && document.getElementById(`td-comment-${postedCommentId}`)) return
   const url = `/api/tasks/${encodeURIComponent(taskId)}/comments`
 
   function showLinkStatus(message: string | undefined) {
@@ -158,7 +157,7 @@ export async function loadComments(
   }
 
   try {
-    const res = await (prefetched ?? fetch(url, { signal, cache: "no-store" })) // nosemgrep
+    const res = await fetch(url, { signal, cache: "no-store" }) // nosemgrep
     if (!res.ok) {
       showLinkStatus(status?.dataset.loadFailed)
       return
@@ -173,37 +172,81 @@ export async function loadComments(
       }>
     }
     if (signal.aborted) return
-    let linkedComment: HTMLElement | undefined
-    for (const c of data.comments || []) {
-      if (postedCommentId !== undefined && c.id !== postedCommentId) continue
-      const wrapper = domEl("article", "bg-bg-card rounded-md p-3 border border-border focus:outline-2 focus:outline-accent")
+    const comments = data.comments || []
+    if (comments.length === 0 && postedCommentId === undefined) {
+      const empty = document.createElement("div")
+      empty.className = "td-chat-empty"
+      empty.textContent = "No comments yet. Start the conversation below or add a reaction."
+      container.replaceChildren(empty)
+      showLinkStatus(status?.dataset.unavailable)
+      return
+    }
+    container.querySelector(".td-chat-empty")?.remove()
 
-      const meta = domEl("div", "flex flex-wrap justify-between gap-1 text-xs text-text-muted mb-1")
-      const authorSpan = domEl("span")
+    const authorInitials = (name: string): string => {
+      const parts = name.trim().split(/\s+/).filter(Boolean)
+      if (parts.length === 0) return "?"
+      if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
+      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
+    }
+
+    let linkedComment: HTMLElement | undefined
+    for (const c of comments) {
+      if (postedCommentId !== undefined && c.id !== postedCommentId) continue
+      const isMine = c.can_manage === true
+
+      const wrapper = document.createElement("article")
+      wrapper.className = `chat-item${isMine ? " chat-item--me" : ""}`
+      wrapper.id = `td-comment-${c.id}`
+      wrapper.tabIndex = -1
+
+      const avatar = document.createElement("span")
+      avatar.className = "td-chat-avatar"
+      avatar.setAttribute("aria-hidden", "true")
+      avatar.textContent = authorInitials(c.author || "U")
+
+      const bubble = document.createElement("div")
+      bubble.className = `chat-bubble${isMine ? " chat-bubble-me" : ""}`
+
+      const title = document.createElement("div")
+      title.className = "chat-bubble-title"
+      const authorSpan = document.createElement("div")
+      authorSpan.className = "chat-bubble-author"
       authorSpan.textContent = c.author
-      const dateLink = domEl("a")
+      const dateWrap = document.createElement("div")
+      dateWrap.className = "chat-bubble-date"
+      const dateLink = document.createElement("a")
       const timestamp = new Date(c.created_at).toLocaleString()
       dateLink.textContent = timestamp
       dateLink.href = buildTaskPermalink(task, c.id)
-      dateLink.className = "underline underline-offset-2 hover:text-accent"
+      dateLink.className = "td-chat-date-link"
       const linkLabel = container.dataset.linkLabel
       if (linkLabel) {
         dateLink.title = linkLabel
-        setAttr(dateLink, "aria-label", `${linkLabel}, ${c.author}, ${timestamp}`)
+        dateLink.setAttribute("aria-label", `${linkLabel}, ${c.author}, ${timestamp}`)
       }
-      meta.append(authorSpan, dateLink)
+      dateWrap.appendChild(dateLink)
+      title.append(authorSpan, dateWrap)
 
-      const body = domEl("div", "text-sm text-text-primary whitespace-pre-wrap break-words")
+      const body = document.createElement("div")
+      body.className = "chat-bubble-body whitespace-pre-wrap break-words"
+      body.id = `td-comment-body-${c.id}`
       renderCommentTaskReferences(body, c.content, taskLabel)
 
-      wrapper.id = `td-comment-${c.id}`
-      wrapper.tabIndex = -1
-      body.id = `td-comment-body-${c.id}`
-      setAttr(wrapper, "aria-label", `${c.author}, ${timestamp}`)
-      setAttr(wrapper, "aria-describedby", body.id)
-      wrapper.append(meta, body)
-      if (c.can_manage === true) attachCommentManagement(wrapper, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
-      mountReactions(wrapper, `${url}/${c.id}/reactions`, signal)
+      const footer = document.createElement("div")
+      footer.className = "td-chat-bubble-footer"
+
+      wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
+      wrapper.setAttribute("aria-describedby", body.id)
+      bubble.append(title, body, footer)
+      if (isMine) attachCommentManagement(wrapper, bubble, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
+      mountReactions(footer, `${url}/${c.id}/reactions`, signal)
+
+      if (isMine) {
+        wrapper.append(bubble, avatar)
+      } else {
+        wrapper.append(avatar, bubble)
+      }
       container.appendChild(wrapper)
       if (String(c.id) === commentTarget) linkedComment = wrapper
     }
@@ -216,27 +259,40 @@ export async function loadComments(
 
 let attachmentsLoadSeq = 0
 
+function replaceAttachmentContents(container: HTMLElement, contents: Node, anchor?: HTMLElement): void {
+  const scroller = anchor ? container.closest<HTMLElement>(".td-scroller") : null
+  const bounds = anchor && scroller?.contains(anchor) ? anchor.getBoundingClientRect() : undefined
+  const viewport = bounds ? scroller?.getBoundingClientRect() : undefined
+  const top = bounds && viewport && bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
+    ? bounds.top
+    : undefined
+
+  container.replaceChildren(contents)
+
+  // Keep the visible trigger at its current position when Attachments grows above it.
+  if (anchor && scroller && top !== undefined) {
+    const shift = anchor.getBoundingClientRect().top - top
+    if (shift) scroller.scrollTop += shift
+  }
+}
+
 /**
  * Load and render image attachment thumbnails for a task.
  */
-export async function loadAttachments(taskId: string): Promise<void> {
-  const container = byId(
+export async function loadAttachments(taskId: string, anchor?: HTMLElement): Promise<void> {
+  const container = document.getElementById(
     "td-attachments",
   ) as HTMLElement
   if (!container) return
   const seq = ++attachmentsLoadSeq
+  if (!anchor || container.dataset.activeTaskId !== taskId) container.replaceChildren()
   container.dataset.activeTaskId = taskId
-  container.replaceChildren()
+  const isCurrent = () => seq === attachmentsLoadSeq && container.dataset.activeTaskId === taskId && container.isConnected
 
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
-    if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
-    if (attachments.length === 0) {
-      const emptyLabel = domEl("span", "text-[10px] text-text-muted italic", "No attachments.")
-      container.appendChild(emptyLabel)
-      return
-    }
-
+    if (!isCurrent()) return
+    const contents = document.createDocumentFragment()
     const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i
 
     attachments.forEach((att) => {
@@ -245,25 +301,30 @@ export async function loadAttachments(taskId: string): Promise<void> {
         : null
       if (!safeSrc) return
 
-      const thumb = domEl("div", "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors focus-visible:outline-2 focus-visible:outline-accent")
+      const thumb = document.createElement("div")
+      thumb.className =
+        "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors focus-visible:outline-2 focus-visible:outline-accent"
       thumb.style.width = "64px"
       thumb.style.height = "64px"
       thumb.tabIndex = 0
-      setAttr(thumb, "role", "button")
-      setAttr(thumb, "aria-label", `Preview ${att.filename || "attachment"}`)
+      thumb.dataset.attachmentId = att.id
+      thumb.setAttribute("role", "button")
+      thumb.setAttribute("aria-label", `Preview ${att.filename || "attachment"}`)
 
-      const img = domEl("img")
+      const img = document.createElement("img")
       img.src = safeSrc
       img.alt = att.filename || "Attachment"
       img.className = "w-full h-full object-cover"
       img.title = att.filename
 
       // Delete overlay
-      const delOverlay = domEl("div", "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity")
-      const delBtn = domEl("button")
+      const delOverlay = document.createElement("div")
+      delOverlay.className =
+        "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      const delBtn = document.createElement("button")
       delBtn.type = "button"
       delBtn.className = "text-white text-sm font-semibold hover:text-danger p-2"
-      setAttr(delBtn, "aria-label", `Delete ${att.filename || "attachment"}`)
+      delBtn.setAttribute("aria-label", `Delete ${att.filename || "attachment"}`)
       delBtn.textContent = "×"
       delBtn.onclick = async (e) => {
         e.stopPropagation()
@@ -282,16 +343,18 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       // Safe in-page lightbox dialog (no raw HTML blob or window.open)
       const openLightbox = () => {
-        const dialog = domEl("dialog", "m-attachment-lightbox")
+        const dialog = document.createElement("dialog")
+        dialog.className = "m-attachment-lightbox"
+        dialog.setAttribute("aria-label", "Image preview")
         dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
-        const fullImg = domEl("img")
+        const fullImg = document.createElement("img")
         fullImg.src = safeSrc
         fullImg.alt = att.filename || "Attachment preview"
         fullImg.style.cssText = "display:block;max-width:90vw;max-height:86vh;border-radius:8px;box-shadow:0 16px 48px rgba(0,0,0,0.6);"
-        const closeBtn = domEl("button")
+        const closeBtn = document.createElement("button")
         closeBtn.type = "button"
         closeBtn.textContent = "×"
-        setAttr(closeBtn, "aria-label", "Close attachment preview")
+        closeBtn.setAttribute("aria-label", "Close attachment preview")
         closeBtn.style.cssText = "position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:18px;cursor:pointer;"
         const dismiss = () => { dialog.close(); dialog.remove() }
         closeBtn.addEventListener("click", dismiss)
@@ -312,11 +375,21 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       thumb.appendChild(img)
       thumb.appendChild(delOverlay)
-      container.appendChild(thumb)
+      contents.appendChild(thumb)
     })
+    if (!contents.childElementCount) {
+      const emptyLabel = document.createElement("span")
+      emptyLabel.className = "text-[10px] text-text-muted italic"
+      emptyLabel.textContent = attachments.length ? "There is no preview for the saved image format." : "No attachments."
+      contents.appendChild(emptyLabel)
+    }
+    replaceAttachmentContents(container, contents, anchor)
   } catch (e) {
+    if (!isCurrent()) return
     log.error("Failed to load attachments", e)
-    const errLabel = domEl("span", "text-xs text-danger", "Failed to load attachments")
-    container.appendChild(errLabel)
+    const errLabel = document.createElement("span")
+    errLabel.className = "text-xs text-danger"
+    errLabel.textContent = "Failed to load attachments"
+    replaceAttachmentContents(container, errLabel, anchor)
   }
 }

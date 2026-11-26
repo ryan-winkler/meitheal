@@ -51,7 +51,7 @@ const locale = Astro.props.locale ?? getLocale(Astro)
   </div>
 </div>
 
-<style>
+<style is:inline>
   .pwa-banner {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 12px);
@@ -87,7 +87,7 @@ const locale = Astro.props.locale ?? getLocale(Astro)
   }
 
   .pwa-banner[data-keyboard-suppressed="true"],
-  :global(body:has(.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast)) .pwa-banner {
+  body:has(.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast) .pwa-banner {
     opacity: 0;
     pointer-events: none;
     visibility: hidden;
@@ -202,8 +202,16 @@ const locale = Astro.props.locale ?? getLocale(Astro)
     }
   }
 
+  function isStandalonePwa(): boolean {
+    if (typeof window === "undefined") return false
+    return (
+      Boolean(window.matchMedia?.("(display-mode: standalone)").matches) ||
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+    )
+  }
+
   function isDismissed(): boolean {
-    if (sessionAutoHidden) return true
+    if (isStandalonePwa() || sessionAutoHidden) return true
     try {
       return localStorage.getItem(DISMISS_KEY) !== null || sessionStorage.getItem(SESSION_HIDDEN_KEY) !== null
     } catch {

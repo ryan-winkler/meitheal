@@ -9,7 +9,7 @@
 
 const STORAGE_KEY = "meitheal-navigation-state"
 const SCROLL_KEY = "meitheal-restore-scroll"
-const MAX_AGE_MS = 60_000
+const MAX_AGE_MS = 4 * 60 * 60 * 1000
 const SCROLL_DEBOUNCE_MS = 500
 
 function scopedKey(key: string): string | null {

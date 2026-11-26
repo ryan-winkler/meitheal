@@ -40,6 +40,7 @@ test.describe("Dashboard Shell", () => {
     // Creates a task and relies on the fixture's Europe/Dublin household timezone, so it only
     // runs against the disposable fixture.
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    await page.emulateMedia({ reducedMotion: "reduce" })
 
     // Noon UTC is the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
@@ -59,24 +60,35 @@ test.describe("Dashboard Shell", () => {
       await expect(page.locator(".dashboard-shell").getByText("Due today").first()).toBeVisible()
 
       const achievementsPath = "/progress?board_id=household#achievements"
-      const streakLink = page.locator(".gam-stat--link")
-      await expect(streakLink).toHaveAttribute("href", achievementsPath)
+      const streakLink = page.locator('.gam-stat--link[title^="Best streak:"]')
+      await expect(streakLink).toHaveAttribute("href", achievementsPath + "-streaks")
       await expect(streakLink).toHaveAttribute("title", /.+/)
 
       const badges = page.locator(".gam-achievement-badge")
       expect(await badges.count()).toBeGreaterThan(0)
       const firstBadge = badges.first()
-      await expect(firstBadge).toHaveAttribute("href", achievementsPath)
+      await expect(firstBadge).toHaveAttribute("href", achievementsPath + "-gallery")
       await expect(firstBadge).toHaveAttribute("title", /—/)
       await expect(firstBadge).toContainText(/\S/)
 
       await firstBadge.click()
-      await expect(page).toHaveURL(achievementsPath)
+      await expect(page).toHaveURL(achievementsPath + "-gallery")
       const achievementsSection = page.locator("#progress-section-achievements")
+      const gallery = achievementsSection.locator("#achievements-gallery")
       await expect(achievementsSection).toBeVisible()
+      await expect(gallery).toBeFocused()
+      await expect(page.locator('#progress-bar-tabs a[href="#achievements"]')).toHaveAttribute("aria-current", "location")
       const card = page.locator(".achievements-tab__achievement-card").first()
       await expect(card).toHaveAttribute("title", /—/)
       await expect(card).toContainText(/\S/)
+
+      await page.reload()
+      await expect(page).toHaveURL(achievementsPath + "-gallery")
+      await expect(gallery).toBeFocused()
+      await page.goBack()
+      await streakLink.click()
+      await expect(page).toHaveURL(achievementsPath + "-streaks")
+      await expect(achievementsSection.locator("#achievements-streaks")).toBeFocused()
     } finally {
       await request.delete("/api/tasks/" + encodeURIComponent(id), { headers })
     }

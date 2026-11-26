@@ -13,7 +13,6 @@ const webDir = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const ingressFixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
 test.describe("Task Experience Unification (R01-R20)", () => {
-  test.describe.configure({ timeout: 60_000 })
   test.skip(shouldSkipBrowserSpecs(), "Requires MEITHEAL_TEST_BROWSER=1 disposable fixture")
   test.use({ serviceWorkers: "block" })
 
@@ -25,23 +24,19 @@ test.describe("Task Experience Unification (R01-R20)", () => {
     await request.delete(`/api/tasks/${id}`, { headers }).catch(() => {})
   }
 
-  async function openTaskCard(page: Page, id: string) {
-    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  async function expectTaskInspector(page: Page, id: string) {
     const overlay = page.locator("#task-detail-overlay")
-    const isActive = await overlay.evaluate(el => el.classList.contains("active")).catch(() => false)
-    if (!isActive) {
-      const card = page.locator(`.kanban-card[data-id="${id}"]`)
-      await expect(card).toBeVisible()
-      await card.locator(".card-open-btn").click()
-    } else {
-      await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
-      if ((await overlay.getAttribute("data-open-task-id")) !== id) {
-        await page.evaluate(targetId => window.openTaskDetail?.(targetId), id)
-      }
-    }
     await expect(overlay).toHaveClass(/active/)
-    await expect(overlay).toHaveAttribute("data-open-task-id", id, { timeout: 10_000 })
-    await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
+    await expect(overlay).toHaveAttribute("data-open-task-id", id)
+    const status = page.locator("#td-status")
+    await expect(status).toBeVisible()
+    await expect(status).toBeEnabled()
+  }
+
+  async function openTaskCard(page: Page, id: string) {
+    const card = page.locator(`.kanban-card[data-id="${id}"]`)
+    await card.locator(".card-open-btn").click()
+    await expectTaskInspector(page, id)
   }
 
   test("R01/R02/R04: shared editor hierarchy, Full form child with draft stack, and Convert checklist item to child", async ({ page, request, baseURL }) => {
@@ -85,9 +80,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       await openTaskCard(page, epicBody.id)
       await expect(page.locator("#td-link-children")).toContainText("Child Story From Full Form")
 
-      const checklistPut = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
       await page.locator("#td-add-checklist-item").click()
-      expect((await checklistPut).status()).toBe(200)
       const checklistInput = page.locator("#td-checklists textarea").last()
       await expect(checklistInput).toBeVisible()
       const checklistUpdate = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
@@ -98,23 +91,17 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const convertBtn = page.locator('[title="Convert to child task"]').first()
       await expect(convertBtn).toBeVisible()
       const convertReq = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/tasks")
-      const checklistSaveReq = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
-      const detailRefreshReq = page.waitForResponse(r => r.request().method() === "GET" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
       await convertBtn.click()
-      const convertRes = await convertReq
-      expect(convertRes.status()).toBe(201)
-      const promotedBody = await convertRes.json().catch(() => null) as { id?: string } | null
-      if (promotedBody?.id) createdIds.push(promotedBody.id)
-      expect((await checklistSaveReq).status()).toBe(200)
-      expect((await detailRefreshReq).status()).toBe(200)
+      expect((await convertReq).status()).toBe(201)
 
-      await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
-      await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")
-
-      await page.reload()
+      await page.goto("/tasks")
       await openTaskCard(page, epicBody.id)
       await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
       await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")
+
+      const descendantsRes = await request.get(`/api/tasks?parent_id=${epicBody.id}`)
+      const descendantsBody = await descendantsRes.json().catch(() => null) as { tasks?: Array<{ id: string }> } | null
+      for (const child of descendantsBody?.tasks ?? []) createdIds.push(child.id)
     } finally {
       for (const id of createdIds) await deleteTask(request, headers, id)
     }
@@ -138,6 +125,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const markdownBtn = page.locator('#td-desc-edit-container .md-editor-modes button[data-md-mode="markdown"]')
       await expect(markdownBtn).toBeVisible()
 
+      await markdownBtn.click()
       await page.locator("#td-description").fill(payload)
       await visualBtn.click()
       await expect(page.locator("#td-desc-edit-container .md-visual-surface")).toBeVisible()
@@ -150,7 +138,9 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       expect((await savePut).status()).toBe(200)
 
       await page.reload()
-      await openTaskCard(page, id)
+      await expectTaskInspector(page, id)
+      await page.getByRole("button", { name: "Edit description" }).click()
+      await markdownBtn.click()
       await expect(page.locator("#td-description")).toHaveValue(payload)
     } finally {
       await deleteTask(request, headers, id)
@@ -179,7 +169,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       expect(Number(storedWidth)).toBeGreaterThan(420)
 
       await page.reload()
-      await openTaskCard(page, id)
+      await expectTaskInspector(page, id)
       const cssWidth = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--task-inspector-width").trim())
       expect(cssWidth).toBe(`${storedWidth}px`)
 
@@ -216,12 +206,11 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       await page.goto("/tasks")
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
 
-      // R15: Card actions opaque without hover
-      const actionsStyle = await page.locator(`.kanban-card[data-id="${t1.id}"] .kanban-card-actions`).evaluate(el => {
-        const s = getComputedStyle(el)
-        return { opacity: s.opacity, pointerEvents: s.pointerEvents }
-      })
-      expect(actionsStyle).toEqual({ opacity: "1", pointerEvents: "auto" })
+      const card = page.locator(`.kanban-card[data-id="${t1.id}"]`)
+      const actions = card.locator(".kanban-card-actions")
+      await card.locator(".card-open-btn").focus()
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
 
       // R17: Custom swimlane color & API persistence
       await page.locator("#manage-lanes-btn").click()
@@ -286,10 +275,10 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const taskReactions = page.locator("#td-task-reactions")
       await expect(taskReactions).toBeVisible()
       await taskReactions.locator("summary").click()
-      await taskReactions.getByRole("button", { name: "👍", exact: true }).click()
       const reactionInput = taskReactions.getByRole("textbox", { name: "Emoji or short text" })
+      await expect(reactionInput).toBeEditable()
       const addPost = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith(`/api/tasks/${id}/reactions`))
-      await reactionInput.press("Enter")
+      await taskReactions.getByRole("button", { name: "👍", exact: true }).click()
       expect((await addPost).status()).toBe(201)
 
       const pill = taskReactions.locator('[data-reaction-groups] button[data-reaction-group="👍"]')

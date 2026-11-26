@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { expect, test, type APIRequestContext } from "@playwright/test"
 import { SHOPPING_CATEGORIES } from "../../packages/domain-tasks/src/index"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
-import { startCoreFixture } from "../scripts/task-pins-fixture"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 // Read the clock once. Near midnight keep both times on today's Dublin date so the event
@@ -61,12 +61,13 @@ test.describe("Routines, Events, and Shopping UX", () => {
     const routineName = `Morning tidy ${Date.now()}`
     await page.locator("#habit-name").fill(routineName)
     await iconButtons.first().click()
-    await page.locator("#habit-cadence").selectOption("daily")
+    await page.locator("#habit-cadence").selectOption("FREQ=DAILY")
     await page.locator("#habit-priority").selectOption("2")
+    await page.getByRole("tab", { name: "Markdown", exact: true }).click()
     await page.locator("#habit-description").fill("Reset counters and sink")
 
     const createdResPromise = page.waitForResponse(
-      (res) => new URL(res.url()).pathname === "/api/habits" && res.request().method() === "POST",
+      (res) => new URL(res.url()).pathname === "/api/routines" && res.request().method() === "POST",
     )
     await page.locator('#habit-form button[type="submit"]').click()
     const createdRes = await createdResPromise
@@ -82,7 +83,7 @@ test.describe("Routines, Events, and Shopping UX", () => {
     await expect(card).toContainText(routineName)
 
     const completePromise = page.waitForResponse(
-      (res) => new URL(res.url()).pathname === "/api/habits" && res.request().method() === "POST",
+      (res) => new URL(res.url()).pathname === "/api/routines" && res.request().method() === "POST",
     )
     await card.locator('[data-action="complete"]').click()
     const completeRes = await completePromise
@@ -90,7 +91,7 @@ test.describe("Routines, Events, and Shopping UX", () => {
     await expect(card).toHaveClass(/completed/)
     await expect(card.locator('[data-action="complete"]')).toHaveAttribute("aria-pressed", "true")
 
-    const habitsRes = await request.get("/api/habits")
+    const habitsRes = await request.get("/api/routines")
     expect(habitsRes.status()).toBe(200)
     const { habits } = await habitsRes.json()
     const saved = habits.find((h: { name: string }) => h.name === routineName)
@@ -179,7 +180,8 @@ test.describe("Routines, Events, and Shopping UX", () => {
 
     const shoppingItems = SHOPPING_CATEGORIES.map((category, idx) => ({
       name: `Item-${category}`,
-      qty: String(idx + 1),
+      qty: idx === 0 ? "2" : String(idx + 1),
+      unit: idx === 0 ? "kg" : "pcs",
       category,
       checked: false,
     }))
@@ -189,7 +191,10 @@ test.describe("Routines, Events, and Shopping UX", () => {
         title: `Household shop ${Date.now()}`,
         task_kind: "shopping_item",
         due_date: todayDate,
-        checklists: shoppingItems.map((item) => ({ text: item.name, done: item.checked })),
+        checklists: shoppingItems.map((item, index) => ({
+          text: index === 0 ? `2 kg ${item.name}` : item.name,
+          done: item.checked,
+        })),
         custom_fields: {
           items: shoppingItems,
           grocy_product_id: 987,
@@ -212,8 +217,11 @@ test.describe("Routines, Events, and Shopping UX", () => {
 
       const rows = page.locator("#td-checklists [data-checklist-row]")
       await expect(rows).toHaveCount(SHOPPING_CATEGORIES.length)
+      const first = rows.first()
+      await expect(first.getByRole("textbox", { name: "Shopping item 1" })).toHaveValue("Item-produce")
+      await expect(first.getByRole("combobox", { name: "Unit for Item-produce" })).toHaveValue("kg")
 
-      const firstCatSelect = rows.first().locator("select.td-shop-cat")
+      const firstCatSelect = first.locator("select.td-shop-cat")
       await expect(firstCatSelect).toHaveValue("produce")
       for (const category of SHOPPING_CATEGORIES) {
         await expect(firstCatSelect.locator(`option[value="${category}"]`)).toHaveCount(1)
@@ -242,11 +250,76 @@ test.describe("Routines, Events, and Shopping UX", () => {
       expect(String(cf.grocy_product_id)).toBe("987")
       expect(cf.external_vendor).toBe("grocy")
       expect(cf.grocy_sync).toEqual({ listId: 42 })
-      expect(cf.items?.[0]).toMatchObject({ name: "Item-produce", category: "pantry" })
+      expect(cf.items?.[0]).toMatchObject({ name: "Item-produce", category: "pantry", unit: "kg", qty: 2 })
+      await first.getByRole("checkbox", { name: "Item-produce", exact: true }).check()
+      await expect.poll(async () => {
+        const latest = await (await request.get(`/api/tasks/${created.id}`)).json()
+        return JSON.parse(latest.custom_fields).items[0]
+      }).toMatchObject({ name: "Item-produce", category: "pantry", unit: "kg", qty: 2, checked: true })
     } finally {
       await request.delete(`/api/tasks/${created.id}`, { headers, data: {} })
     }
   })
+})
+
+test("a new Routine opens its occurrence on the first tap inside Home Assistant", async () => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and authenticated Core fixture")
+  const work = await mkdtemp(join(tmpdir(), "meitheal-routine-handoff-"))
+  const child = startCoreFixture(work)
+  child.stdout?.resume()
+  child.stderr?.resume()
+  let browser
+  try {
+    const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${info.port}`
+    const prefix: string = info.configuredPath
+    const route = origin + prefix + "/progress?board_id=household#routines"
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({
+      extraHTTPHeaders: {},
+      hasTouch: true,
+      reducedMotion: "reduce",
+      serviceWorkers: "block",
+      viewport: { width: 390, height: 844 },
+    })
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    expect((await page.goto(route))?.status()).toBe(200)
+    const shell = page.locator('#habits-shell[data-habits-booted="true"]')
+    await shell.locator("[data-open-habit-modal]:visible").first().tap()
+    const title = "New Routine first tap"
+    await page.locator("#habit-name").fill(title)
+
+    const created = page.waitForResponse(response =>
+      new URL(response.url()).pathname === prefix + "/api/routines" && response.request().method() === "POST")
+    await page.locator('#habit-form button[type="submit"]').tap()
+    const saved = await created
+    expect(saved.status()).toBe(201)
+
+    const card = shell.locator("[data-habit-id]").filter({ hasText: title })
+    const link = card.getByRole("link", { name: "View task", exact: true })
+    await expect(link).toHaveAttribute("href", new RegExp(`^${prefix}/tickets/[^/]+$`))
+    const taskId = (await link.getAttribute("href"))!.split("/").at(-1)
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+
+    const occurrence = page.waitForResponse(response => new URL(response.url()).pathname === prefix + "/api/tasks/" + taskId)
+    await link.tap()
+    expect((await occurrence).status()).toBe(200)
+    await expect(page.locator("#task-detail-overlay.active #td-title")).toHaveValue(title)
+    await expect(page).toHaveURL(url => url.pathname.startsWith(prefix + "/tickets/"))
+    await expect(card).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(link).toBeFocused()
+    await expect(page).toHaveURL(route)
+  } finally {
+    await browser?.close()
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
+      child.kill("SIGKILL")
+      await exited
+    }
+    await rm(work, { recursive: true, force: true })
+  }
 })
 
 test("App MCP exposes routines, events, and 8-category shopping contracts without $ref", async ({ playwright }) => {

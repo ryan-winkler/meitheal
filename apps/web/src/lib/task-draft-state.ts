@@ -11,7 +11,8 @@ const labels = z.array(label).max(32)
 const itemText = z.string().min(1).max(200)
 const itemQuantity = z.union([z.number().int().min(1).max(999), z.string().trim().min(1).max(32)])
 const priority = z.number().int().min(1).max(5)
-const category = z.enum(["", ...SHOPPING_CATEGORIES])
+const category = z.string().trim().max(48)
+const shoppingUnit = z.string().trim().max(24)
 const taskKind = z.enum(VALID_TASK_KINDS)
 const field = z.discriminatedUnion("type", [
   z.strictObject({
@@ -26,7 +27,13 @@ const field = z.discriminatedUnion("type", [
 ])
 const fields = z.array(field).max(24)
 const checklistItems = z.array(z.strictObject({ id, text: itemText, done: z.boolean() })).max(64)
-const shoppingItems = z.array(z.strictObject({ name: itemText, qty: itemQuantity, category, checked: z.boolean().optional() })).max(64)
+const shoppingItems = z.array(z.strictObject({
+  name: itemText,
+  qty: itemQuantity,
+  unit: shoppingUnit.optional(),
+  category,
+  checked: z.boolean().optional(),
+})).max(64)
 
 export const taskDraftVersion = z.strictObject({
   draftId: id,
@@ -64,7 +71,13 @@ export const taskDraftSnapshot = z.strictObject({
   principleId: reference.optional(),
   boardCustomFields: z.record(z.string().max(60), z.string().max(1024)).optional(),
   checklist: z.strictObject({ items: checklistItems, input: z.string().max(12864) }),
-  shopping: z.strictObject({ items: shoppingItems, input: z.string().max(200), quantity: z.string().max(8), category }),
+  shopping: z.strictObject({
+    items: shoppingItems,
+    input: z.string().max(200),
+    quantity: z.string().max(8),
+    unit: shoppingUnit.optional(),
+    category,
+  }),
   event: z.strictObject({
     start: controlDate,
     end: controlDate,

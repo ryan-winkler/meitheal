@@ -11,6 +11,7 @@ import { stripHtml } from "@lib/strip-html"
 
 export const GET: APIRoute = async (context) => {
   try {
+    await ensureSchema()
     const user = await currentBoardContext(context)
     if (!user) return apiError("Use your current authenticated session to view Boards.", 403)
     const directory = await readBoardDirectory(user.actor, context.request)
@@ -20,6 +21,9 @@ export const GET: APIRoute = async (context) => {
     await assertBoardDirectoryCurrent(directory)
     return response
   } catch (error) {
+    if (context.request.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      return new Response(null, { status: 499 })
+    }
     const failure = boardScopeErrorResponse(error)
     if (failure) return failure
     throw error

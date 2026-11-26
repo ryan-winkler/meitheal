@@ -39,9 +39,9 @@ const QUADRANT_MAP: Record<string, QuadrantUpdate> = {
 
 const REVIEW_QUADRANT_ORDER = ["not-now", "delegate", "schedule"]
 const QUADRANT_LABELS: Record<string, string> = {
-  "not-now": "📦 Not Now (Q4)",
-  delegate: "👥 Delegate (Q3)",
-  schedule: "📅 Schedule (Q2)",
+  "not-now": "Not Now (Q4)",
+  delegate: "Delegate (Q3)",
+  schedule: "Schedule (Q2)",
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -196,10 +196,10 @@ function showReviewTask(): void {
 function finishReview(): void {
   closeReview()
   const parts: string[] = []
-  if (reviewStats.promoted > 0) parts.push(`⬆️ ${reviewStats.promoted} promoted`)
-  if (reviewStats.archived > 0) parts.push(`📥 ${reviewStats.archived} archived`)
-  if (reviewStats.deleted > 0) parts.push(`🗑️ ${reviewStats.deleted} deleted`)
-  if (reviewStats.skipped > 0) parts.push(`→ ${reviewStats.skipped} skipped`)
+  if (reviewStats.promoted > 0) parts.push(`${reviewStats.promoted} promoted`)
+  if (reviewStats.archived > 0) parts.push(`${reviewStats.archived} archived`)
+  if (reviewStats.deleted > 0) parts.push(`${reviewStats.deleted} deleted`)
+  if (reviewStats.skipped > 0) parts.push(`${reviewStats.skipped} skipped`)
   const summary = parts.length > 0 ? parts.join(", ") : "No changes made"
   showToast(`Review complete: ${summary}`, "success")
   // Reload to show updated state

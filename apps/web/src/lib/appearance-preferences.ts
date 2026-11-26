@@ -79,7 +79,7 @@ function syncSidebarState(preserveExpanded = hasVisibleSidebarFocus() && !docume
   if (desktopSidebar && root.appearanceSidebar === "remember") {
     try {
       const remembered = localStorage.getItem("meitheal_sidebar_collapsed")
-      collapsed = remembered === "true" || (remembered === null && root.theme === "knight-rider")
+      collapsed = remembered === "true"
     } catch { /* Open without storage. */ }
   }
   setSidebarCollapsed(collapsed && !preserveExpanded)
@@ -134,6 +134,8 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     const collapsed = !document.body.classList.contains("sidebar-collapsed")
     suppressPointer = collapsed && hoverEnabled() && Boolean(pointerInside())
     collapsedFocus = collapsed && hoverEnabled() ? document.activeElement : null
+    sidebar?.classList.remove("open")
+    document.body.classList.remove("sidebar-open")
     setSidebarCollapsed(collapsed)
     if (root.appearanceSidebar === "remember") {
       try { localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed)) } catch { /* Still usable without storage. */ }
@@ -196,6 +198,14 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   sidebar?.addEventListener("pointerleave", () => {
     suppressPointer = false
     closeHover()
+  }, { signal })
+  // Tablet/touch users in hover mode can collapse an expanded sidebar by tapping outside it.
+  document.addEventListener("pointerdown", event => {
+    if (!hoverEnabled() || document.body.classList.contains("sidebar-collapsed")) return
+    if (sidebar?.hasAttribute("data-sidebar-editing")) return
+    const target = event.target instanceof Node ? event.target : null
+    if (!target || sidebar?.contains(target) || ownedPopup(target)) return
+    setSidebarCollapsed(true)
   }, { signal })
   sidebar?.addEventListener("focusin", event => {
     if (hoverEnabled() && event.target !== edgeButton && event.target !== collapsedFocus) setSidebarCollapsed(false)

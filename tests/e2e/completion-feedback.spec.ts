@@ -104,7 +104,7 @@ test("Kanban celebrates acknowledged XP while a rejected move stays pending with
     await finish(ids[0]!)
     expect((await held.arrived).gamification.xp).toBe(40)
     expect(await feedback.messages()).toEqual([])
-    await expect(pending.locator(card(ids[0]!))).toBeVisible()
+    await expect(complete.locator(card(ids[0]!))).toBeVisible()
     held.release()
     await expect(complete.locator(card(ids[0]!))).toBeVisible()
     await expect.poll(feedback.messages).toEqual(["+40 XP", "🎯 Achievement: First Steps"])

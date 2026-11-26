@@ -17,11 +17,23 @@ const canManageTheme = canManageSystemSettings(Astro.request, Astro.locals)
 
 const lookAndFeelSection = SETTINGS_SECTIONS.find((section) => section.id === "look-and-feel-settings")!
 
-const THEME_OPTIONS = [
+const PRESET_THEME_OPTIONS = [
   { value: "auto", label: t("settings.theme_auto", locale), short: "Auto" },
-  { value: "light", label: t("settings.theme_light", locale), short: "Light" },
+  { value: "light", label: t("settings.theme_light", locale), short: "Paper Emerald" },
+  { value: "zen-paper", label: "Zen Paper (Light)", short: "Zen Paper" },
+  { value: "catppuccin-latte", label: "Catppuccin Latte (Light)", short: "Catppuccin Latte" },
+  { value: "nordic-frost", label: "Nordic Frost (Light)", short: "Nordic Frost" },
+  { value: "solarized-dawn", label: "Solarized Dawn (Light)", short: "Solarized Dawn" },
   { value: "dark", label: t("settings.theme_dark", locale), short: "Emerald Isle" },
   { value: "knight-rider", label: t("settings.theme_knight_rider", locale), short: "Knight Rider" },
+  { value: "plainspace", label: "Plainspace (Dark)", short: "Plainspace" },
+  { value: "velvet", label: "Velvet (Dark)", short: "Velvet" },
+  { value: "liquid-glass", label: "Liquid Glass (macOS Dark)", short: "Liquid Glass" },
+  { value: "rainbow", label: "Rainbow (Dark Prism)", short: "Rainbow" },
+]
+
+const THEME_OPTIONS = [
+  ...PRESET_THEME_OPTIONS,
   ...(canManageTheme ? [{ value: "custom", label: t("settings.theme_custom", locale), short: "Custom CSS" }] : []),
 ]
 
@@ -131,18 +143,20 @@ const cardBox = (x: number, y: number, w: number, h: number) =>
 const thumb = (y: number) => `<rect x="90" y="${y}" width="3" height="14" rx="1.5" fill="${BORDER}" />`
 
 function themeTileSvg(value: string): string {
-  const lightBg = "#f6f7f5"
+  const lightBg = "#f5faf7"
   const lightBar = "#ffffff"
-  const lightLine = "#d4dcd7"
-  const darkBg = "#111614"
-  const darkBar = "#1a2420"
-  const darkLine = "#32443c"
+  const lightLine = "#c4dacd"
+  const darkBg = "#131314"
+  const darkBar = "#1a1a1b"
+  const darkLine = "#36363a"
   if (value === "auto") {
     return wrapSvg(
       `<path d="M6.5 0.5h41.5v63h-41.5a6 6 0 0 1 -6 -6v-51a6 6 0 0 1 6 -6z" fill="${lightBg}" />` +
       `<path d="M48 0.5h41.5a6 6 0 0 1 6 6v51a6 6 0 0 1 -6 6h-41.5z" fill="${darkBg}" />` +
       `<path d="M6.5 0.5h41.5v19.5h-47.5v-13.5a6 6 0 0 1 6 -6z" fill="${lightBar}" />` +
       `<path d="M48 0.5h41.5a6 6 0 0 1 6 6v13.5h-47.5z" fill="${darkBar}" />` +
+      `<rect x="10" y="8" width="22" height="4" rx="2" fill="#047857" />` +
+      `<rect x="54" y="8" width="22" height="4" rx="2" fill="#6495ED" />` +
       `<rect x="0.5" y="19.5" width="95" height="0.5" fill="${BORDER}" />` +
       lines(12, 30, [30, 32, 22], lightLine) +
       lines(54, 30, [26, 30, 18], darkLine) +
@@ -150,14 +164,98 @@ function themeTileSvg(value: string): string {
     )
   }
   if (value === "light") {
-    return wrapSvg(frame(lightBg) + topBar(lightBar) + lines(12, 30, [46, 72, 30], lightLine) + outline)
+    return wrapSvg(
+      frame("#f5faf7") +
+      topBar("#ffffff") +
+      `<rect x="10" y="8" width="26" height="4" rx="2" fill="#047857" />` +
+      lines(12, 30, [46, 72, 30], "#c4dacd") +
+      outline,
+    )
+  }
+  if (value === "zen-paper") {
+    return wrapSvg(
+      frame("#f4ece0") +
+      topBar("#faf6ee") +
+      `<rect x="10" y="8" width="26" height="4" rx="2" fill="#5C6F2E" />` +
+      lines(12, 30, [48, 68, 34], "#d2c3ab") +
+      outline,
+    )
+  }
+  if (value === "catppuccin-latte") {
+    return wrapSvg(
+      frame("#f5f0ec") +
+      topBar("#fffdfb") +
+      `<rect x="10" y="8" width="26" height="4" rx="2" fill="#8839EF" />` +
+      lines(12, 30, [44, 70, 32], "#d9ccc2") +
+      outline,
+    )
+  }
+  if (value === "nordic-frost") {
+    return wrapSvg(
+      frame("#ebf3fa") +
+      topBar("#f7fbff") +
+      `<rect x="10" y="8" width="26" height="4" rx="2" fill="#0277B1" />` +
+      lines(12, 30, [46, 68, 30], "#b6cde3") +
+      outline,
+    )
+  }
+  if (value === "solarized-dawn") {
+    return wrapSvg(
+      frame("#fdf6e3") +
+      topBar("#fffdf6") +
+      `<rect x="10" y="8" width="26" height="4" rx="2" fill="#2075C7" />` +
+      lines(12, 30, [46, 72, 32], "#d5ccb4") +
+      outline,
+    )
   }
   if (value === "knight-rider") {
     return wrapSvg(
-      frame("#0c0d11") +
-      topBar("#181b24") +
-      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#e11d48" />` +
-      lines(12, 30, [46, 72, 30], "#2c3244") +
+      frame("#131314") +
+      topBar("#1a1a1b") +
+      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#6495ED" />` +
+      lines(12, 30, [46, 72, 30], "#36363a") +
+      outline,
+    )
+  }
+  if (value === "plainspace") {
+    return wrapSvg(
+      frame("#1a1714") +
+      `<path d="M24 20v43M48 20v43M72 20v43M1 36h94M1 50h94" stroke="rgba(255,240,220,0.08)" stroke-width="1" />` +
+      topBar("#24201c") +
+      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#e59a66" />` +
+      lines(12, 30, [46, 70, 32], "#463d34") +
+      outline,
+    )
+  }
+  if (value === "velvet") {
+    return wrapSvg(
+      frame("#12121d") +
+      topBar("#1c1c2e") +
+      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#7c9cff" />` +
+      lines(12, 30, [48, 68, 34], "#333352") +
+      outline,
+    )
+  }
+  if (value === "liquid-glass") {
+    return wrapSvg(
+      frame("#0b1220") +
+      `<circle cx="24" cy="22" r="20" fill="#38bdf8" opacity="0.22" />` +
+      `<circle cx="76" cy="52" r="18" fill="#818cf8" opacity="0.24" />` +
+      `<rect x="8" y="25" width="80" height="30" rx="5" fill="rgba(24,37,59,0.72)" stroke="rgba(255,255,255,0.28)" />` +
+      topBar("rgba(18,28,46,0.82)") +
+      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#60a5fa" />` +
+      lines(14, 32, [42, 62], "rgba(226,232,240,0.34)", 10) +
+      outline,
+    )
+  }
+  if (value === "rainbow") {
+    return wrapSvg(
+      frame("#13111c") +
+      topBar("#1e1a2e") +
+      `<rect x="1" y="1" width="94" height="3" rx="1.5" fill="url(#mth-rainbow-grad)" />` +
+      `<defs><linearGradient id="mth-rainbow-grad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f43f5e"/><stop offset="25%" stop-color="#f59e0b"/><stop offset="50%" stop-color="#22c55e"/><stop offset="75%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#c084fc"/></linearGradient></defs>` +
+      `<rect x="10" y="9" width="28" height="4" rx="2" fill="#c084fc" />` +
+      lines(12, 30, [46, 70, 32], "#3c3557") +
       outline,
     )
   }
@@ -295,6 +393,10 @@ function baseTileSvg(shades: readonly string[]): string {
       title={t("settings.look_feel_theme_title", locale)}
       subtitle={t("settings.look_feel_theme_subtitle", locale)}
     >
+      <button slot="actions" type="reset" class="btn btn-ghost btn-sm" data-appearance-reset hidden>
+        <Icon name="refresh" size={14} sprite={true} />
+        <span>{t("settings.appearance_reset", locale)}</span>
+      </button>
       <div class="tabler-card-sections">
         <p id="appearance-scope" class="settings-hint m-0">{t("settings.appearance_scope", locale)}</p>
 
@@ -307,22 +409,53 @@ function baseTileSvg(shades: readonly string[]): string {
             </button>
           </div>
           <p class="settings-hint tabler-opt-sub">Choose your preferred color mode. Profile avatar and surfaces adapt automatically.</p>
-          <div class="tabler-visual-grid tabler-visual-grid--5" role="radiogroup" aria-labelledby="theme-group-label" data-visual-group="theme">
-            {THEME_OPTIONS.map((opt, idx) => (
-              <button
-                type="button"
-                role="radio"
-                class="tabler-visual-card"
-                data-visual-field="theme"
-                data-visual-option={opt.value}
-                aria-checked={idx === 0 ? "true" : "false"}
-                tabindex={idx === 0 ? 0 : -1}
-              >
-                <span class="tabler-card-radio" aria-hidden="true"></span>
-                <span class="tabler-tile-frame" set:html={themeTileSvg(opt.value)} />
-                <span class="tabler-visual-card__label">{opt.short}</span>
-              </button>
-            ))}
+          <div role="radiogroup" aria-labelledby="theme-group-label" data-visual-group="theme" class="tabler-theme-group">
+            <div class="tabler-visual-grid tabler-visual-grid--themes">
+              {PRESET_THEME_OPTIONS.map((opt, idx) => (
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card"
+                  data-visual-field="theme"
+                  data-visual-option={opt.value}
+                  aria-checked={idx === 0 ? "true" : "false"}
+                  tabindex={idx === 0 ? 0 : -1}
+                >
+                  <span class="tabler-card-radio" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame" set:html={themeTileSvg(opt.value)} />
+                  <span class="tabler-visual-card__label">{opt.short}</span>
+                </button>
+              ))}
+            </div>
+            {canManageTheme && (
+              <div class="tabler-custom-theme-row">
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card tabler-visual-card--custom-row"
+                  data-visual-field="theme"
+                  data-visual-option="custom"
+                  aria-checked="false"
+                  tabindex={-1}
+                >
+                  <span class="tabler-card-radio tabler-card-radio--inline" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame tabler-tile-frame--compact" set:html={themeTileSvg("custom")} />
+                  <span class="tabler-custom-row__copy">
+                    <span class="tabler-visual-card__label">Custom CSS Theme</span>
+                    <span class="tabler-custom-row__hint">Upload a stylesheet overriding Meitheal CSS tokens for your workspace.</span>
+                  </span>
+                </button>
+                <a
+                  href="https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/custom-themes.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-ghost btn-sm tabler-custom-guide-link"
+                >
+                  <Icon name="book" size={14} sprite={true} />
+                  <span>Custom theme guide</span>
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
@@ -554,6 +687,10 @@ function baseTileSvg(shades: readonly string[]): string {
       title={t("settings.appearance_title", locale)}
       subtitle="Self-hosted local typefaces, neutral theme base, corner roundness, content width, and panel surfaces."
     >
+      <button slot="actions" type="button" class="btn btn-ghost btn-sm" data-appearance-reset-surface>
+        <Icon name="refresh" size={14} sprite={true} />
+        <span>{t("settings.appearance_reset_surface", locale)}</span>
+      </button>
       <button
         slot="actions"
         type="button"
@@ -699,35 +836,22 @@ function baseTileSvg(shades: readonly string[]): string {
       </div>
     </SettingsPanelCard>
 
-    <!-- Live Unsaved Preview Bar -->
-    <div id="appearance-dirty-bar" class="settings-dirty-bar" data-appearance-dirty-bar role="status" aria-live="polite" hidden>
+    <div id="appearance-dirty-bar" class="settings-dirty-bar settings-dirty-bar--sticky" data-appearance-dirty-bar hidden>
       <span class="settings-dirty-bar__info">
         <span class="settings-dirty-bar__icon" aria-hidden="true">
-          <Icon name="alert-triangle" size={16} sprite={true} />
+          <Icon name="palette" size={16} sprite={true} />
         </span>
-        <span data-appearance-dirty-text>Unsaved appearance changes — previewing live.</span>
+        <span data-appearance-dirty-text role="status">Unsaved appearance changes</span>
       </span>
       <div class="settings-dirty-bar__actions">
         <button type="button" class="btn btn-ghost btn-sm" data-appearance-discard>
-          <Icon name="refresh" size={14} sprite={true} />
           <span>{t("settings.appearance_discard", locale)}</span>
         </button>
-        <button type="submit" class="btn btn-primary btn-sm" data-appearance-save>
+        <button type="submit" id="appearance-save-btn" class="btn btn-primary btn-sm settings-dirty-bar__save" data-appearance-save>
           <Icon name="check" size={14} sprite={true} />
           <span>{t("settings.appearance_save", locale)}</span>
         </button>
       </div>
-    </div>
-
-    <!-- Unified Save / Reset Footer -->
-    <div class="look-feel-footer">
-      <button type="reset" class="btn btn-secondary" data-appearance-reset>
-        {t("settings.appearance_reset", locale)}
-      </button>
-      <button type="submit" id="appearance-save-btn" class="btn btn-primary" data-appearance-save>
-        <Icon name="check" size={15} sprite={true} />
-        <span>{t("settings.appearance_save", locale)}</span>
-      </button>
     </div>
 
     <p
@@ -819,6 +943,53 @@ function baseTileSvg(shades: readonly string[]): string {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr));
   }
 
+  /* Symmetrical 6x2 (desktop), 3x4 (tablet), 2x6 (mobile) grid for the 12 preset themes */
+  .tabler-theme-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tabler-visual-grid--themes {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  @media (max-width: 960px) {
+    .tabler-visual-grid--themes {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .tabler-visual-grid--themes {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .tabler-custom-theme-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .tabler-custom-row__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .tabler-custom-row__hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.35;
+  }
+
+  .tabler-custom-guide-link {
+    white-space: nowrap;
+  }
+
   .tabler-visual-card {
     position: relative;
     display: flex;
@@ -905,6 +1076,75 @@ function baseTileSvg(shades: readonly string[]): string {
     line-height: 1.25;
   }
 
+  /* Custom CSS Theme horizontal row — placed AFTER base .tabler-visual-card rules so modifiers win */
+  .tabler-visual-card.tabler-visual-card--custom-row {
+    flex: 1 1 280px;
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+    padding: 10px 14px;
+    gap: 12px;
+  }
+
+  .tabler-card-radio.tabler-card-radio--inline {
+    position: static;
+    flex-shrink: 0;
+  }
+
+  .tabler-tile-frame.tabler-tile-frame--compact {
+    inline-size: 96px;
+    flex: 0 0 96px;
+  }
+
+  .settings-dirty-bar--sticky {
+    position: sticky;
+    bottom: 16px;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg, 12px);
+    border: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--bg-card) 96%, var(--accent) 4%);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  .settings-dirty-bar--sticky[hidden] {
+    display: none;
+  }
+
+  .settings-dirty-bar--sticky .settings-dirty-bar__info {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    min-width: 0;
+  }
+
+  .settings-dirty-bar--sticky .settings-dirty-bar__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 28px;
+    block-size: 28px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent-text, var(--accent));
+    flex-shrink: 0;
+  }
+
+  .settings-dirty-bar--sticky .settings-dirty-bar__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   /* ── Font Preview Card ── */
   .tabler-visual-card--font {
     padding-top: 16px;
@@ -987,18 +1227,6 @@ function baseTileSvg(shades: readonly string[]): string {
     padding: 0;
     background: transparent;
     cursor: pointer;
-  }
-
-  .look-feel-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 14px 20px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md, 10px);
-    background: var(--bg-card);
   }
 
   @media (prefers-reduced-motion: reduce) {

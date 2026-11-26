@@ -260,7 +260,7 @@ test.describe("Today Page — Wave 2: Today Enhancements", () => {
     const section = page.locator("#section-habits")
     const count = await section.count()
     if (count > 0) {
-      await expect(section.locator(".today-section__title")).toContainText("Habits / Routines")
+      await expect(section.locator(".today-section__title")).toHaveText("Routines")
       // Verify habit card structure
       const card = section.locator(".habit-card").first()
       if (await card.count() > 0) {

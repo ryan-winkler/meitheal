@@ -7,7 +7,7 @@
  * Bounded context: lib (cross-domain utility)
  */
 
-import { isThemeMode, type ThemeMode } from "./theme-mode"
+import { isDarkNamedThemeMode, isLightThemeMode, isNamedThemeMode, isThemeMode, THEME_META_COLORS, type ThemeMode } from "./theme-mode"
 import { readWorkspacePreferences } from "./workspace-preferences"
 
 const STORAGE_KEY = "meitheal-theme"
@@ -32,9 +32,8 @@ export function readStoredThemeMode(): ThemeMode {
 export function getEffectiveTheme(stored = readStoredThemeMode(), followSystem = readWorkspacePreferences().theme === "auto"): "light" | "dark" {
   const matched = document.documentElement.dataset.haMatch
   if (matched === "light" || matched === "dark") return matched
-  if (stored === "light" || stored === "dark") return stored
-  // Custom themes layer on top of dark base
-  if (stored === "custom" || stored === "knight-rider") return "dark"
+  if (isLightThemeMode(stored)) return "light"
+  if (stored === "dark" || stored === "custom" || isDarkNamedThemeMode(stored)) return "dark"
   if (stored === "auto" && !followSystem) {
     const appearance = document.documentElement.dataset.haTheme
     if (appearance === "light" || appearance === "dark") return appearance
@@ -56,7 +55,13 @@ export function applyTheme(stored = readStoredThemeMode(), followSystem = readWo
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const theme = getEffectiveTheme(stored, followSystem)
-  root.dataset.theme = !matched && (stored === "knight-rider" || (stored === "auto" && !followSystem)) ? stored : theme
+  const resolvedDefault = theme === "dark" ? "knight-rider" : "light"
+  const inheritIngress = !followSystem && Boolean(window.__ingress_path)
+  root.dataset.theme = !matched && isNamedThemeMode(stored)
+    ? stored
+    : !matched && stored === "auto"
+      ? inheritIngress ? "auto" : resolvedDefault
+      : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
   applyCustomTheme(!matched && stored === "custom" && root.hasAttribute("data-custom-theme-admin")
@@ -64,7 +69,8 @@ export function applyTheme(stored = readStoredThemeMode(), followSystem = readWo
   const metaTheme = document.querySelector('meta[name="theme-color"]')
   if (metaTheme) {
     const color = matched ? getComputedStyle(root).getPropertyValue("--bg-primary").trim() : ""
-    metaTheme.setAttribute("content", color || (root.dataset.theme === "knight-rider" ? "#131314" : theme === "dark" ? "#1a1a2e" : "#ffffff"))
+    const fallback = THEME_META_COLORS[root.dataset.theme === "auto" ? theme : root.dataset.theme || ""] || (theme === "dark" ? "#131314" : "#f5faf7")
+    metaTheme.setAttribute("content", color || fallback)
   }
   window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme } }))
 }
@@ -87,10 +93,9 @@ export function applyCustomTheme(css: string | null): void {
   if (el.textContent !== css) el.textContent = css
 }
 
-export function initThemeWatcher(): void {
-  applyTheme()
+export function initThemeWatcher(signal: AbortSignal): void {
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
     if (readStoredThemeMode() === "auto") applyTheme()
-  })
+  }, { signal })
 }

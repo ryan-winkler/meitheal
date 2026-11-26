@@ -1,0 +1,43 @@
+name: Story Points
+version: "1.0.0"
+description: Relative effort sizing using the Fibonacci sequence (1, 2, 3, 5, 8, 13, 21)
+archetype: formula
+formula: "story_points"
+
+badge_thresholds:
+  - min: 13
+    label: "XL (13+ pts)"
+    color: "danger"
+  - min: 8
+    label: "L (8 pts)"
+    color: "warning"
+  - min: 3
+    label: "M (3-5 pts)"
+    color: "info"
+  - min: 1
+    label: "S (1-2 pts)"
+    color: "success"
+
+fields:
+  - key: story_points
+    label: Story Points
+    description: Relative complexity and effort size on the Fibonacci scale
+    help_text: "1 = Trivial, 2 = Small, 3 = Moderate, 5 = Medium, 8 = Large, 13 = Very Large, 21 = Epic-sized (consider splitting)"
+    type: number
+    ui_type: select
+    weight: 1
+    options:
+      - value: 1
+        label: "1 pt — Trivial"
+      - value: 2
+        label: "2 pts — Small"
+      - value: 3
+        label: "3 pts — Moderate"
+      - value: 5
+        label: "5 pts — Medium"
+      - value: 8
+        label: "8 pts — Large"
+      - value: 13
+        label: "13 pts — Very Large"
+      - value: 21
+        label: "21 pts — Split candidate"

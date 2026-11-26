@@ -1,10 +1,13 @@
 /**
  * Calendar Event Identity & Loop-Prevention Helpers
  *
- * Pure helpers shared by HA Calendar (including Google Calendar via HA)
- * and WebDAV/CalDAV inbound sync to:
+ * Pure helpers shared by HA Calendar (including Google Calendar via HA),
+ * due-date reminders, and WebDAV/CalDAV inbound sync to:
  *   - Detect Meitheal-originated events (outbound write-backs & due-date reminders),
- *     even when Google Calendar wraps descriptions in HTML.
+ *     even when Google Calendar wraps descriptions in HTML, collapses lines onto a
+ *     single line, normalizes dashes, or truncates long summaries.
+ *   - Strip recursive Meitheal summary wrappers ("📋 MTH-15: ... — DUE") idempotently
+ *     so outbound titles can never snowball into expanding chains.
  *   - Normalize HTML-formatted calendar descriptions without corrupting plain-text
  *     angle brackets ("a < b > c").
  *
@@ -18,6 +21,7 @@
 const HTML_TAG_PATTERN = /<\/?(?:p|br|a|div|span|ul|ol|li|b|i|strong|em|tr|td|th|h[1-6])(?:\s|>|\/)/i
 const BLOCK_CLOSE_TAGS = new Set(["p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"])
 const REMINDER_EMOJIS = ["📋", "🎯", "📖", "✅", "⚡"] as const
+const DUE_SUFFIXES = ["— DUE", "– DUE", "- DUE"] as const
 
 /** Detect whether a description contains HTML markup (e.g. Google Calendar rich text). */
 export function isHtmlDescription(input: string | null | undefined): boolean {
@@ -91,6 +95,11 @@ export function normalizeCalendarDescription(input: string | null | undefined): 
 /** Check whether a token is a valid Meitheal ticket key (e.g. MTH-30, HOME-12) or "Task". */
 function isTicketKeyOrTask(token: string): boolean {
   if (token.toLowerCase() === "task") return true
+  return isStrictTicketKey(token)
+}
+
+/** Check whether a token is a strict Meitheal ticket key (e.g. MTH-30, HOME-12). */
+function isStrictTicketKey(token: string): boolean {
   const dashIdx = token.indexOf("-")
   if (dashIdx < 2 || dashIdx > 10) return false
   if (token.indexOf("-", dashIdx + 1) !== -1) return false
@@ -122,14 +131,36 @@ function stripLeadingReminderEmoji(input: string): { hadEmoji: boolean; rest: st
   return { hadEmoji: false, rest: input }
 }
 
-/** If `input` starts with `[emoji] <TICKET_KEY|Task>: `, return the remainder; else null. */
-function consumeTicketPrefix(input: string): string | null {
-  const { rest } = stripLeadingReminderEmoji(input.trimStart())
+/** If `input` starts with `[emoji] <TICKET_KEY|Task>: `, return the remainder + metadata; else null. */
+function consumeTicketPrefix(input: string): { hadEmoji: boolean; token: string; rest: string } | null {
+  const { hadEmoji, rest } = stripLeadingReminderEmoji(input.trimStart())
   const colonIdx = rest.indexOf(":")
   if (colonIdx <= 0 || colonIdx > 24) return null
   const token = rest.slice(0, colonIdx)
   if (!isTicketKeyOrTask(token)) return null
-  return rest.slice(colonIdx + 1).trimStart()
+  return { hadEmoji, token, rest: rest.slice(colonIdx + 1).trimStart() }
+}
+
+function endsWithDueSuffix(input: string): boolean {
+  const upper = input.trimEnd().toUpperCase()
+  for (const suffix of DUE_SUFFIXES) {
+    if (upper.endsWith(suffix) && upper.length > suffix.length) {
+      return true
+    }
+  }
+  return false
+}
+
+function startsWithOpenInMeitheal(lower: string, original: string): boolean {
+  if (lower.startsWith("open in meitheal:")) return true
+  if (lower.startsWith("open ")) {
+    const markerIdx = lower.indexOf(" in meitheal:")
+    if (markerIdx > 5) {
+      const mid = original.slice(5, markerIdx).trim()
+      if (mid.length > 0 && isTicketKeyOrTask(mid)) return true
+    }
+  }
+  return false
 }
 
 function isMeithealMarkerLine(line: string): boolean {
@@ -139,23 +170,101 @@ function isMeithealMarkerLine(line: string): boolean {
 
   if (lower === "added from meitheal") return true
 
-  // Exact reminder line: "Task MTH-30 is due." or "Task HOME-12 is due."
-  if (lower.startsWith("task ") && lower.endsWith(" is due.")) {
-    const mid = trimmed.slice(5, trimmed.length - 8).trim()
-    if (mid.length > 0 && isTicketKeyOrTask(mid)) return true
+  // Exact ticket deep-link line: "Open MTH-30 in Meitheal: ..." or "Open in Meitheal: ..."
+  if (startsWithOpenInMeitheal(lower, trimmed)) return true
+
+  // Reminder header line:
+  //   "Task MTH-30 is due."
+  //   "Task MTH-75 is due. Open in Meitheal: https://..."
+  //   "Task MTH-75 is due. Open MTH-75 in Meitheal: https://..."
+  //   "Task MTH-75 is due. Added from Meitheal"
+  // Notice ordinary human notes like "Discuss whether Task HOME-12 is due." do NOT start with "Task ".
+  if (lower.startsWith("task ")) {
+    const dueIdx = lower.indexOf(" is due.", 5)
+    if (dueIdx > 5 && dueIdx <= 32) {
+      const mid = trimmed.slice(5, dueIdx).trim()
+      if (mid.length > 0 && isTicketKeyOrTask(mid)) {
+        const trailing = trimmed.slice(dueIdx + 8).trim()
+        if (trailing.length === 0) return true
+        const trailingLower = trailing.toLowerCase()
+        if (
+          trailingLower === "added from meitheal" ||
+          startsWithOpenInMeitheal(trailingLower, trailing) ||
+          trailing.startsWith("📋 ")
+        ) {
+          return true
+        }
+      }
+    }
   }
 
-  // Exact ticket deep-link line: "Open MTH-30 in Meitheal: ..." or "Open in Meitheal: ..."
-  if (lower.startsWith("open in meitheal:")) return true
-  if (lower.startsWith("open ")) {
-    const markerIdx = lower.indexOf(" in meitheal:")
-    if (markerIdx > 5) {
-      const mid = trimmed.slice(5, markerIdx).trim()
-      if (mid.length > 0 && isTicketKeyOrTask(mid)) return true
+  // Minimal reminder header collapsed onto one line:
+  //   "Task reminder. Added from Meitheal" or "Task reminder. Open in Meitheal: ..."
+  if (lower.startsWith("task reminder.")) {
+    const trailing = trimmed.slice(14).trim()
+    const trailingLower = trailing.toLowerCase()
+    if (
+      trailingLower === "added from meitheal" ||
+      startsWithOpenInMeitheal(trailingLower, trailing)
+    ) {
+      return true
+    }
+  }
+
+  // Write-back / reminder metadata line: "📋 MTH-30" or "📋 MTH-30 · Status: ..."
+  if (trimmed.startsWith("📋 ")) {
+    const rest = trimmed.slice(2).trimStart()
+    const sepIdx = rest.indexOf(" ")
+    const firstToken = sepIdx === -1 ? rest : rest.slice(0, sepIdx)
+    if (isStrictTicketKey(firstToken)) {
+      if (sepIdx === -1) return true
+      const after = rest.slice(sepIdx).trimStart()
+      if (after.startsWith("·")) return true
     }
   }
 
   return false
+}
+
+/**
+ * Strip any leading Meitheal ticket prefixes ("📋 MTH-30: ") and trailing
+ * "— DUE" / "– DUE" / "- DUE" wrappers so outbound reminders and write-backs
+ * can never recursively nest prefixes or suffixes.
+ */
+export function stripCalendarReminderWrappers(summary: string): string {
+  let clean = summary.trim()
+  if (!clean) return summary
+
+  // Strip up to 32 nested prefixes in linear time
+  for (let depth = 0; depth < 32; depth++) {
+    const parsed = consumeTicketPrefix(clean)
+    if (!parsed) break
+    // Only strip a bare "Task:" if it carried a reminder emoji; always strip emoji + ticket key or repeated ticket keys
+    if (!parsed.hadEmoji && !isStrictTicketKey(parsed.token)) break
+    clean = parsed.rest
+  }
+
+  // Strip leading reminder emoji if followed by a DUE suffix (e.g. "📋 Pay rent — DUE")
+  const { hadEmoji, rest } = stripLeadingReminderEmoji(clean)
+  if (hadEmoji && endsWithDueSuffix(rest)) {
+    clean = rest
+  }
+
+  // Strip trailing "— DUE" / "– DUE" / "- DUE" repetitions
+  for (let depth = 0; depth < 32; depth++) {
+    const upper = clean.trimEnd().toUpperCase()
+    let stripped = false
+    for (const suffix of DUE_SUFFIXES) {
+      if (upper.endsWith(suffix) && upper.length > suffix.length) {
+        clean = clean.trimEnd().slice(0, clean.trimEnd().length - suffix.length).trimEnd()
+        stripped = true
+        break
+      }
+    }
+    if (!stripped) break
+  }
+
+  return clean.trim() || summary.trim()
 }
 
 /**
@@ -177,15 +286,26 @@ export function isMeithealOriginatedEvent(
   if (summary) {
     const trimmed = summary.trim()
     if (trimmed.length > 0) {
-      // Due-date reminder format: "📋 MTH-30: Title — DUE" or "📋 Title — DUE"
       const { hadEmoji, rest } = stripLeadingReminderEmoji(trimmed)
-      if (hadEmoji && rest.length > 5 && rest.toUpperCase().endsWith("— DUE")) {
+      // Due-date reminder format: "📋 MTH-30: Title — DUE" or "📋 Title — DUE" (including en-dash/hyphen)
+      if (hadEmoji && endsWithDueSuffix(rest)) {
         return true
       }
-      // Recursive nested prefix loop artifact: "📋 MTH-34: 📋 MTH-30: ..."
-      const afterFirst = consumeTicketPrefix(trimmed)
-      if (afterFirst !== null && consumeTicketPrefix(afterFirst) !== null) {
-        return true
+
+      const firstPrefix = consumeTicketPrefix(trimmed)
+      if (firstPrefix !== null) {
+        // Emoji + strict ticket key ("📋 MTH-15: ..."), even if Google Calendar truncated "— DUE"
+        if (firstPrefix.hadEmoji && isStrictTicketKey(firstPrefix.token)) {
+          return true
+        }
+        // Strict ticket key + DUE suffix even if emoji was stripped ("MTH-15: Title — DUE")
+        if (isStrictTicketKey(firstPrefix.token) && endsWithDueSuffix(firstPrefix.rest)) {
+          return true
+        }
+        // Recursive nested prefix loop artifact: "📋 MTH-34: 📋 MTH-30: ..." or "MTH-34: MTH-30: ..."
+        if (consumeTicketPrefix(firstPrefix.rest) !== null) {
+          return true
+        }
       }
     }
   }

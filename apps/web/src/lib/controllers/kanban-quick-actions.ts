@@ -37,6 +37,7 @@ export function initQuickActions(
   buildTaskApiUrl: (taskId: string | number | null, suffix?: string) => string,
   __signal: AbortSignal,
   refreshBoard: (focus?: KanbanRefreshFocus) => Promise<void>,
+  root: ParentNode = document,
 ): QuickActionApi {
   // =============================================
   // Shared Popover Utility (P4-1)
@@ -68,41 +69,47 @@ export function initQuickActions(
     showToast(msg, type)
   }
 
+  interface CardColorState { marked: boolean; taskColor: string; accent: string }
+  const colorWrites = new WeakMap<HTMLElement, { latest: number; confirmed: CardColorState }>()
+
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
-    const prevHasTaskColor = card?.hasAttribute("data-task-color") ?? false
-    const prevKnightColor = card?.style.getPropertyValue("--knight-task-color") ?? ""
-    const prevCardAccent = card?.style.getPropertyValue("--card-accent") ?? ""
-    const prevButtonColor = button.getAttribute("data-color")
-    const applyCardColor = (nextColor: string | null) => {
-      if (!card) return
-      if (nextColor) {
+    // Preview the color now. A rejected write restores the last confirmed color, and only the
+    // latest write for a card restores, so overlapping writes cannot resurrect a stale preview.
+    const snapshot = (el: HTMLElement): CardColorState => ({
+      marked: el.hasAttribute("data-task-color"),
+      taskColor: el.style.getPropertyValue("--knight-task-color"),
+      accent: el.style.getPropertyValue("--card-accent"),
+    })
+    const writes = card ? colorWrites.get(card) ?? { latest: 0, confirmed: snapshot(card) } : null
+    const write = writes ? ++writes.latest : 0
+    if (card && writes) colorWrites.set(card, writes)
+    const restore = () => {
+      if (!card || !writes || write !== writes.latest) return
+      const confirmed = writes.confirmed
+      card.toggleAttribute("data-task-color", confirmed.marked)
+      for (const [property, value] of [["--knight-task-color", confirmed.taskColor], ["--card-accent", confirmed.accent]] as const) {
+        if (value) card.style.setProperty(property, value)
+        else card.style.removeProperty(property)
+      }
+    }
+    if (card) {
+      if (color) {
         card.setAttribute("data-task-color", "")
-        card.style.setProperty("--knight-task-color", nextColor)
-        card.style.setProperty("--card-accent", nextColor)
+        card.style.setProperty("--knight-task-color", color)
+        card.style.setProperty("--card-accent", color)
       } else {
         card.removeAttribute("data-task-color")
         card.style.removeProperty("--knight-task-color")
         card.style.removeProperty("--card-accent")
       }
     }
-    const restoreCardColor = () => {
-      if (card) {
-        if (prevHasTaskColor) card.setAttribute("data-task-color", "")
-        else card.removeAttribute("data-task-color")
-        if (prevKnightColor) card.style.setProperty("--knight-task-color", prevKnightColor)
-        else card.style.removeProperty("--knight-task-color")
-        if (prevCardAccent) card.style.setProperty("--card-accent", prevCardAccent)
-        else card.style.removeProperty("--card-accent")
-      }
-      if (prevButtonColor === null) button.removeAttribute("data-color")
-      else button.setAttribute("data-color", prevButtonColor)
-    }
-    applyCardColor(color)
+    const applied = card ? snapshot(card) : null
     button.disabled = true
+    let written = false
     try {
       const ctx = currentTaskApiContext()
       const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
@@ -111,7 +118,7 @@ export function initQuickActions(
         body: JSON.stringify({ color }),
       })
       if (response.status === 409) {
-        restoreCardColor()
+        restore()
         if (!__signal.aborted) {
           toast("Task was updated elsewhere. Refreshing board.", "warning")
           await refreshBoard({ taskId })
@@ -119,17 +126,20 @@ export function initQuickActions(
         return
       }
       if (!response.ok) throw new Error("Color write rejected")
-      const saved = await response.json().catch(() => null) as { task_version?: unknown; updated_at?: unknown } | null
-      const nextVersion = Number(saved?.task_version ?? saved?.updated_at)
-      if (card && Number.isSafeInteger(nextVersion) && nextVersion >= 0) {
-        card.dataset.version = String(nextVersion)
-      }
+      written = true
+      if (writes && applied) writes.confirmed = applied
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
-      restoreCardColor()
-      if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
+      if (__signal.aborted) return
+      // Keep a saved color even when the Board refresh afterwards fails.
+      if (written) {
+        toast(color ? "Color updated. Refresh the Board to see every change." : "Color cleared. Refresh the Board to see every change.", "warning")
+        return
+      }
+      restore()
+      toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false
     }
@@ -170,13 +180,25 @@ export function initQuickActions(
       popover.style[INLINE_START_PROP] = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.width - 8))}px`
       popover.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - box.height - 8))}px`
     }
-    requestAnimationFrame(position)
-    const resize = new ResizeObserver(position)
+    let posRaf = 0
+    const schedulePosition = () => {
+      if (posRaf !== 0) return
+      posRaf = requestAnimationFrame(() => {
+        posRaf = 0
+        position()
+      })
+    }
+    schedulePosition()
+    const resize = new ResizeObserver(schedulePosition)
     resize.observe(popover)
-    window.addEventListener("scroll", position, { capture: true, passive: true, signal: __signal })
+    window.addEventListener("scroll", schedulePosition, { capture: true, passive: true, signal: __signal })
     _scrollCleanup = () => {
+      if (posRaf !== 0) {
+        cancelAnimationFrame(posRaf)
+        posRaf = 0
+      }
       resize.disconnect()
-      window.removeEventListener("scroll", position, true)
+      window.removeEventListener("scroll", schedulePosition, true)
     }
 
     const focusAtOpen = document.activeElement
@@ -220,7 +242,7 @@ export function initQuickActions(
   // =============================================
   // Quick Action: Add Child Task (P1-3, P1-6, P3-6)
   // =============================================
-  document.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation()
       const parentId = btn.dataset.id
@@ -297,7 +319,7 @@ export function initQuickActions(
   // =============================================
   // Quick Action: Assign User (P1-5, P2-7, P3-4)
   // =============================================
-  document.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation()
 
@@ -443,7 +465,7 @@ export function initQuickActions(
       { color: "#6b7280", label: "Gray" },
     ]
 
-    document.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
+    root.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation()
 

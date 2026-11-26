@@ -8,12 +8,11 @@ import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
-import { byId, setAttr } from "@lib/dom-helpers"
 
 /** Shared helper: read entity value from EntitySelector (handles select OR manual input) */
 export function readEntityValue(id: string): string {
-  const select = byId<HTMLSelectElement>(id)
-  const manual = byId<HTMLInputElement>(`${id}-manual`)
+  const select = document.getElementById(id) as HTMLSelectElement | null
+  const manual = document.getElementById(`${id}-manual`) as HTMLInputElement | null
   if (select && select.style.display !== "none" && select.value) return select.value
   if (manual && manual.value) return manual.value
   return select?.value || manual?.value || ""
@@ -22,12 +21,12 @@ export function readEntityValue(id: string): string {
 type ConnectionCheckState = "checking" | "connected" | "standalone" | "denied" | "disconnected" | "failed"
 
 export async function refreshHAConnection(expandOnConnect = false): Promise<void> {
-  const indicator = byId("ha-indicator")
-  const mode = byId("ha-mode-label")
-  const detail = byId("ha-detail-label")
-  const badge = byId("ha-connection-badge")
-  const info = byId("ha-info-panel")
-  const button = byId("test-connection")
+  const indicator = document.getElementById("ha-indicator")
+  const mode = document.getElementById("ha-mode-label")
+  const detail = document.getElementById("ha-detail-label")
+  const badge = document.getElementById("ha-connection-badge")
+  const info = document.getElementById("ha-info-panel")
+  const button = document.getElementById("test-connection")
   if (!indicator || !mode || !detail || !badge || !info || !button || button.hasAttribute("aria-busy")) return
 
   function setStatus(state: ConnectionCheckState): void {
@@ -47,8 +46,8 @@ export async function refreshHAConnection(expandOnConnect = false): Promise<void
   }
 
   const signal = pageLifecycle.signal
-  setAttr(button, "aria-busy", "true")
-  setAttr(button, "aria-disabled", "true")
+  button.setAttribute("aria-busy", "true")
+  button.setAttribute("aria-disabled", "true")
   setStatus("checking")
 
   try {
@@ -70,7 +69,7 @@ export async function refreshHAConnection(expandOnConnect = false): Promise<void
     for (const [id, value] of Object.entries({
       version: data.version, location: data.location_name, timezone: data.time_zone, mode: data.mode,
     })) {
-      const element = byId(`ha-info-${id}`)
+      const element = document.getElementById(`ha-info-${id}`)
       if (element) element.textContent = typeof value === "string" && value ? value : "—"
     }
     setStatus("connected")
@@ -84,17 +83,17 @@ export async function refreshHAConnection(expandOnConnect = false): Promise<void
 }
 
 export function initHASettings(): void {
-  const testConnection = byId("test-connection")
+  const testConnection = document.getElementById("test-connection")
   if (testConnection) pageLifecycle.on(testConnection, "click", () => { void refreshHAConnection() })
 
   // Save HA settings (standalone mode only)
-  const haForm = byId("ha-form")
+  const haForm = document.getElementById("ha-form")
   if (haForm) {
-    const saveButton = byId<HTMLButtonElement>("save-ha")
+    const saveButton = document.getElementById("save-ha") as HTMLButtonElement | null
     if (saveButton) {
       const save = withAsyncButton(saveButton, async () => {
-        const haUrl = (byId("ha-url") as HTMLInputElement).value
-        const haToken = (byId("ha-token") as HTMLInputElement).value
+        const haUrl = (document.getElementById("ha-url") as HTMLInputElement).value
+        const haToken = (document.getElementById("ha-token") as HTMLInputElement).value
         await saveSettings({ ha_url: haUrl, ...(haToken ? { ha_token: haToken } : {}) })
         showToast("settings.ha_saved")
       }, { loadingText: "Saving…", onError: showSettingsSaveError })
@@ -106,12 +105,12 @@ export function initHASettings(): void {
   }
 
   // Webhook Save
-  const saveWebhookBtn = byId("save-webhook") as HTMLButtonElement
+  const saveWebhookBtn = document.getElementById("save-webhook") as HTMLButtonElement
   if (saveWebhookBtn) {
     pageLifecycle.on(saveWebhookBtn, "click", withAsyncButton(saveWebhookBtn, async () => {
-    const endpoint = (byId("webhook-endpoint") as HTMLInputElement).value
-    const secret = (byId("webhook-secret") as HTMLInputElement).value
-    const format = (byId("webhook-format") as HTMLSelectElement).value
+    const endpoint = (document.getElementById("webhook-endpoint") as HTMLInputElement).value
+    const secret = (document.getElementById("webhook-secret") as HTMLInputElement).value
+    const format = (document.getElementById("webhook-format") as HTMLSelectElement).value
 
     if (!endpoint) {
       showToast("settings.webhook_required", "error")
@@ -128,15 +127,15 @@ export function initHASettings(): void {
   }
 
   // Webhook Test
-  const testWebhookBtn = byId("test-webhook")
+  const testWebhookBtn = document.getElementById("test-webhook")
   if (testWebhookBtn) {
     pageLifecycle.on(testWebhookBtn, "click", async () => {
-    const endpoint = (byId("webhook-endpoint") as HTMLInputElement).value
+    const endpoint = (document.getElementById("webhook-endpoint") as HTMLInputElement).value
     if (!endpoint) {
       showToast("settings.webhook_enter_url", "error")
       return
     }
-    const btn = byId("test-webhook") as HTMLButtonElement
+    const btn = document.getElementById("test-webhook") as HTMLButtonElement
     btn.textContent = "Sending..."
     btn.disabled = true
 
@@ -166,25 +165,25 @@ export function initHASettings(): void {
 export function restoreHASettings(s: Record<string, unknown>): void {
   // Webhook
   if (s.webhook_endpoint)
-    (byId("webhook-endpoint") as HTMLInputElement).value = String(s.webhook_endpoint)
+    (document.getElementById("webhook-endpoint") as HTMLInputElement).value = String(s.webhook_endpoint)
   if (s.webhook_format)
-    (byId("webhook-format") as HTMLSelectElement).value = String(s.webhook_format)
+    (document.getElementById("webhook-format") as HTMLSelectElement).value = String(s.webhook_format)
   if (s.webhook_endpoint) {
-    const el = byId("webhook-status")
+    const el = document.getElementById("webhook-status")
     if (el) { el.textContent = "Active"; el.className = "badge badge-active" }
     window.expandIntegrationCard?.("integration-webhooks-body")
   } else {
-    const el = byId("webhook-status")
+    const el = document.getElementById("webhook-status")
     if (el) { el.textContent = "Not configured"; el.className = "badge badge-pending" }
   }
 
   // Grocy
   if (s.grocy_url)
-    (byId("grocy-url") as HTMLInputElement).value = String(s.grocy_url)
+    (document.getElementById("grocy-url") as HTMLInputElement).value = String(s.grocy_url)
   if (s.grocy_sync_mode)
-    (byId("grocy-sync-mode") as HTMLSelectElement).value = String(s.grocy_sync_mode)
+    (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value = String(s.grocy_sync_mode)
   if (s.grocy_url) {
-    const el = byId("grocy-status")
+    const el = document.getElementById("grocy-status")
     if (el) { el.textContent = "Configured"; el.className = "badge badge-active" }
     window.expandIntegrationCard?.("integration-grocy-body")
   }

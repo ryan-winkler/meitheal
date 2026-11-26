@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright"
-import { test, expect, type APIRequestContext, type Locator } from "@playwright/test"
+import { test, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test"
 
 import { normalizeTaskDetailOrder, taskDetailDefaultOrder } from "../../apps/web/src/lib/task-detail-layout"
 
@@ -28,8 +28,24 @@ function ids(list: Locator) {
   )
 }
 
+async function editMarkdown(page: Page) {
+  await page.getByRole("button", { name: "Edit description" }).click()
+  await page.getByRole("tab", { name: "Markdown", exact: true }).click()
+  return page.getByRole("textbox", { name: "Description", exact: true })
+}
+
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 test.use({ serviceWorkers: "block" })
+test.beforeEach(async ({ context }) => {
+  // Keep unrelated background reaction reads out of the shared fixture's request budget.
+  await context.route(url => url.pathname === "/api/tasks/reaction-counts" ||
+    /^\/api\/tasks\/[^/]+\/reactions$/.test(url.pathname), route => {
+    const request = route.request()
+    if (request.method() !== "GET") return route.fallback()
+    const counts = new URL(request.url()).pathname === "/api/tasks/reaction-counts"
+    return route.fulfill({ json: counts ? { counts: {} } : { reactions: [], groups: [], next_cursor: null, can_react: false } })
+  })
+})
 
 test("ticket and Settings share a real section and field order, and reset restores defaults", async ({ page, request }) => {
   const properties = taskDetailDefaultOrder.get("properties")!
@@ -50,7 +66,13 @@ test("ticket and Settings share a real section and field order, and reset restor
   await expect(page.locator("#td-title")).toHaveValue("Arrange a task")
   const initial = await ids(sections)
   expect(initial.slice(0, 3)).toEqual(["description", "properties", "scheduling"])
-  await description.locator("summary").press("Enter")
+  const descriptionSummary = description.locator("summary")
+  // The title can populate while the Inspector still shows its loading state.
+  await expect(descriptionSummary).toBeVisible()
+  await descriptionSummary.focus()
+  await expect(descriptionSummary).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(description).toHaveJSProperty("open", false)
   await expect(description.locator("#td-desc-preview")).toBeHidden()
   await expect(sections.locator("#td-status")).toBeVisible()
 
@@ -90,7 +112,7 @@ test("ticket and Settings share a real section and field order, and reset restor
     .toEqual(["status", "type"])
 })
 
-test("Focus fills the viewport and preserves current edits, history, and Escape order", async ({ page, request }) => {
+test("Focus uses the app window and preserves current edits, history, and Escape order", async ({ page, request }) => {
   const id = await createTicket(request, "Focus layout fixture")
   const { ticket_key } = await (await request.get(`/api/tasks/${id}`)).json()
   await page.setViewportSize({ width: 1600, height: 900 })
@@ -98,7 +120,6 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
   const overlay = page.locator("#task-detail-overlay")
   const panel = page.locator("#task-detail-panel")
   const title = page.locator("#td-title")
-  const draft = page.locator("#td-description")
   const enter = page.getByRole("button", { name: "Focus mode" })
   await expect(title).toHaveValue("Focus layout fixture")
   await expect(panel).toHaveAttribute("role", "region")
@@ -118,10 +139,11 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
   await expect(title).toHaveValue("Uncommitted title in Focus")
   await expect(overlay).toHaveAttribute("data-focus-mode", "")
   await expect(panel).toHaveAttribute("aria-modal", "true")
-  expect(await panel.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1600, height: 900 })
+  expect(await overlay.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1600, height: 900 })
+  expect(await panel.boundingBox()).toMatchObject({ x: 176, y: 24, width: 1248, height: 852 })
   expect(writes).toEqual([])
 
-  await page.getByRole("button", { name: "Edit description" }).click()
+  const draft = await editMarkdown(page)
   await draft.fill("Uncommitted description in Focus")
   const writesBeforeExit = writes.length
   await draft.press("ArrowLeft")
@@ -233,8 +255,7 @@ test("Description locks during Save, retains a failed draft, and resets for a bl
     return route.continue()
   })
   await page.goto(`/tickets/${id}`)
-  await page.getByRole("button", { name: "Edit description" }).click()
-  const editor = page.locator("#td-description")
+  const editor = await editMarkdown(page)
   const save = page.locator("#td-desc-save-btn")
   const cancel = page.locator("#td-desc-cancel-btn")
   await editor.fill("Draft to keep after failure")
@@ -278,6 +299,7 @@ test("Description locks during Save, retains a failed draft, and resets for a bl
   await expect(page.locator("#td-title")).toHaveValue("Blank description fixture")
   await expect(overlay).not.toHaveAttribute("data-focus-mode", "")
   await expect(properties).toHaveAttribute("open", "")
+  await page.getByRole("tab", { name: "Markdown", exact: true }).click()
   await expect(editor).toHaveValue("")
   await expect(save).toBeEnabled()
   await cancel.click()
@@ -287,8 +309,7 @@ test("Description locks during Save, retains a failed draft, and resets for a bl
 test("a change in another tab waits while focus is inside a ticket field", async ({ page, context, request }) => {
   const id = await createTicket(request, "Layout synchronization fixture")
   await page.goto(`/tickets/${id}`)
-  await page.getByRole("button", { name: "Edit description" }).click()
-  const description = page.locator("#td-description")
+  const description = await editMarkdown(page)
   const sections = page.locator("#td-sections")
   await description.fill("Keep this draft and its selection")
   const other = await context.newPage()
@@ -309,19 +330,21 @@ test.describe("touch layout", () => {
   test("dragging a grip reorders on touch", async ({ page, request, context }) => {
     const id = await createTicket(request, "Touch drag fixture")
     await page.goto(`/tickets/${id}`)
-    await page.getByRole("button", { name: "Focus mode" }).tap()
+    await expect(page.locator("#td-toggle-focus")).toBeHidden()
     await page.getByRole("button", { name: "Task detail layout", exact: true }).tap()
     const editor = page.locator("#td-layout-panel [data-task-layout-editor]")
     await expect(editor).toHaveAttribute("data-drag-ready", "true")
     const list = editor.locator('ol[data-layout-order="sections"]')
-    const grip = await list.locator(':scope > [data-layout-item="description"] [data-layout-handle]').boundingBox()
-    const next = await list.locator(':scope > [data-layout-item="properties"] > .td-layout-editor__row').boundingBox()
+    const handle = list.locator(':scope > [data-layout-item="description"] [data-layout-handle]')
+    await handle.scrollIntoViewIfNeeded()
+    const grip = await handle.boundingBox()
+    const next = await list.locator(':scope > [data-layout-item="properties"]').boundingBox()
     expect(grip).not.toBeNull()
     expect(next).not.toBeNull()
     const client = await context.newCDPSession(page)
     const x = grip!.x + grip!.width / 2
     const y = grip!.y + grip!.height / 2
-    const end = next!.y + next!.height - 3
+    const end = next!.y + next!.height * 0.75
     await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] })
     for (let step = 1; step <= 12; step++) {
       await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (end - y) * step / 12 }] })
@@ -348,8 +371,7 @@ test("switch and Close wait for the Description draft and retain it after failur
     return route.continue()
   })
   await page.goto(`/tickets/${id}`)
-  await page.getByRole("button", { name: "Edit description" }).click()
-  const editor = page.locator("#td-description")
+  const editor = await editMarkdown(page)
   await editor.fill("Retain this draft when switching")
   await expect(page.locator("#td-desc-save-btn")).toBeEnabled()
   await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
@@ -366,7 +388,7 @@ test("switch and Close wait for the Description draft and retain it after failur
   await expect(page.locator("#td-title")).toHaveValue("Destination after save")
   const saved = await request.get(`/api/tasks/${id}`)
   expect((await saved.json()).description).toBe("Retain this draft when switching")
-  await page.getByRole("button", { name: "Edit description" }).click()
+  await editMarkdown(page)
   await editor.fill("Save this draft when closing")
   await page.getByRole("button", { name: "Close detail" }).click()
   await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)

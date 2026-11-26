@@ -47,6 +47,7 @@ test("private verification failures explain the hidden Board and retry without l
     await expect(inspector).toBeVisible()
     await expect(title).toHaveValue("Recovery ticket")
     await inspector.locator("#td-desc-edit-btn-hover").click()
+    await inspector.getByRole("tab", { name: "Markdown", exact: true }).click()
     await description.fill("Keep this description across verification failures")
     await title.fill("Unsubmitted recovery draft")
     let mode: "ok" | "503" | "timeout" = "ok"

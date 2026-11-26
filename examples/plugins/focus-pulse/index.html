@@ -10,8 +10,15 @@
     .num { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
     .lbl { font-size: 0.78rem; color: var(--text-secondary, #a3b2aa); }
     label { display: block; font-size: 0.85rem; margin-bottom: 6px; }
-    input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border, #28332c); background: var(--bg-card, #171c19); color: var(--text-primary, #f3f7f4); margin-bottom: 8px; }
+    input, select { box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border, #28332c); background: var(--bg-card, #171c19); color: var(--text-primary, #f3f7f4); }
+    input { width: 100%; margin-bottom: 8px; }
     button { min-height: 36px; padding: 8px 12px; border-radius: 6px; border: 0; background: var(--accent, #22c55e); color: #052e16; font-weight: 600; cursor: pointer; }
+    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0 8px; }
+    .list-head h3 { margin: 0; font-size: 0.9rem; }
+    .list { display: grid; gap: 6px; }
+    .item { padding: 8px 10px; border-radius: 8px; background: var(--bg-card, #171c19); border: 1px solid var(--border, #28332c); }
+    .item-title { font-size: 0.85rem; font-weight: 600; }
+    .item-meta { font-size: 0.75rem; color: var(--text-secondary, #a3b2aa); margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -22,14 +29,47 @@
   <label for="intent">Today's household intention</label>
   <input id="intent" maxlength="140" placeholder="e.g. Finish kitchen prep before 18:00" />
   <button id="save" type="button">Save intention</button>
+  <div class="list-head">
+    <h3>Up next</h3>
+    <select id="sort" aria-label="Sort open tasks">
+      <option value="priority">Sort: Priority</option>
+      <option value="due_date">Sort: Due date</option>
+    </select>
+  </div>
+  <div id="items" class="list"></div>
   <script>
-    async function load() {
-      const res = await window.MeithealUI.send({ type: "load" })
+    const sortEl = document.getElementById("sort")
+    async function load(sortBy) {
+      const res = await window.MeithealUI.send(sortBy ? { type: "load", sortBy } : { type: "load" })
       if (!res || !res.ok) return
       document.getElementById("open").textContent = String(res.open)
       document.getElementById("done").textContent = String(res.done)
       document.getElementById("intent").value = String(res.intention || "")
+      if (res.sortBy) sortEl.value = res.sortBy
+      const box = document.getElementById("items")
+      box.textContent = ""
+      if (!res.items || res.items.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "lbl"
+        empty.textContent = "No open tasks."
+        box.append(empty)
+        return
+      }
+      for (const item of res.items) {
+        const row = document.createElement("div")
+        row.className = "item"
+        const title = document.createElement("div")
+        title.className = "item-title"
+        title.textContent = item.title
+        const meta = document.createElement("div")
+        meta.className = "item-meta"
+        const dueText = item.dueDate ? "Due " + String(item.dueDate).slice(0, 10) : "Unscheduled"
+        meta.textContent = (item.priorityLabel || "Medium") + " · " + dueText
+        row.append(title, meta)
+        box.append(row)
+      }
     }
+    sortEl.addEventListener("change", () => load(sortEl.value))
     document.getElementById("save").addEventListener("click", async () => {
       const val = document.getElementById("intent").value
       await window.MeithealUI.send({ type: "save_intention", value: val })

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { SETTINGS_SECTIONS } from "../../apps/web/src/lib/settings-registry"
+import { THEME_MODES } from "../../apps/web/src/lib/theme-mode"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 async function openSettings(page: Page, fragment = "look-and-feel-settings") {
@@ -34,7 +35,12 @@ test.describe("Tabler Settings recovery", () => {
 
   test("outline directory keeps canonical section links, theme choices and mobile keyboard navigation", async ({ page }) => {
     await openSettings(page)
-    expect((await page.locator("#theme-select option").allTextContents()).sort()).toEqual(["Auto (System)", "Light", "Emerald Isle", "Knight Rider", "Custom"].sort())
+    const themes = page.locator('[data-visual-group="theme"]')
+    await expect(themes.getByRole("radio")).toHaveCount(THEME_MODES.length)
+    for (const mode of THEME_MODES) {
+      await expect(themes.getByRole("radio").and(themes.locator(`[data-visual-option="${mode}"]`))).toBeVisible()
+    }
+    await expect(themes.getByRole("radio", { checked: true })).toHaveCount(1)
     const directory = page.getByRole("navigation", { name: "Sections", exact: true })
     for (const section of SETTINGS_SECTIONS) {
       const link = directory.getByRole("link", { name: section.label, exact: true })
@@ -47,12 +53,31 @@ test.describe("Tabler Settings recovery", () => {
       await expect(link).toHaveAttribute("aria-current", "location")
       await expect(page.getByRole("heading", { name: section.label, exact: true, level: 2 })).toBeFocused()
     }
-    await page.setViewportSize({ width: 320, height: 740 })
-    await page.locator("#settings-sections-toggle").press("Enter")
-    await expect(directory).toBeVisible()
-    await directory.getByRole("link", { name: "Connected Services", exact: true }).press("Enter")
-    await expect(page.getByRole("heading", { name: "Connected Services", exact: true, level: 2 })).toBeFocused()
+    const connectedServices = { name: "Connected Services", exact: true }
+    const connections = directory.getByRole("link", connectedServices)
+    const sectionsToggle = page.getByRole("button", { name: "Sections", exact: true })
+    await connections.press("Escape")
     await expect(directory).toBeHidden()
+    await expect(sectionsToggle).toBeFocused()
+
+    await page.setViewportSize({ width: 320, height: 740 })
+    await expect(directory).toBeVisible()
+    await expect(directory).toHaveCSS("position", "sticky")
+    expect(await directory.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+    await connections.press("Escape")
+    await expect(connections).toBeFocused()
+    await expect(directory).toBeVisible()
+    await connections.press("Enter")
+    await expect(page.getByRole("heading", { ...connectedServices, level: 2 })).toBeFocused()
+    await expect(connections).toHaveAttribute("aria-current", "location")
+    await expect(connections).toBeInViewport()
+
+    await connections.focus()
+    await page.setViewportSize({ width: 1280, height: 740 })
+    await expect(directory).toBeHidden()
+    await expect(sectionsToggle).toBeFocused()
+    await sectionsToggle.press("Enter")
+    await expect(directory).toBeVisible()
   })
 
   test("integration outline and help controls remain labeled, separate and readable in Light and Dark", async ({ page }) => {
@@ -89,9 +114,9 @@ test.describe("Tabler Settings recovery", () => {
       await heading.press("Enter")
       await page.locator('[data-settings-nav="app-pwa-settings"]').press("Enter")
       const security = page.getByRole("link", { name: "Report a security vulnerability privately", exact: true })
-      await expect(security).toHaveAttribute("href", "mailto:info@coolockvillage.ie")
+      await expect(security).toHaveAttribute("href", "mailto:hi@meitheal.io")
       expect(await security.evaluate(element => getComputedStyle(element).textDecorationLine)).toContain("underline")
-      expect(await contrastAgainst(security, "#local-feedback")).toBeGreaterThanOrEqual(4.5)
+      expect(await contrastAgainst(security, "#help-support-card")).toBeGreaterThanOrEqual(4.5)
       await page.locator('[data-settings-nav="look-and-feel-settings"]').press("Enter")
     }
   })

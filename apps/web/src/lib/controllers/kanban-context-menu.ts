@@ -133,14 +133,16 @@ export function initContextMenu(
       })
     }
 
-    const label = document.createElement("p")
-    label.className = "ctx-heading"
-    label.textContent = window.mI18n?.get("kanban.move_to") ?? "Move to"
-    menu.append(label)
-    for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
-      if (lane === current) continue
-      const title = lane.querySelector(".kanban-column-title")?.textContent?.trim()
-      if (title) addAction(title, () => { void moveTask(card, lane) })
+    const lanes = Array.from(board.querySelectorAll<HTMLElement>(".kanban-column")).filter(lane => lane !== current)
+    if (lanes.length > 0) {
+      const label = document.createElement("p")
+      label.className = "ctx-heading"
+      label.textContent = window.mI18n?.get("kanban.move_to") ?? "Move to"
+      menu.append(label)
+      for (const lane of lanes) {
+        const title = lane.querySelector(".kanban-column-title")?.textContent?.trim()
+        if (title) addAction(title, () => { void moveTask(card, lane) })
+      }
     }
 
     addAction("Add child item", () => {

@@ -22,6 +22,7 @@ import { stripHtml } from "../../lib/strip-html"
 import { formatTicketKey } from "../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../lib/webhook-dispatcher"
 import type { TaskCreationData, TaskRepository } from "./persistence/task-repository"
+import { parseRRule } from "./recurrence"
 
 /**
  * Accept labels as an array of strings or as a JSON-encoded string array.
@@ -71,16 +72,17 @@ export function taskChecklistsJson(
   if (!Array.isArray(parsed)) {
     return { ok: false, error: "checklists must be an array or a valid JSON array string" }
   }
-  if (requireDoneBoolean) {
-    for (const item of parsed) {
-      if (typeof item === "string") continue
-      if (typeof item !== "object" || item === null || Array.isArray(item)) {
-        return { ok: false, error: "checklists must contain strings or {text, done} objects" }
-      }
-      const rec = item as Record<string, unknown>
-      if (typeof rec.text !== "string" || typeof rec.done !== "boolean") {
-        return { ok: false, error: "checklists must contain strings or {text, done} objects" }
-      }
+  for (const item of parsed) {
+    if (typeof item === "string") continue
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
+    }
+    const rec = item as Record<string, unknown>
+    if (typeof rec.text !== "string") {
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
+    }
+    if (requireDoneBoolean ? typeof rec.done !== "boolean" : (rec.done !== undefined && typeof rec.done !== "boolean")) {
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
     }
   }
   return { ok: true, json: typeof value === "string" ? value : JSON.stringify(parsed) }
@@ -90,7 +92,7 @@ export async function prepareTaskCreation(
   repo: TaskRepository,
   body: Record<string, unknown>,
   { id = crypto.randomUUID(), useDefaultAssignee = true }: { id?: string, useDefaultAssignee?: boolean } = {},
-): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string; errorCode?: "hierarchy_invalid" }> {
+): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string }> {
   // OA-604: Input sanitization (strip HTML tags from plain-text titles without escaping &)
   const rawTitle = typeof body.title === "string" ? body.title.trim() : ""
   const title = stripHtml(rawTitle).trim()
@@ -131,10 +133,10 @@ export async function prepareTaskCreation(
   // Phase 20: Agile hierarchy type
   let task_type: TaskType = "task"
   if (body.task_type !== undefined && body.task_type !== null && body.task_type !== "") {
-    if (typeof body.task_type !== "string") return { ok: false, error: "task_type must be epic, story, or task", errorCode: "hierarchy_invalid" }
+    if (typeof body.task_type !== "string") return { ok: false, error: "task_type must be epic, story, or task" }
     const rawTaskType = body.task_type.trim().toLowerCase()
     if (!VALID_TASK_TYPES.includes(rawTaskType as TaskType)) {
-      return { ok: false, error: "task_type must be epic, story, or task", errorCode: "hierarchy_invalid" }
+      return { ok: false, error: "task_type must be epic, story, or task" }
     }
     task_type = rawTaskType as TaskType
   }
@@ -150,7 +152,7 @@ export async function prepareTaskCreation(
     const parentType = await repo.getParentTaskType(parent_id)
     if (parentType === null) return { ok: false, error: "Parent task not found" }
     const violation = validateParentChildType(parentType, task_type)
-    if (violation) return { ok: false, error: violation, errorCode: "hierarchy_invalid" }
+    if (violation) return { ok: false, error: violation }
   }
 
   // Area and custom fields
@@ -239,9 +241,9 @@ export async function prepareTaskCreation(
   const blocked_by = typeof body.blocked_by === "string" && body.blocked_by.trim().length > 0
     ? body.blocked_by.trim().slice(0, 500) : null
 
-  // Recurrence rule (RRULE string, e.g. "FREQ=DAILY")
+  // Recurrence rule (RFC 5545 RRULE string, e.g. "FREQ=MONTHLY;BYDAY=-1MO")
   const rawRecurrence = typeof body.recurrence_rule === "string" ? body.recurrence_rule.trim() : ""
-  const recurrence_rule = rawRecurrence && /^[A-Z=;,0-9]+$/.test(rawRecurrence) && rawRecurrence.length <= 200
+  const recurrence_rule = rawRecurrence && rawRecurrence.length <= 200 && parseRRule(rawRecurrence)
     ? rawRecurrence : null
 
   const rawSource = typeof body.source === "string" ? body.source.trim() : null

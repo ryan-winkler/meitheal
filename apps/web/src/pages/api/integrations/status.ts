@@ -11,8 +11,11 @@
 import type { APIRoute } from "astro";
 import { getHAConnectionStatus } from "../../../domains/ha";
 import { logApiError } from "../../../lib/api-logger";
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security";
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals, request }) => {
+  const denied = requireSystemSettingsAdmin(request, locals);
+  if (denied) return denied;
   try {
     const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
     const { SettingsRepository } = await import("@domains/tasks/persistence/settings-repository")

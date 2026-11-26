@@ -1,4 +1,7 @@
+import { createSpriteIconElement } from "../generated/icon-registry"
+import { containTabFocus } from "./focus-trap"
 import { dismissHelper } from "./helper-system"
+import { showToast } from "./toast"
 import {
   CORE_TOUR_STEPS,
   TOUR_STORAGE_KEY,
@@ -11,15 +14,8 @@ import {
 const TOUR_HELPER_ID = "meitheal-function-tour"
 let activeCleanup: (() => void) | null = null
 
-const save = (action: "dismiss" | "complete" | "restore") => {
+const save = (action: "dismiss" | "complete") => {
   try { localStorage.setItem(TOUR_STORAGE_KEY, JSON.stringify(transitionTourState(action))) } catch { /* ignore */ }
-}
-
-const flash = (msg: string) => {
-  const n = Object.assign(document.createElement("div"), { className: "helper-restore-flash", textContent: msg })
-  n.setAttribute("role", "status")
-  document.body.appendChild(n)
-  setTimeout(() => n.remove(), 2800)
 }
 
 const hidePrompt = () => {
@@ -49,8 +45,6 @@ const place = (target: HTMLElement, step: TourStep, spot: HTMLElement, pop: HTML
   const pr = pop.getBoundingClientRect(), pw = pr.width || 320, ph = pr.height || 200
   let left = r.left, top = r.bottom + gap
   if (step.placement === "right" && r.right + gap + pw <= vw - m) { left = r.right + gap; top = r.top }
-  else if (step.placement === "left" && r.left - gap - pw >= m) { left = r.left - gap - pw; top = r.top }
-  else if (step.placement === "top" && r.top - gap - ph >= m) { top = r.top - gap - ph }
   else if (r.bottom + gap + ph > vh - m && r.top - gap - ph >= m) { top = r.top - gap - ph }
   else if (r.bottom + gap + ph > vh - m && r.right + gap + pw <= vw - m) { left = r.right + gap; top = m }
   pop.style.left = `${Math.round(Math.max(m, Math.min(left, vw - pw - m)))}px`
@@ -67,11 +61,15 @@ const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
 export function startFunctionTour(): void {
   activeCleanup?.()
   const steps = filterReachableSteps(CORE_TOUR_STEPS, visibleTarget)
-  if (!steps.length) { flash("Open Dashboard or Boards to start the interactive tour"); return }
+  if (!steps.length) {
+    showToast("Open Dashboard or Boards to start the interactive tour", "info")
+    return
+  }
 
   const ctrl = new AbortController()
   const { signal } = ctrl
   const prevFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const initialScroll = { left: scrollX, top: scrollY, behavior: "instant" } as const
 
   const root = mk("div", "tabler-tour-root")
   root.dataset.tablerTourRoot = "true"
@@ -81,13 +79,14 @@ export function startFunctionTour(): void {
 
   const pop = mk("section", "tabler-tour-popover")
   pop.setAttribute("role", "dialog")
-  pop.setAttribute("aria-modal", "false")
+  pop.setAttribute("aria-modal", "true")
   pop.setAttribute("aria-labelledby", "tabler-tour-title")
   pop.setAttribute("aria-describedby", "tabler-tour-desc")
 
   const header = mk("div", "tabler-tour-header")
   const prog = mk("span", "tabler-tour-step")
-  const close = mk("button", "tabler-tour-close", "×")
+  const close = mk("button", "tabler-tour-close")
+  close.append(createSpriteIconElement("x", { size: 16 }))
   close.type = "button"
   close.setAttribute("aria-label", "Close tour")
   header.append(prog, close)
@@ -96,8 +95,6 @@ export function startFunctionTour(): void {
   title.id = "tabler-tour-title"
   const desc = mk("p", "tabler-tour-desc")
   desc.id = "tabler-tour-desc"
-  const hint = mk("p", "tabler-tour-hint", "Press ? or open your account menu anytime to replay.")
-
   const footer = mk("div", "tabler-tour-footer")
   const skip = mk("button", "btn btn-ghost btn-sm", "Skip tour")
   skip.type = "button"
@@ -108,7 +105,7 @@ export function startFunctionTour(): void {
   next.type = "button"
   nav.append(back, next)
   footer.append(skip, nav)
-  pop.append(header, title, desc, hint, footer)
+  pop.append(header, title, desc, footer)
   root.append(shield, spot, pop)
   document.body.appendChild(root)
 
@@ -117,21 +114,24 @@ export function startFunctionTour(): void {
     ctrl.abort()
     root.remove()
     if (activeCleanup === cleanup) activeCleanup = null
-    if (prevFocus?.isConnected) prevFocus.focus({ preventScroll: true })
+    if (prevFocus?.isConnected && prevFocus.getClientRects().length) prevFocus.focus({ preventScroll: true })
+    else document.getElementById("nav-utility-trigger")?.focus({ preventScroll: true })
   }
   const finish = (outcome: "dismiss" | "complete") => {
-    cleanup()
     save(outcome)
     hidePrompt()
-    flash(outcome === "complete"
-      ? "Tour complete — replay anytime from your account menu or press ?"
-      : "Tour dismissed — press ? or open your account menu to restore")
+    cleanup()
+    scrollTo(initialScroll)
+    showToast(outcome === "complete" ? "Tour complete" : "Tour dismissed", "info")
   }
   const render = () => {
     index = clampTourIndex(index, steps.length)
     const cur = steps[index]
     if (!cur) { cleanup(); return }
-    cur.target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+    const targetRect = cur.target.getBoundingClientRect()
+    if (targetRect.bottom <= 0 || targetRect.top >= innerHeight || targetRect.right <= 0 || targetRect.left >= innerWidth) {
+      cur.target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest", inline: "nearest" })
+    }
     prog.textContent = `Step ${index + 1} of ${steps.length}`
     title.textContent = cur.step.title
     desc.textContent = cur.step.description
@@ -144,13 +144,14 @@ export function startFunctionTour(): void {
   const sync = () => { const cur = steps[index]; if (cur?.target.isConnected) place(cur.target, cur.step, spot, pop) }
 
   for (const b of [close, skip, shield]) b.addEventListener("click", () => finish("dismiss"), { signal })
-  back.addEventListener("click", () => { index = clampTourIndex(index - 1, steps.length); render() }, { signal })
+  back.addEventListener("click", () => { index--; render() }, { signal })
   next.addEventListener("click", () => {
     if (index >= steps.length - 1) finish("complete")
-    else { index = clampTourIndex(index + 1, steps.length); render() }
+    else { index++; render() }
   }, { signal })
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish("dismiss") }
+    if (e.key === "Tab") containTabFocus(pop, e)
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish("dismiss") }
     else if (e.key === "ArrowRight") { e.preventDefault(); next.click() }
     else if (e.key === "ArrowLeft" && index > 0) { e.preventDefault(); back.click() }
   }, { signal })

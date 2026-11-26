@@ -20,9 +20,6 @@
     font-size: 13px;
     position: relative;
   }
-  .stree :is(a[href], button, summary, input),
-  .stree__dropdown :is(a[href], button, input),
-  .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }
   /* ── Area row — P1-7: unified padding, P1-8: stronger hover ── */
   .stree__area-row {
     display: flex;
@@ -376,7 +373,7 @@
     position: fixed;
     z-index: 10000;
     min-width: min(180px, calc(100vw - 16px));
-    background: var(--bg-surface, #1e1e2e);
+    background: var(--bg-card);
     border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 8px 28px rgba(0,0,0,0.45);
@@ -522,6 +519,7 @@
 
   /* ── P2-13: Custom focus rings ── */
   .stree__area-toggle:focus-visible,
+  .stree__area-link:focus-visible,
   .stree__project-link:focus-visible,
   .stree__action-btn:focus-visible,
   .stree__new-area:focus-visible,
@@ -568,6 +566,8 @@
       padding: 0;
       justify-content: center;
     }
+
+    .stree__dropdown-item { min-block-size: 44px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -579,9 +579,15 @@
   }
 
 /* The same action rows live inside the bounded peer hierarchy. */
-[data-sidebar-board-children] .stree__area-link { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 4px; }
+[data-sidebar-board-children] .stree__area-link { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 6px; padding-inline: 6px; }
 [data-sidebar-board-children] .stree__area-link .stree__area-name { overflow: hidden; text-overflow: ellipsis; }
-[data-sidebar-board-children] .stree__area-row > .stree__area-toggle { flex: none; inline-size: var(--stree-manage-size); min-inline-size: var(--stree-manage-size); }
+[data-sidebar-board-children] .stree__area-row > .stree__area-toggle { flex: none; inline-size: var(--stree-manage-size); min-inline-size: var(--stree-manage-size); justify-content: center; padding: 0; }
 [data-sidebar-board-children] [data-board-projects], [data-sidebar-board-children] [data-board-groups] { margin: 0; list-style: none; padding-inline-start: .75rem; }
 [data-sidebar-board-children] [data-board-new-area][hidden] { display: none; }
 [data-sidebar-board-children] .stree__area-row .stree__inline-input { min-inline-size: 4rem; flex: 1; }
+
+@media (max-width: 768px), (pointer: coarse) {
+  [data-sidebar-board-children] .stree__area-link { min-block-size: 44px; }
+  [data-sidebar-board-children] :is(.stree__area-row, .stree__project):has(> :is(.stree__inline-input, .stree__confirm-delete)) { flex-wrap: wrap; }
+  [data-sidebar-board-children] :is(.stree__area-row, .stree__project) > .stree__inline-input { flex: 0 0 100%; max-inline-size: none; }
+}

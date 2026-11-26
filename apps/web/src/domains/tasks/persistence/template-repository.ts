@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { routinePeriod } from "../routine-period"
+import { isRoutineActiveForPeriod, routinePeriod, routineStreakDayStep } from "../routine-period"
 import type { Client, InValue } from "@libsql/client"
 import {
   requireBoardScope,
+  scopePermits,
   validateBoardScope,
   type BoardScope,
   type WorkAction
@@ -86,13 +87,6 @@ function templateObject(value: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-function templateScopeError(
-  errorCode: "unavailable" | "continuity_locked",
-  message: string,
-): Error {
-  return Object.assign(new Error(message), { errorCode })
-}
-
 export class TemplateRepository {
   constructor(
     private readonly client: Client,
@@ -169,17 +163,17 @@ export class TemplateRepository {
         sql`SELECT area_id FROM projects AS project WHERE id = ${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL`
       )
       if (!project || (areaId && project.area_id !== areaId))
-        throw templateScopeError("unavailable", "Template Project is unavailable")
+        throw new BoardOperationError("unavailable", "Template Project is unavailable")
       if (!areaId && typeof project.area_id === "string") areaId = project.area_id
     }
     if (areaId) {
       const { rows } = await db.execute(
         sql`SELECT id FROM areas AS area WHERE id = ${areaId} AND ${ownedPlanning(this.scope, "area")} AND retired_at IS NULL`
       )
-      if (!rows.length) throw templateScopeError("unavailable", "Template Area is unavailable")
+      if (!rows.length) throw new BoardOperationError("unavailable", "Template Area is unavailable")
     }
     if (!(await validateBoardPlacement(this.scope, db, { areaId, projectId })))
-      throw templateScopeError("unavailable", "Template placement is unavailable")
+      throw new BoardOperationError("unavailable", "Template placement is unavailable")
     return { ...template, area_id: areaId, project_id: projectId }
   }
   async create(data: TemplateInput): Promise<boolean> {
@@ -260,7 +254,7 @@ export class TemplateRepository {
       )
       return changed.rowsAffected ? { next: true } : { unchanged: false }
     })
-    if (result.status === "locked") throw templateScopeError("continuity_locked", "Current template authority is unavailable")
+    if (result.status === "locked") throw new BoardOperationError("continuity_locked", "Current template authority is unavailable")
   }
   async findRoutines(areaId?: string, projectId?: string): Promise<RoutineTemplateRow[]> {
     const filter = areaId
@@ -332,18 +326,18 @@ export class TemplateRepository {
     for (const routine of routines) {
       const period = routinePeriod(routine.cadence, now, timezone)
       const rows = tasksByRoutine.get(routine.id) ?? []
-      const today = rows.find((row) => row.due_date === period)
+      const today = rows.find((row) => row.due_date === period || String(row.due_date ?? "").slice(0, 10) === period.slice(0, 10))
       const completed = rows.filter((row) => row.status === "complete")
       const dates = [
         ...new Set(
           completed
-            .map((row) => String(row.due_date))
+            .map((row) => String(row.due_date ?? "").slice(0, 10))
             .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
         )
       ]
         .sort()
         .reverse()
-      const dayStep = routine.cadence === "weekly" ? 7 : 1
+      const dayStep = routineStreakDayStep(routine.cadence)
       let longest = 0,
         streak = 0,
         previous: number | undefined
@@ -354,7 +348,7 @@ export class TemplateRepository {
         previous = time
       }
       let current = 0,
-        expected = Date.parse(period)
+        expected = Date.parse(period.slice(0, 10))
       if (dates[0] && Date.parse(dates[0]) === expected - dayStep * 86400000)
         expected -= dayStep * 86400000
       for (const date of dates) {
@@ -384,6 +378,72 @@ export class TemplateRepository {
   }
   async getHabitsWithStats(areaId?: string, projectId?: string, timezone = "UTC") {
     return this.getRoutinesWithStats(areaId, projectId, timezone)
+  }
+  async ensureDueRoutineTasks(timezone = "UTC"): Promise<number> {
+    return (await this.prepareDueRoutineTasks(timezone)).created
+  }
+
+  /**
+   * Ensure every active routine has a materialized task for its current cadence period.
+   * Idempotent: skips routines whose current period task already exists (pending or complete)
+   * or whose RRULE has ended (UNTIL / COUNT) or whose linked project is inactive.
+   * Report an empty list only after an authorized read so Today can avoid repeating it.
+   */
+  async prepareDueRoutineTasks(timezone = "UTC"): Promise<{ created: number, foundNoRoutines: boolean }> {
+    if (!scopePermits(this.scope, { resource: "task", action: "create" })) {
+      return { created: 0, foundNoRoutines: false }
+    }
+    const routines = await this.findRoutines()
+    if (routines.length === 0) return { created: 0, foundNoRoutines: true }
+    const routineIds = routines.map((r) => r.id)
+    const projectIds = new Set<string>()
+    const parsedBodies = new Map<string, Record<string, unknown>>()
+    for (const routine of routines) {
+      const body = templateObject(routine.template_json)
+      parsedBodies.set(routine.id, body)
+      if (typeof body.project_id === "string" && body.project_id) projectIds.add(body.project_id)
+    }
+    const batchQueries = [
+      scopedTaskRead(
+        this.scope,
+        sql`SELECT source_template_id, due_date FROM scoped_tasks WHERE source_template_id IN (SELECT value FROM json_each(${JSON.stringify(routineIds)}))`
+      ),
+      ...(projectIds.size > 0
+        ? [
+            sql`SELECT id FROM projects AS project WHERE id IN (SELECT value FROM json_each(${JSON.stringify([...projectIds])})) AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL AND status='active'`
+          ]
+        : [])
+    ]
+    const [taskRes, projectRes] = await this.db("read").batch(batchQueries, "read")
+    const periodsByRoutine = new Map<string, Set<string>>()
+    const countByRoutine = new Map<string, number>()
+    for (const row of taskRes?.rows ?? []) {
+      const tplId = String(row.source_template_id ?? "")
+      if (!tplId) continue
+      countByRoutine.set(tplId, (countByRoutine.get(tplId) ?? 0) + 1)
+      const due = String(row.due_date ?? "")
+      if (due) {
+        const set = periodsByRoutine.get(tplId) ?? new Set<string>()
+        set.add(due.slice(0, 10))
+        periodsByRoutine.set(tplId, set)
+      }
+    }
+    const activeProjectIds = new Set((projectRes?.rows ?? []).map((row) => String(row.id)))
+    const now = new Date()
+    let created = 0
+    for (const routine of routines) {
+      const body = parsedBodies.get(routine.id) ?? {}
+      const linkedProjectId = typeof body.project_id === "string" && body.project_id ? body.project_id : null
+      if (linkedProjectId && !activeProjectIds.has(linkedProjectId)) continue
+      const period = routinePeriod(routine.cadence, now, timezone)
+      const existingPeriods = periodsByRoutine.get(routine.id)
+      if (existingPeriods?.has(period.slice(0, 10))) continue
+      const totalExisting = countByRoutine.get(routine.id) ?? 0
+      if (!isRoutineActiveForPeriod(routine.cadence, period, totalExisting)) continue
+      const outcome = await this.instantiateRoutineTask(routine.id, timezone).catch(() => null)
+      if (outcome && !outcome.alreadyExisted) created++
+    }
+    return { created, foundNoRoutines: false }
   }
   private async createTaskWithOutcome(
     taskId: string,

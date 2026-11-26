@@ -337,8 +337,8 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
 
   /* Dynamic theme-matched avatar tracks active accent & adapts to dark/light/colored nav */
   .sidebar-user-avatar[data-avatar-mode="theme"] {
-    background-color: var(--accent);
-    color: var(--accent-fg, #ffffff);
+    background-color: var(--personal-accent, var(--palette-accent-hover));
+    color: var(--personal-accent-foreground, var(--palette-on-accent));
   }
 
   :root[data-theme="dark"] .sidebar-user-avatar[data-avatar-mode="theme"],

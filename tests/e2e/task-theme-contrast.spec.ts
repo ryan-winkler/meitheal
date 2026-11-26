@@ -160,7 +160,9 @@ test.describe("Shopping theme contrast", () => {
         await page.screenshot({ path: join(dir, `${state.name}-title-focused.png`) })
         await writeFile(join(dir, `${state.name}.json`), JSON.stringify({ fixture: "ha" in state ? "synthetic same-origin HA frontend with real initHAThemeBridge" : "normal standalone dev", unfocused, focused }, null, 2))
         expect(unfocused.state.base).toBe("slate")
-        expect(unfocused.state.theme).toBe(state.theme)
+        const effectiveTheme = "ha" in state && state.ha === "dark" ? "knight-rider" : state.effective
+        expect(unfocused.state.theme).toBe(effectiveTheme)
+        expect(await frame.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe(state.theme)
         const violations = [...unfocused.measurements, ...focused.measurements.filter(item => item.name === "new-task-title-input:placeholder")].filter(item => Number(item.contrast) < 4.5)
         expect(violations, "Small text, including focused placeholder, must retain 4.5:1 contrast").toEqual([])
         expect(unfocused.state.colorScheme, "Native controls should use the authoritative app appearance").toBe(state.effective)

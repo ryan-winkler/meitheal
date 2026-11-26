@@ -32,7 +32,7 @@ test.describe("Settings users", () => {
     const originalToggle = notifications.locator(`input[data-user-id="${original}"]`)
     await expect(select.locator(`option[value="${original}"]`)).toHaveText("Shared settings user (Custom)")
     await expect(originalToggle).toBeChecked()
-    await expect(originalToggle).toHaveAccessibleName("Shared settings user (Custom)")
+    await expect(originalToggle).toHaveAccessibleName("Notifications for Shared settings user")
     expect(calls).toEqual(["GET /api/users"])
 
     // A custom-user refresh must not discard unsaved notification preferences.

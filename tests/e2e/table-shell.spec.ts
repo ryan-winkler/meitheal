@@ -296,6 +296,13 @@ test.describe("Table Shell", () => {
       expect(wide.ok(), await wide.text()).toBeTruthy()
       await page.setViewportSize({ width: 1440, height: 900 })
       await openTitle(edited)
+      await expect(page.getByRole("cell", { name: /^Reference: W{19}…$/ })).toBeVisible()
+      await page.getByRole("button", { name: "Customize visible columns" }).click()
+      const columns = page.getByRole("region", { name: "Column Visibility" })
+      for (const name of ["Start Date", "Effort", "Story Points", "Eisenhower", "Progress"]) {
+        await columns.getByRole("checkbox", { name, exact: true }).check()
+      }
+      await columns.getByRole("button", { name: "Close panel" }).click()
       await expectToolbarInView(1440)
       await expectScrollableColumns()
     } finally {

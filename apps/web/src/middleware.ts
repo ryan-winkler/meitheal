@@ -302,7 +302,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
-  const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
+  const { ingressPath, behindIngress, hassUserId, hassDisplayName, hassUserName, hassIsAdmin } = resolveIngressContext(request.headers, transport);
   if (transport) transport.behindIngress = behindIngress;
   const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
   const databaseExportPath = "/api/export/database.sqlite"
@@ -325,6 +325,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.ingressPath = ingressPath;
   locals.behindIngress = behindIngress;
   locals.hassUserId = hassUserId;
+  locals.hassDisplayName = hassDisplayName;
+  locals.hassUserName = hassUserName;
   locals.hassIsAdmin = hassIsAdmin;
 
   // ── Agent/Automation source identification ──
@@ -596,15 +598,22 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         if (availability.needsVerification) response.headers.set("cache-control", "private, no-store")
       }
     } catch (error) {
-      if (!apiRoute) throw error
-      logger.log("error", {
-        event: "http.unhandled_error",
-        domain: "observability",
-        component: "middleware",
-        request_id: requestId,
-        message: `${request.method} ${logPath} failed: ${error instanceof Error ? error.name : "unknown error"}`,
-      })
-      response = apiProblem({ status: 500, detail: "The server could not finish this request. Try again.", traceId: requestId })
+      if (request.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        response = new Response(null, { status: 499 })
+      } else {
+        if (!apiRoute) throw error
+        const errDetail = error instanceof Error
+          ? (import.meta.env.DEV && error.message ? `${error.name}: ${error.message}` : error.name)
+          : "unknown error"
+        logger.log("error", {
+          event: "http.unhandled_error",
+          domain: "observability",
+          component: "middleware",
+          request_id: requestId,
+          message: `${request.method} ${logPath} failed: ${errDetail}`,
+        })
+        response = apiProblem({ status: 500, detail: "The server could not finish this request. Try again.", traceId: requestId })
+      }
     }
     if (apiRoute && response.status >= 400 && (response.headers.get("content-type") ?? "").includes("text/html")) {
       response = apiProblem({

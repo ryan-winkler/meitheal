@@ -172,7 +172,7 @@ test.describe("PWA Manifest — Dynamic Endpoint", () => {
       { path: "/icon-maskable-512.png", size: 512, purpose: "maskable" },
     ]
     for (const ingressPath of ["", "/api/hassio_ingress/synthetic-test-ingress"]) {
-      const response = await getManifest({ locals: { ingressPath } } as Parameters<typeof getManifest>[0])
+      const response = await getManifest({ locals: { ingressPath }, url: new URL("http://fixture.test/manifest.webmanifest") } as Parameters<typeof getManifest>[0])
       const manifest = await response.json()
       expect(manifest).toMatchObject({
         name: "Meitheal",
@@ -203,7 +203,7 @@ test.describe("PWA Manifest — Dynamic Endpoint", () => {
     ]
 
     for (const ingressPath of ["", "/api/hassio_ingress/synthetic-test-ingress"]) {
-      const response = await getManifest({ locals: { ingressPath } } as Parameters<typeof getManifest>[0])
+      const response = await getManifest({ locals: { ingressPath }, url: new URL("http://fixture.test/manifest.webmanifest") } as Parameters<typeof getManifest>[0])
       const manifest = await response.json()
       expect(manifest.screenshots).toHaveLength(fixtures.length)
 

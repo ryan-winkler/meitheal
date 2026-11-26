@@ -225,7 +225,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       expectedDefaultRevision: offScope.body.defaultPolicy.revision, areaGeneration: offScope.body.areaGeneration,
       expectedAreaCatalogRevision: null,
     })).status).toBe(200)
-    await page.goto(origin + prefix + "/tasks?area=default")
+    const kanban = origin + prefix + "/tasks?view=kanban"
+    await page.goto(kanban + "&area=default#kanban")
     await page.locator("#area-selector-trigger").click()
     await page.locator(`#area-selector-dropdown [data-area-id="${marker}"]`).click()
     await expect(page).toHaveURL(url => url.searchParams.get("area") === marker)
@@ -234,12 +235,12 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     page.on("request", request => {
       if (new URL(request.url()).pathname === api && request.postDataJSON()?.action === "board") boardRequests++
     })
-    await page.goto(origin + prefix + "/tasks")
-    await expect(page).toHaveURL(new RegExp("/tasks\\?area=" + marker))
+    await page.goto(kanban + "#kanban")
+    await expect(page).toHaveURL(url => url.pathname === prefix + "/tasks" && url.searchParams.get("area") === marker)
     await expect(page.locator("#kanban-board")).toHaveAttribute("data-inactivity-enabled", "false")
     expect(boardRequests).toBe(0)
 
-    await page.goto(origin + prefix + "/tasks?area=default")
+    await page.goto(kanban + "&area=default#kanban")
     const board = page.locator("#kanban-board")
     await expect(board).toHaveClass(/density-compact/)
     await expect(board.locator('[data-inactivity-cue]')).toHaveText("Ready to defer")
@@ -311,7 +312,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(page.locator("[data-inactivity-filter]")).toHaveValue("all")
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
     expect(legacyRejections).toBe(1)
-    await page.goto(origin + prefix + "/tasks?area=default")
+    await page.goto(kanban + "&area=default#kanban")
     await expect(page.locator('.kanban-card[data-id="browser-card"] [data-inactivity-cue]')).toHaveText("Ready to defer")
     await page.unroute("**" + api, legacyServer)
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("meitheal:inactivity-task-changed")))
@@ -616,14 +617,22 @@ test("the current worker scrubs cached inactivity pages and API aliases", async 
     }, prefix)
     expect(version).toBeTruthy()
     const cacheNames = ["api", "nav", "precache", "static"].map(kind => `meitheal-${kind}-v${version}`)
+    await page.route(origin + ordinary, route => route.fulfill({
+      contentType: "text/css",
+      headers: { date: new Date().toUTCString() },
+      body: "Ordinary offline payload",
+    }))
     await page.evaluate(async ({ cacheNames, variants, ordinary }) => {
       const headers = { date: new Date().toUTCString() }
+      const stylesheet = await fetch(ordinary)
+      if (!stylesheet.ok || stylesheet.type !== "basic") throw new Error("Ordinary cache fixture requires a same-origin HTTP response")
       for (const name of cacheNames) {
         const cache = await caches.open(name)
         for (const url of variants) await cache.put(url, new Response("Stale inactivity payload", { headers }))
-        await cache.put(ordinary, new Response("Ordinary offline payload", { headers }))
+        await cache.put(ordinary, stylesheet.clone())
       }
     }, { cacheNames, variants, ordinary })
+    await page.unroute(origin + ordinary)
 
     await page.evaluate(async prefix => {
       await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })

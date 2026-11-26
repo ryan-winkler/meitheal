@@ -1,33 +1,26 @@
 ---
-import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { OrganizationFeature } from "@lib/organization-availability"
-import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import Icon from "../ui/Icon.astro"
-import { taskDetailSections } from "@lib/task-detail-layout"
+import { entityFormLayouts, taskDetailSections, taskKindLayoutScopes } from "@lib/task-detail-layout"
 import { t, type Locale } from "../../i18n/translations"
 
 interface Props {
   locale: Locale
-  scope?: "server" | "personal"
+  scope?: "personal"
   serverLayoutJson?: string | null
   allowServerSave?: boolean
+  showEntityForms?: boolean
+  fieldLayoutOnly?: boolean
 }
 const {
   locale,
-  scope = "personal",
-  serverLayoutJson: passedServerLayout,
+  serverLayoutJson = null,
   allowServerSave = false,
+  showEntityForms = true,
+  fieldLayoutOnly = false,
 } = Astro.props
-let serverLayoutJson = passedServerLayout ?? null
-if (passedServerLayout === undefined && (scope === "server" || allowServerSave)) {
-  try {
-    const client = getPersistenceClient()
-    await ensureSchema()
-    serverLayoutJson = await readCachedTaskDetailLayout(client)
-  } catch { /* fallback to built-in layout defaults */ }
-}
 
 const organization = await organizationLabelsFor(Astro)
 const fieldFeatures: Partial<Record<string, OrganizationFeature>> = { area: "groups", project: "projects", pillar: "pillars", principle: "principles", "home-assistant-area": "home_assistant_area" }
@@ -44,11 +37,19 @@ const sections = taskDetailSections.map(section => ({
       .map(([id, fallback]) => [id, fieldLabel(id, fallback)]),
   }),
 }))
+
+const entityForms = Object.values(entityFormLayouts).map(form => ({
+  id: form.id,
+  label: form.label,
+  icon: form.icon,
+  fields: form.fields.map(([id, fallback]) => [id, fieldLabel(id, fallback)]),
+}))
 ---
 <div class="td-layout-editor" data-task-layout-editor
-  data-layout-scope={scope}
+  data-layout-scope="personal"
   data-server-layout={serverLayoutJson ?? undefined}
   data-layout-sections={JSON.stringify(sections)}
+  data-entity-forms={JSON.stringify(entityForms)}
   data-layout-fields-label={t("task_layout.fields", locale)}
   data-layout-move-up={t("task_layout.move_up", locale)}
   data-layout-move-down={t("task_layout.move_down", locale)}
@@ -59,12 +60,57 @@ const sections = taskDetailSections.map(section => ({
 >
   <div class="td-layout-scope td-layout-scope--personal">
     <span class="td-layout-scope__badge" data-layout-scope-badge>Using server default</span>
-    <p>Changes here apply only to this browser and override the server default.</p>
+    <p>{fieldLayoutOnly
+      ? t("task_layout.create_fields_only", locale)
+      : "Changes here apply to this browser and override the server default. Customize all tasks, individual task kinds, or entity forms."}</p>
   </div>
 
-  <div class="td-layout-editor__intro">
-    <p>{t("task_layout.instructions", locale)}</p>
+  <div class="td-layout-scopes" data-layout-scope-switcher role="tablist" aria-label="Layout target">
+    <div class="td-layout-scopes__group">
+      <span class="td-layout-scopes__label">Task kinds</span>
+      <div class="td-layout-scopes__pills">
+        {taskKindLayoutScopes.map((kind, idx) => (
+          <button
+            type="button"
+            role="tab"
+            class={`td-layout-scope-pill${idx === 0 ? " is-active" : ""}`}
+            data-layout-target={kind.id}
+            aria-selected={idx === 0 ? "true" : "false"}
+          >
+            <Icon name={kind.icon} size={14} sprite />
+            <span>{kind.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+    {showEntityForms && (
+      <div class="td-layout-scopes__group">
+        <span class="td-layout-scopes__label">Entity forms</span>
+        <div class="td-layout-scopes__pills">
+          {entityForms.map((form) => (
+            <button
+              type="button"
+              role="tab"
+              class="td-layout-scope-pill"
+              data-layout-target={form.id}
+              aria-selected="false"
+            >
+              <Icon name={form.icon} size={14} sprite />
+              <span>{form.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+
+  {!fieldLayoutOnly && <div class="td-layout-editor__intro">
+    <p data-layout-active-hint>{t("task_layout.instructions", locale)}</p>
     <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" class="btn btn-ghost btn-sm" data-layout-reset-scope hidden>
+        <Icon name="arrow-back-up" size={14} sprite />
+        <span>Reset this layout</span>
+      </button>
       {allowServerSave && (
         <button type="button" class="btn btn-secondary btn-sm" data-layout-save>
           <Icon name="world" size={14} sprite />
@@ -76,10 +122,11 @@ const sections = taskDetailSections.map(section => ({
         <span>{t("task_layout.reset", locale)}</span>
       </button>
     </div>
-  </div>
+  </div>}
   <p class="td-layout-editor__error" data-layout-error hidden></p>
   <p class="sr-only" role="status" data-layout-status></p>
-  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}></ol>
+  <ol class="td-layout-editor__list" data-layout-sections-list data-layout-order={fieldLayoutOnly ? undefined : "sections"} aria-label={t(fieldLayoutOnly ? "task_layout.fields" : "task_layout.sections", locale)}></ol>
+  <ol class="td-layout-editor__list" data-layout-entity-list aria-label="Form fields" hidden></ol>
 
   <template data-layout-row>
     <li class="td-layout-editor__item" data-layout-item>

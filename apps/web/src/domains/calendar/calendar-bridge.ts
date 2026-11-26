@@ -1,4 +1,5 @@
 import { serializeCalendarDelivery } from "./calendar-delivery"
+import { hasCalendarSyncOptOut, ticketDetailsEnabled } from "./calendar-policy"
 import { createHash } from "node:crypto"
 import { homeAssistantWorkLink } from "@lib/ha-app-link"
 import {
@@ -1606,7 +1607,8 @@ async function _syncEntityFromHAInner(
         const taskId = crypto.randomUUID()
         const newDescParts: string[] = []
         if (evt.location) newDescParts.push(`📍 ${evt.location}`)
-        if (evt.description) newDescParts.push(evt.description)
+        const strippedNewDesc = stripMeithealAttribution(evt.description)
+        if (strippedNewDesc) newDescParts.push(strippedNewDesc)
         const newDesc = newDescParts.length > 0 ? newDescParts.join("\n\n") : ""
 
         mutations.push({
@@ -1920,16 +1922,36 @@ export async function isImportedCalendarTask(
   taskId: string,
   context: IntegrationScope
 ): Promise<boolean> {
-  const mod = await getStoreModule(),
-    repo = new TaskRepository(mod.getPersistenceClient(), context.scope)
+  const mod = await getStoreModule()
+  const db = mod.getPersistenceClient()
+  const repo = new TaskRepository(db, context.scope)
+  const task = await repo.findById(taskId).catch(() => null)
+  if (task) {
+    const idemKey = String((task as unknown as { idempotency_key?: unknown }).idempotency_key ?? "")
+    if (/^(cal-sync-|caldav-sync-)/.test(idemKey)) return true
+  }
   const references = await repo.listCalendarSyncReferences(context, context.binding.sourceId)
   const own = references.filter(
     (reference) => reference.taskId === taskId && !reference.taskDeleted && !reference.suppressed
   )
-  return (
+  if (
     own.some((reference) => ["ha.calendar_sync", "caldav"].includes(reference.source)) &&
     !own.some((reference) => reference.source === "ha.write_back")
-  )
+  ) {
+    return true
+  }
+  // Guard across binding re-saves or multi-calendar imports: if this task was imported
+  // from ANY calendar confirmation and never created by write-back, do not push a duplicate.
+  const anyImported = await db.execute({
+    sql: `SELECT
+            MAX(CASE WHEN source IN ('ha.calendar_sync', 'caldav') THEN 1 ELSE 0 END) AS has_import,
+            MAX(CASE WHEN source = 'ha.write_back' THEN 1 ELSE 0 END) AS has_writeback
+          FROM calendar_confirmations
+          WHERE task_id = ?`,
+    args: [taskId],
+  })
+  const row = anyImported.rows[0] as { has_import?: unknown; has_writeback?: unknown } | undefined
+  return Number(row?.has_import ?? 0) === 1 && Number(row?.has_writeback ?? 0) === 0
 }
 
 /** Publish only the current authorized task to its exact approved Calendar binding. */
@@ -1939,26 +1961,42 @@ export async function pushTaskToCalendar(
   _title: string,
   _dueDate: string,
   _description?: string,
-  _meta?: TaskCalendarMeta
+  _meta?: TaskCalendarMeta,
+  manual = false
 ): Promise<boolean> {
   return serializeCalendarDelivery(taskId, context.binding.sourceId, waited =>
-    pushCurrentTaskToCalendar(context, taskId, waited))
+    pushCurrentTaskToCalendar(context, taskId, waited, manual))
 }
 
-async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: string, waited: boolean): Promise<boolean> {
+async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: string, waited: boolean, manual = false): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule(),
     client = guardWorkPersistence(mod.getPersistenceClient()),
     repo = new TaskRepository(client, context.scope)
-  const config = activeSyncs.get(context.binding.id)?.config
+  const activeConfig = activeSyncs.get(context.binding.id)?.config
+  const config =
+    activeConfig ??
+    (manual
+      ? {
+          bindingId: context.binding.id,
+          generation: context.binding.generation,
+          entityId: context.binding.sourceId,
+          syncEnabled: true,
+          syncMode: "export" as CalendarSyncMode,
+          writeBack: true,
+          writeTicketDetails: ticketDetailsEnabled(
+            (await repo.getSettings(["calendar_write_ticket_details"])).calendar_write_ticket_details,
+          ),
+          syncIntervalMs: 0,
+        }
+      : undefined)
   if (
     context.binding.integration !== "calendar" ||
     context.binding.purpose !== "calendar.sync" ||
     !config ||
     config.generation !== context.binding.generation ||
     config.entityId !== context.binding.sourceId ||
-    config.syncMode === "import" ||
-    !config.writeBack
+    (!manual && (config.syncMode === "import" || !config.writeBack))
   )
     return false
   let expectedTaskVersion: number | undefined
@@ -1991,12 +2029,17 @@ async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: stri
   }
   if (!(await operationAllowed()) || (await isImportedCalendarTask(taskId, context))) return false
   const task = await repo.findById(taskId)
-  const scheduledStart = task
-    ? (task.task_kind === "calendar_event"
-      ? (typeof task.start_date === "string" && task.start_date.trim() ? task.start_date.trim() : task.due_date)
-      : task.due_date)
-    : null
-  if (!task || typeof scheduledStart !== "string" || !scheduledStart.trim()) return false
+  if (!task || hasCalendarSyncOptOut(task.labels)) return false
+  const scheduledStart = task.task_kind === "calendar_event" ? task.start_date?.trim() || task.due_date : task.due_date
+  if (typeof scheduledStart !== "string" || !scheduledStart.trim()) return false
+  if (
+    isMeithealOriginatedEvent(
+      task.title,
+      typeof task.description === "string" ? task.description : null
+    )
+  ) {
+    return false
+  }
   const dueDate = scheduledStart.trim(),
     title = task.title
   const start = dueDate
@@ -2676,7 +2719,8 @@ async function importCalDAVEvents(
 
           const calDescParts: string[] = []
           if (repEvt.location) calDescParts.push(`📍 ${repEvt.location}`)
-          if (repEvt.description) calDescParts.push(repEvt.description)
+          const strippedCalDesc = stripMeithealAttribution(repEvt.description)
+          if (strippedCalDesc) calDescParts.push(strippedCalDesc)
           const inboundCalDesc = calDescParts.length > 0 ? calDescParts.join("\n\n") : null
 
           const existingLink = existingCalLinks.get(uid)

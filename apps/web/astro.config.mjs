@@ -81,11 +81,21 @@ export default defineConfig({
   // Class scoping matches attribute scoping specificity (0,1,0) while shrinking
   // scoped CSS selectors (~22 KB) and SSR HTML payloads with faster class lookup.
   scopedStyleStrategy: "class",
-  prefetch: true,
+  prefetch: {
+    defaultStrategy: "hover",
+    prefetchAll: false,
+  },
   security: {
     checkOrigin: false,
   },
   vite: {
+    resolve: {
+      alias: {
+        "@lib": resolve(process.cwd(), "src/lib"),
+        "@domains": resolve(process.cwd(), "src/domains"),
+        "@i18n": resolve(process.cwd(), "src/i18n"),
+      },
+    },
     build: {
       cssMinify: "lightningcss",
     },

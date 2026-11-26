@@ -37,7 +37,7 @@ export function setupHabitsSection(
     card.classList.add("habit-card--done")
 
     try {
-      const res = await fetch("/api/habits", { signal: lm.signal,
+      const res = await fetch("/api/routines", { signal: lm.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "complete", templateId: habitId }),

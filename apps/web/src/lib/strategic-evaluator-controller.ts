@@ -9,6 +9,8 @@ import {
   readRiceAssessment,
   riceLensScore,
 } from "@lib/rice-lens"
+import { resolveEnabledFrameworksForTask, type ScoringRuleSummary } from "@lib/scoring-rules-filter"
+import { clampSliderTrackValue, getScoringSliderConfig } from "@lib/rice-slider-config"
 
 export interface StrategicLensSession {
   signal: AbortSignal
@@ -67,9 +69,88 @@ function renderField(field: Field, value: unknown, frameworkId: string): HTMLEle
   const val = value ?? field.min ?? ""
 
   const wrapper = document.createElement("div")
+  wrapper.className = "se-field"
   const label = document.createElement("label")
   label.htmlFor = id
   label.textContent = field.label
+
+  const help = document.createElement("small")
+  help.id = helpId
+  help.textContent = field.help_text ?? field.description ?? ""
+
+  if (field.type === "number" && !(isFrameworkFieldOptions(field.options) && field.options.length)) {
+    const sliderCfg = getScoringSliderConfig(frameworkId, field.key, minimum(field, frameworkId), field.max)
+    const input = document.createElement("input")
+    input.type = "number"
+    input.required = true
+    input.step = "any"
+    input.inputMode = "decimal"
+    const min = minimum(field, frameworkId)
+    if (typeof min === "number" && Number.isFinite(min)) input.min = String(min)
+    if (typeof field.max === "number" && Number.isFinite(field.max)) input.max = String(field.max)
+    input.value = String(val)
+    input.id = id
+    input.name = field.key
+    input.setAttribute("aria-describedby", helpId)
+    input.className = sliderCfg ? "form-input se-input se-number-input" : "form-input se-input"
+
+    if (sliderCfg) {
+      wrapper.classList.add("se-field--slider")
+      const head = document.createElement("div")
+      head.className = "se-field__head"
+
+      const numWrap = document.createElement("div")
+      numWrap.className = "se-field__num-wrap"
+      numWrap.appendChild(input)
+      if (sliderCfg.suffix) {
+        const suffix = document.createElement("span")
+        suffix.className = "se-field__suffix"
+        suffix.setAttribute("aria-hidden", "true")
+        suffix.textContent = sliderCfg.suffix
+        numWrap.appendChild(suffix)
+      }
+      head.append(label, numWrap)
+
+      const range = document.createElement("input")
+      range.type = "range"
+      range.className = "form-range se-range"
+      range.min = String(sliderCfg.min)
+      range.max = String(sliderCfg.max)
+      range.step = String(sliderCfg.step)
+      range.value = String(clampSliderTrackValue(typeof val === "number" || typeof val === "string" ? val : "", sliderCfg.min, sliderCfg.max))
+      range.setAttribute("aria-label", `${field.label} slider`)
+      range.dataset.seRangeFor = field.key
+
+      range.addEventListener("input", () => {
+        input.value = range.value
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+      })
+      input.addEventListener("input", () => {
+        const parsed = Number(input.value)
+        if (Number.isFinite(parsed)) {
+          range.value = String(clampSliderTrackValue(parsed, sliderCfg.min, sliderCfg.max))
+        }
+      })
+
+      wrapper.append(head, range)
+      if (sliderCfg.ticks) {
+        const ticks = document.createElement("div")
+        ticks.className = "se-field__ticks"
+        ticks.setAttribute("aria-hidden", "true")
+        const t0 = document.createElement("span")
+        t0.textContent = sliderCfg.ticks[0]
+        const t1 = document.createElement("span")
+        t1.textContent = sliderCfg.ticks[1]
+        ticks.append(t0, t1)
+        wrapper.appendChild(ticks)
+      }
+      if (help.textContent) wrapper.appendChild(help)
+      return wrapper
+    }
+
+    wrapper.append(label, input, help)
+    return wrapper
+  }
 
   let control: HTMLInputElement | HTMLSelectElement
   if (isCheckbox(field)) {
@@ -87,16 +168,6 @@ function renderField(field: Field, value: unknown, frameworkId: string): HTMLEle
       select.appendChild(opt)
     }
     control = select
-  } else if (field.type === "number") {
-    const input = document.createElement("input")
-    input.type = "number"
-    input.required = true
-    input.step = "any"
-    const min = minimum(field, frameworkId)
-    if (typeof min === "number" && Number.isFinite(min)) input.min = String(min)
-    if (typeof field.max === "number" && Number.isFinite(field.max)) input.max = String(field.max)
-    input.value = String(val)
-    control = input
   } else {
     const input = document.createElement("input")
     input.type = "text"
@@ -107,10 +178,6 @@ function renderField(field: Field, value: unknown, frameworkId: string): HTMLEle
   control.name = field.key
   control.setAttribute("aria-describedby", helpId)
   control.className = "form-input se-input"
-
-  const help = document.createElement("small")
-  help.id = helpId
-  help.textContent = field.help_text ?? field.description ?? ""
 
   wrapper.append(label, control, help)
   return wrapper
@@ -145,8 +212,11 @@ pageLifecycle.onPageLoad(signal => {
   if (!panel || panel.dataset.scoringController === "ready" || !select || !form || !fields || !content || !output || !status || !save || !ask) return
   panel.dataset.scoringController = "ready"
 
-  let frameworks: Framework[] = JSON.parse(panel.dataset.frameworks ?? "[]")
+  let allFrameworks: Framework[] = JSON.parse(panel.dataset.frameworks ?? "[]")
+  let frameworks: Framework[] = [...allFrameworks]
+  let cachedRules: ScoringRuleSummary[] | null = null
   let taskId = ""
+  let currentTaskType = "task"
   let persisted: Record<string, unknown> = {}
   let payload: Record<string, unknown> = {}
   let renderedFrameworkId = ""
@@ -158,6 +228,40 @@ pageLifecycle.onPageLoad(signal => {
   signal.addEventListener("abort", () => lifetime.abort(), { once: true })
 
   const framework = () => frameworks.find(item => item.id === select.value)
+
+  function setScoringSectionVisible(visible: boolean) {
+    const section = panel!.closest<HTMLElement>(".td-section")
+    section?.classList.toggle("td-section--rules-hidden", !visible)
+    panel!.hidden = !visible
+  }
+
+  function applyFrameworkSelection(registryAvailable: boolean) {
+    frameworks = resolveEnabledFrameworksForTask(cachedRules, currentTaskType, allFrameworks)
+    if (frameworks.length === 0) {
+      setScoringSectionVisible(false)
+      select!.replaceChildren()
+      content!.replaceChildren()
+      if (legacyBanner) {
+        legacyBanner.replaceChildren()
+        legacyBanner.hidden = true
+      }
+      output!.textContent = ""
+      if (formulaPreview) formulaPreview.textContent = ""
+      status!.textContent = ""
+      renderedFrameworkId = ""
+      select!.disabled = true
+      fields!.disabled = true
+      return
+    }
+    setScoringSectionVisible(true)
+    select!.replaceChildren(...frameworks.map(item => new Option(item.data.name, item.id)))
+    const saved = frameworks.find(item => payload[item.id])
+    select!.value = saved?.id ?? frameworks[0]!.id
+    select!.disabled = false
+    fields!.disabled = false
+    status!.textContent = registryAvailable ? "" : "Built-in frameworks are available. Could not load custom frameworks."
+    render()
+  }
   function scoreFields(selected: Framework, values: Record<string, unknown>): number | null {
     if (selected.id === "rice") {
       const inputs = parseRiceInputs(values)
@@ -261,7 +365,7 @@ pageLifecycle.onPageLoad(signal => {
     preview()
   }
 
-  const attach = async (id: string, _taskType: string, raw: string, _settings: Record<string, unknown>, session?: StrategicLensSession) => {
+  const attach = async (id: string, taskType: string, raw: string, _settings: Record<string, unknown>, session?: StrategicLensSession) => {
     if (signal.aborted || session?.signal.aborted) return
     lifetime.abort()
     lifetime = new AbortController()
@@ -271,6 +375,7 @@ pageLifecycle.onPageLoad(signal => {
     pendingAssist = undefined
     ask.disabled = false
     taskId = id
+    currentTaskType = taskType || "task"
     renderedFrameworkId = ""
     persisted = parsePayload(raw)
     payload = { ...persisted }
@@ -284,10 +389,14 @@ pageLifecycle.onPageLoad(signal => {
     status.textContent = "Loading scoring frameworks…"
     content.replaceChildren()
     let registryAvailable = false
+    const [fwRes, rulesRes] = await Promise.allSettled([
+      fetch("/api/frameworks", { signal: requestSignal, cache: "no-store" }),
+      fetch("/api/rules", { signal: requestSignal, cache: "no-store" }),
+    ])
+    if (requestSignal.aborted) return
     try {
-      const response = await fetch("/api/frameworks", { signal: requestSignal })
-      if (response.ok) {
-        const result = await response.json() as { data?: FrameworkConfig[] }
+      if (fwRes.status === "fulfilled" && fwRes.value.ok) {
+        const result = await fwRes.value.json() as { data?: FrameworkConfig[] }
         if (requestSignal.aborted) return
         registryAvailable = Array.isArray(result.data)
         for (const config of Array.isArray(result.data) ? result.data : []) {
@@ -302,22 +411,44 @@ pageLifecycle.onPageLoad(signal => {
               })),
             },
           }
-          frameworks = [...frameworks.filter(item => item.id !== entry.id), entry]
+          allFrameworks = [...allFrameworks.filter(item => item.id !== entry.id), entry]
         }
       }
     } catch {
       // Built-in YAML definitions remain available during a registry outage.
     }
+    try {
+      if (rulesRes.status === "fulfilled" && rulesRes.value.ok) {
+        const result = await rulesRes.value.json() as { ok?: boolean; data?: ScoringRuleSummary[] }
+        if (!requestSignal.aborted && Array.isArray(result.data)) {
+          cachedRules = result.data
+        }
+      }
+    } catch {
+      // Keep last known rules if rules endpoint is temporarily unavailable.
+    }
     if (requestSignal.aborted) return
-    select.replaceChildren(...frameworks.map(item => new Option(item.data.name, item.id)))
-    const saved = frameworks.find(item => payload[item.id] && item.id !== "rice")
-    select.value = payload.rice ? "rice" : saved?.id ?? (frameworks.some(item => item.id === "rice") ? "rice" : frameworks[0]?.id ?? "")
-    select.disabled = false
-    fields.disabled = false
-    status.textContent = registryAvailable ? "" : "Built-in frameworks are available. Could not load custom frameworks."
-    render()
+    applyFrameworkSelection(registryAvailable)
   }
   window.attachStrategicLens = attach
+  window.addEventListener("meitheal:rules-changed", () => {
+    cachedRules = null
+    if (!taskId) return
+    void fetch("/api/rules", { signal: taskSignal, cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((result: { data?: ScoringRuleSummary[] } | null) => {
+        if (taskSignal.aborted || !Array.isArray(result?.data)) return
+        cachedRules = result.data
+        applyFrameworkSelection(true)
+      })
+      .catch(() => {})
+  }, { signal })
+  window.addEventListener("meitheal:task-type-changed", (rawEvent) => {
+    const detail = (rawEvent as CustomEvent<{ taskId?: string; taskType?: string }>).detail
+    if (!detail || !taskId || detail.taskId !== taskId) return
+    currentTaskType = detail.taskType || "task"
+    applyFrameworkSelection(true)
+  }, { signal })
   signal.addEventListener("abort", () => {
     delete panel.dataset.scoringController
     if (window.attachStrategicLens === attach) delete window.attachStrategicLens

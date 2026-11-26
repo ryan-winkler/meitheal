@@ -518,8 +518,8 @@ for (const lock of ["reader", "writer"]) {
     const ledger = await client.execute(
       "SELECT name, applied_at FROM __meitheal_migrations ORDER BY name"
     )
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 10)
-    expect(ledger.rows.slice(-10).map((row) => row.name)).toEqual([
+    expect(ledger.rows.map((row) => row.name)).toEqual([
+      ...predecessorMigrationNames,
       TASK_BOARD_MIGRATION,
       PERSONAL_PILLAR_MIGRATION,
       BOARD_ACCESS_MIGRATION,
@@ -530,8 +530,8 @@ for (const lock of ["reader", "writer"]) {
       ORDINARY_BOARD_MIGRATION,
       CUSTOM_BOARD_KEYS_MIGRATION,
       TASK_EXPERIENCE_MIGRATION
-    ])
-    expect(ledger.rows.slice(0, -10).every((row) => row.applied_at === 1)).toBe(true)
+    ].sort())
+    expect(ledger.rows.slice(0, predecessorMigrationNames.length).every((row) => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([
       { title: "Retained startup task" }
     ])

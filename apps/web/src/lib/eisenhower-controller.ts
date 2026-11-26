@@ -27,6 +27,7 @@ import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
 import { promptDialog } from "@lib/prompt-dialog"
 import { showToast } from "@lib/toast"
+import { createSpriteIconElement } from "../generated/icon-registry"
 import { showTaskBatchResult } from "./task-batch-feedback"
 import {
   startTriage,
@@ -181,8 +182,8 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: 
       if (metaEl && !metaEl.querySelector(".tli__pin")) {
         const pinEl = document.createElement("span")
         pinEl.className = "tli__pin"
-        pinEl.textContent = "📌"
         pinEl.setAttribute("title", "Manually placed")
+        pinEl.appendChild(createSpriteIconElement("pin", { size: 12 }))
         metaEl.appendChild(pinEl)
       }
 
@@ -264,10 +265,17 @@ function checkWipLimits(page: HTMLElement) {
   const count = q1Section.querySelectorAll(".tli").length
   const existing = q1Section.querySelector(".quadrant__wip-warning")
 
+  const renderWipContent = (el: Element) => {
+    el.textContent = ""
+    el.appendChild(createSpriteIconElement("alert-triangle", { size: 14 }))
+    el.appendChild(document.createTextNode(` ${count} items — consider moving some to Schedule or Delegate`))
+  }
+
   if (count > Q1_WIP_LIMIT && !existing) {
     const warning = document.createElement("div")
     warning.className = "quadrant__wip-warning"
-    warning.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    warning.setAttribute("role", "alert")
+    renderWipContent(warning)
     const actionBar = q1Section.querySelector(".quadrant__action-bar")
     const header = q1Section.querySelector(".quadrant__header")
     const insertAfter = actionBar ?? header
@@ -275,7 +283,7 @@ function checkWipLimits(page: HTMLElement) {
   } else if (count <= Q1_WIP_LIMIT && existing) {
     existing.remove()
   } else if (existing) {
-    existing.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    renderWipContent(existing)
   }
 }
 

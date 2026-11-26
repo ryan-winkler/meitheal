@@ -10,7 +10,7 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
-test("reactions load on demand through ingress and update only rendered card counts", async ({ browser }) => {
+test("task reactions hydrate through ingress and comment panels load on demand", async ({ browser }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   test.slow()
   const work = await mkdtemp(join(tmpdir(), "meitheal-reaction-ui-"))
@@ -88,17 +88,18 @@ test("reactions load on demand through ingress and update only rendered card cou
     const badge = card.locator("[data-kanban-reaction-count]")
     await expect(badge).toBeHidden()
     const openCard = card.getByRole("link", { name: /^Task: Reaction interaction fixture,/ })
+    const taskReactionLoad = page.waitForResponse(response => response.url() === cardApi && response.request().method() === "GET")
     await openCard.press("Enter")
+    expect((await taskReactionLoad).status()).toBe(200)
     const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
     const taskPanel = detail.locator('[data-reaction-panel="task"]')
     const commentPanel = detail.locator(`#td-comment-${commentId} [data-reaction-panel]`)
     await expect(commentPanel.locator("summary")).toHaveText("Comment reactions")
-    expect(detailRequests).toEqual([])
+    expect(detailRequests).toEqual([cardApi])
 
     await taskPanel.locator("summary").press("Enter")
     const input = taskPanel.getByRole("textbox", { name: "Emoji or short text" })
     await expect(input).toBeVisible()
-    expect(detailRequests).toEqual([cardApi])
     let failPost = true
     await page.route(cardApi, route => {
       if (route.request().method() !== "POST" || !failPost) return route.continue()
@@ -120,12 +121,16 @@ test("reactions load on demand through ingress and update only rendered card cou
 
     await commentPanel.locator("summary").press("Enter")
     const emoji = commentPanel.getByRole("button", { name: "👍", exact: true })
-    await emoji.press("Enter")
     const commentInput = commentPanel.getByRole("textbox", { name: "Emoji or short text" })
-    await expect(commentInput).toBeFocused()
-    await expect(commentInput).toHaveValue("👍")
-    await commentInput.press("Enter")
+    await expect(commentInput).toBeEditable()
+    const addedCommentReaction = page.waitForResponse(response => response.url() === commentApi && response.request().method() === "POST")
+    await emoji.press("Enter")
+    const added = await addedCommentReaction
+    expect(added.status()).toBe(201)
+    expect(added.request().postDataJSON()).toEqual({ content: "👍" })
     await expect(commentPanel.getByRole("listitem")).toContainText("👍")
+    await expect(emoji).toHaveAttribute("aria-pressed", "true")
+    await expect(commentInput).toHaveValue("")
     await expect(badge).toHaveAccessibleName("Reactions: 1")
     expect(detailRequests.filter(url => url.startsWith(staleApi))).toEqual([])
 
@@ -135,12 +140,15 @@ test("reactions load on demand through ingress and update only rendered card cou
     const otherTaskPanel = otherPage.locator('[data-reaction-panel="task"]')
     const otherCommentPanel = otherPage.locator(`#td-comment-${commentId} [data-reaction-panel]`)
     await otherTaskPanel.locator("summary").press("Enter")
-    await otherCommentPanel.locator("summary").press("Enter")
     await expect(otherTaskPanel.getByRole("listitem")).toContainText(literalText)
+    await expect(otherTaskPanel.getByRole("listitem").locator("bdi").last()).not.toBeEmpty()
+    await otherCommentPanel.locator("summary").press("Enter")
+    await expect(otherTaskPanel).not.toHaveAttribute("open")
     await expect(otherCommentPanel.getByRole("listitem")).toContainText("👍")
     await expect(otherPage.locator("[data-reaction-remove]")).toHaveCount(0)
-    await expect(otherTaskPanel.getByRole("listitem").locator("bdi").last()).not.toBeEmpty()
 
+    await taskPanel.locator("summary").press("Enter")
+    await expect(input).toBeEditable()
     await taskPanel.getByRole("button", { name: "Remove reaction: <b>Done</b>" }).press("Enter")
     await expect(taskPanel.getByRole("status")).toHaveText("Reaction removed.")
     await expect(taskPanel.locator("summary")).toBeFocused()

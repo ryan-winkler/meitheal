@@ -20,7 +20,6 @@ import {
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { saveSetting, showSettingsSaveError } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
-import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 const DEF_BY_ID = new Map(SHORTCUT_DEFINITIONS.map(def => [def.id, def]))
 
@@ -36,12 +35,12 @@ function displayCombo(combo: string): string {
 }
 
 export function initShortcutsSettings(): void {
-  const root = byId("shortcuts-editor-root")
+  const root = document.getElementById("shortcuts-editor-root")
   if (!root) return
 
-  const statusEl = byId("shortcuts-save-status")
-  const summaryMeta = byId("shortcuts-summary-meta")
-  const resetAllBtn = byId<HTMLButtonElement>("shortcuts-reset-all")
+  const statusEl = document.getElementById("shortcuts-save-status")
+  const summaryMeta = document.getElementById("shortcuts-summary-meta")
+  const resetAllBtn = document.getElementById("shortcuts-reset-all") as HTMLButtonElement | null
   const fields = Array.from(root.querySelectorAll<HTMLElement>("[data-shortcut-field]"))
   if (!fields.length) return
 
@@ -58,7 +57,7 @@ export function initShortcutsSettings(): void {
   }
 
   const labelFor = (id: ShortcutActionId): string => {
-    const field = qs<HTMLElement>(root, `[data-shortcut-field="${id}"]`)
+    const field = root.querySelector<HTMLElement>(`[data-shortcut-field="${id}"]`)
     return field?.dataset.shortcutLabel || id
   }
 
@@ -77,10 +76,10 @@ export function initShortcutsSettings(): void {
       const isCustom = def.editable && combo !== def.defaultCombo
       if (isCustom) customizedCount += 1
 
-      const input = qs<HTMLInputElement>(field, "[data-shortcut-input]")
-      const clearBtn = qs<HTMLButtonElement>(field, "[data-shortcut-clear]")
-      const resetBtn = qs<HTMLButtonElement>(field, "[data-shortcut-reset]")
-      const conflictEl = qs<HTMLElement>(field, "[data-shortcut-conflict]")
+      const input = field.querySelector<HTMLInputElement>("[data-shortcut-input]")
+      const clearBtn = field.querySelector<HTMLButtonElement>("[data-shortcut-clear]")
+      const resetBtn = field.querySelector<HTMLButtonElement>("[data-shortcut-reset]")
+      const conflictEl = field.querySelector<HTMLElement>("[data-shortcut-conflict]")
 
       if (input && input !== activeInput) {
         input.value = displayCombo(combo)
@@ -143,9 +142,9 @@ export function initShortcutsSettings(): void {
     const def = id ? DEF_BY_ID.get(id) : undefined
     if (!id || !def || !def.editable) continue
 
-    const input = qs<HTMLInputElement>(field, "[data-shortcut-input]")
-    const clearBtn = qs<HTMLButtonElement>(field, "[data-shortcut-clear]")
-    const resetBtn = qs<HTMLButtonElement>(field, "[data-shortcut-reset]")
+    const input = field.querySelector<HTMLInputElement>("[data-shortcut-input]")
+    const clearBtn = field.querySelector<HTMLButtonElement>("[data-shortcut-clear]")
+    const resetBtn = field.querySelector<HTMLButtonElement>("[data-shortcut-reset]")
 
     if (input) {
       pageLifecycle.on(input, "focus", () => {
@@ -154,7 +153,7 @@ export function initShortcutsSettings(): void {
         input.classList.add("is-recording")
         input.value = ""
         input.placeholder = "Press keys…"
-        setAttr(document.documentElement, "data-shortcut-recording", "")
+        document.documentElement.setAttribute("data-shortcut-recording", "")
       })
 
       pageLifecycle.on(input, "blur", () => {

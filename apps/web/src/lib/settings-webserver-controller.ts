@@ -24,7 +24,6 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { openSettingsHelpModal } from "@lib/settings-help-controller"
 import { byId as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
-import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 interface SupervisorView {
   mode: "ha-addon" | "standalone"
@@ -52,7 +51,7 @@ type ProvenanceField = keyof WebserverConfigProvenance
 type WebserverHelpEntry = { title: string; paragraphs: string[]; envKey?: keyof WebserverRuntimeEnv; provKey?: ProvenanceField }
 
 function readWebserverHelpDocs(): Record<string, WebserverHelpEntry> {
-  const node = byId("ws-help-topics")
+  const node = document.getElementById("ws-help-topics")
   if (!node) return {}
   try {
     return JSON.parse(node.textContent || "{}") as Record<string, WebserverHelpEntry>
@@ -70,7 +69,9 @@ function formatProvenance(p: WebserverFieldProvenance): { label: string; cls: st
 }
 
 function pill(text: string, tone?: "accent" | "ok" | "warn" | "danger"): HTMLSpanElement {
-  const s = domEl("span", tone ? `ws-pill ws-pill--${tone}` : "ws-pill", text)
+  const s = document.createElement("span")
+  s.className = tone ? `ws-pill ws-pill--${tone}` : "ws-pill"
+  s.textContent = text
   return s
 }
 
@@ -258,11 +259,11 @@ export function initWebserverSettings(): void {
   function renderChecks(checks: WebserverCheckItem[]): void {
     if (!verifyList) return
     verifyList.replaceChildren(...checks.map((c) => {
-      const li = domEl("li")
+      const li = document.createElement("li")
       const tone = c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "danger"
       const b = pill(c.status === "pass" ? "OK" : c.status === "warn" ? "Note" : "Fix", tone)
-      const div = domEl("div")
-      const strong = domEl("strong")
+      const div = document.createElement("div")
+      const strong = document.createElement("strong")
       strong.textContent = `${c.label}: `
       div.append(strong, document.createTextNode(c.detail))
       li.append(b, div)
@@ -313,13 +314,13 @@ export function initWebserverSettings(): void {
 
     if (bind && sup.interfaces.length > 0) {
       const opts = sup.interfaces.map((i) => {
-        const o = domEl("option")
+        const o = document.createElement("option")
         o.value = i.address
         o.textContent = i.label
         return o
       })
       if (!sup.interfaces.some((i) => i.address === c.bindAddress)) {
-        const o = domEl("option")
+        const o = document.createElement("option")
         o.value = c.bindAddress
         o.textContent = c.bindAddress
         opts.push(o)
@@ -410,10 +411,10 @@ export function initWebserverSettings(): void {
     pageLifecycle.on(keyToggle, "click", () => {
       const reveal = key.type === "password"
       key.type = reveal ? "text" : "password"
-      setAttr(keyToggle, "aria-pressed", String(reveal))
-      setAttr(keyToggle, "aria-label", reveal ? "Hide SSL private key" : "Show SSL private key")
-      const off = qs<HTMLElement>(keyToggle, "[data-eye-off]")
-      const on = qs<HTMLElement>(keyToggle, "[data-eye-on]")
+      keyToggle.setAttribute("aria-pressed", String(reveal))
+      keyToggle.setAttribute("aria-label", reveal ? "Hide SSL private key" : "Show SSL private key")
+      const off = keyToggle.querySelector<HTMLElement>("[data-eye-off]")
+      const on = keyToggle.querySelector<HTMLElement>("[data-eye-on]")
       if (off) off.hidden = reveal
       if (on) on.hidden = !reveal
     })

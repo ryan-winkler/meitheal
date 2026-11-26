@@ -209,3 +209,23 @@ test("Pillar removal uses the raw name without double-escaping literal entities"
     expect((await request.delete(`/api/pillars/${pillar.id}?hard=true`, { headers, data: {} })).status()).toBe(200)
   }
 })
+
+test("prompt focus retry preserves a chosen button and a newer foreground dialog", async ({ page }) => {
+  await openPage(page)
+  const focused = await page.evaluate(async () => {
+    void window.promptDialog!({ message: "First prompt" })
+    document.getElementById("prompt-cancel")!.focus()
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    return document.activeElement?.id
+  })
+  expect(focused).toBe("prompt-cancel")
+  await page.keyboard.press("Escape")
+
+  const foregroundFocus = await page.evaluate(async () => {
+    void window.promptDialog!({ message: "Background prompt" })
+    void window.confirmDialog!({ message: "Foreground confirmation" })
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    return document.activeElement?.id
+  })
+  expect(foregroundFocus).toBe("confirm-cancel")
+})

@@ -241,7 +241,19 @@
   }
 }
 
+/* Step controls replace arrow keys and drag for touch; fine pointers use the grip. */
+@media not (pointer: coarse) {
+  #sidebar .sidebar-edit-move {
+    display: none;
+  }
+}
+
 @media (pointer: coarse) {
+  #sidebar .sidebar-edit-btn.sidebar-edit-move {
+    inline-size: 44px;
+    block-size: 44px;
+  }
+
   #sidebar[data-sidebar-editing] .sidebar-edit-actions {
     position: static;
     transform: none;
@@ -249,11 +261,7 @@
     padding: 0;
   }
 
-  #sidebar .sidebar-edit-grip {
-    inline-size: 44px;
-    block-size: 44px;
-  }
-
+  #sidebar .sidebar-edit-grip,
   #sidebar .sidebar-edit-btn {
     inline-size: 34px;
     block-size: 34px;
@@ -510,18 +518,25 @@
     gap: 2px;
   }
 
-  :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle {
-    border-color: transparent;
-    border-radius: 6px;
-    color: var(--text-muted);
-  }
-
   @media (pointer: fine) {
     :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle {
       inline-size: 40px;
       min-inline-size: 40px;
       block-size: 18px;
       min-block-size: 18px;
+      border-color: transparent;
+      border-radius: 6px;
+      color: var(--text-muted);
+    }
+  }
+
+  /* Touch keeps the 44px target; the compact strip suits fine pointers only. */
+  @media (pointer: coarse) {
+    :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle {
+      inline-size: 44px;
+      min-inline-size: 44px;
+      block-size: 44px;
+      min-block-size: 44px;
     }
   }
 

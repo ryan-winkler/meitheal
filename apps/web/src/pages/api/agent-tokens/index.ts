@@ -20,7 +20,9 @@ import {
   getAgentTokenById,
   isCsrfAllowed,
   listAgentTokens,
+  renewAgentToken,
   revokeAgentToken,
+  rotateAgentToken,
   updateAgentToken,
 } from "@domains/auth"
 import { verifyCurrentHAAdministrator } from "@domains/ha"
@@ -433,6 +435,86 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
     ])
   }
 
+  const existing = await getAgentTokenById(id)
+  if (!existing) {
+    return noStore(apiProblem({
+      status: 404,
+      title: "Token Not Found",
+      detail: `No agent token found with ID: ${id}`,
+      type: "https://meitheal.local/problems/not-found",
+    }))
+  }
+
+  // Handle explicit lifecycle actions: renew (extend/clear expiry) or rotate (new secret in place)
+  const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : ""
+  if (action === "renew" || action === "rotate") {
+    if (existing.revoked) {
+      return noStore(apiProblem({
+        status: 409,
+        title: "Token Revoked",
+        detail: "Revoked tokens cannot be renewed or rotated. Create a new token instead.",
+        type: "https://meitheal.local/problems/conflict",
+      }))
+    }
+    let nextExpiresAt: string | null | undefined = undefined
+    if ("expiresAt" in body) {
+      if (body.expiresAt === null || body.expiresAt === "") {
+        nextExpiresAt = null
+      } else if (typeof body.expiresAt === "string") {
+        const parsedExp = Date.parse(body.expiresAt)
+        if (!(parsedExp > Date.now())) {
+          return validationError("Token expiration must be a future date", [
+            { name: "expiresAt", reason: "provide a future timestamp or null for no expiry" },
+          ])
+        }
+        nextExpiresAt = new Date(parsedExp).toISOString()
+      } else {
+        return validationError("Invalid expiresAt", [
+          { name: "expiresAt", reason: "must be an ISO timestamp string or null" },
+        ])
+      }
+    }
+
+    if (action === "renew") {
+      // Default to removing expiration when renewing so HA / automations stop expiring unexpectedly
+      const resolvedExpiry = nextExpiresAt !== undefined ? nextExpiresAt : null
+      const renewed = await renewAgentToken(id, resolvedExpiry)
+      if (!renewed) {
+        return noStore(apiProblem({
+          status: 404,
+          title: "Token Not Found",
+          detail: `No active agent token found with ID: ${id}`,
+          type: "https://meitheal.local/problems/not-found",
+        }))
+      }
+      return noStore(apiJson({ ok: true, id: renewed.id, action: "renewed", expiresAt: renewed.expiresAt }))
+    }
+
+    // Rotate secret in place while preserving ID, scopes, assignee, and Board access grants
+    const { token, tokenHash, tokenPrefix } = generateAgentToken()
+    const rotated = await rotateAgentToken(id, {
+      tokenHash,
+      tokenPrefix,
+      ...(nextExpiresAt !== undefined ? { expiresAt: nextExpiresAt } : {}),
+    })
+    if (!rotated) {
+      return noStore(apiProblem({
+        status: 404,
+        title: "Token Not Found",
+        detail: `No active agent token found with ID: ${id}`,
+        type: "https://meitheal.local/problems/not-found",
+      }))
+    }
+    return noStore(apiJson({
+      ok: true,
+      id: rotated.id,
+      action: "rotated",
+      token,
+      tokenPrefix: rotated.tokenPrefix,
+      expiresAt: rotated.expiresAt,
+    }))
+  }
+
   if (!("assigneeId" in body) && "assignee_id" in body) body.assigneeId = body.assignee_id
   const hasAssigneeField = body.assignee_id !== undefined || body.assigneeId !== undefined
   const updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null } = {}
@@ -487,18 +569,8 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
 
   if (Object.keys(updates).length === 0) {
     return validationError("At least one updatable field is required", [
-      { name: "body", reason: "provide name, scopes, or assigneeId" },
+      { name: "body", reason: "provide name, scopes, assigneeId, or action (renew|rotate)" },
     ])
-  }
-
-  const existing = await getAgentTokenById(id)
-  if (!existing) {
-    return noStore(apiProblem({
-      status: 404,
-      title: "Token Not Found",
-      detail: `No agent token found with ID: ${id}`,
-      type: "https://meitheal.local/problems/not-found",
-    }))
   }
 
   const effectiveScopes = updates.scopes ?? existing.scopes

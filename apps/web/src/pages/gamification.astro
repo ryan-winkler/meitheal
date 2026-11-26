@@ -1,568 +1,87 @@
 ---
-import { readBoardPagePlacement } from "@lib/board-page-placement"
-import { boardContextHref } from "@lib/board-workspace"
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 /**
- * Gamification Page — Achievement gallery, level progress, stats, heatmap
+ * Gamification Page — Unified Tabler wrapper around AchievementsTab (DRY)
+ *
+ * Respects all Look & Feel settings (theme, accent, radius, typography, fluid width).
  *
  * @domain gamification
  * @bounded-context gamification
- *
- * Full gamification dashboard showing:
- * 1. Level card with progress ring to next level
- * 2. Stats summary (XP, completions, streaks)
- * 3. Achievement gallery (locked/unlocked)
- * 4. Weekly bar chart (reused from GamificationWidget)
- * 5. Activity heatmap (yearly contribution-style grid)
- *
- * @kcs Fetches all data server-side via domain imports.
- * Uses Astro SSR for initial render, no client JS needed for static views.
  */
-
-import Layout from "../layouts/Layout.astro";
-import Icon from "../components/ui/Icon.astro";
-import { type IconName } from "../generated/icon-registry";
-
-import GamificationWidget from "../components/gamification/GamificationWidget.astro";
-import {
-  getStats,
-  getWeeklyData,
-  getLevel,
-  getProgressToNextLevel,
-  getXpToNextLevel,
-  getXpForLevel,
-  getAllAchievements,
-  getYearlyHeatmapData,
-  ensureGamificationSchema,
-} from "@domains/gamification";
-import { isFeatureEnabled } from "../lib/feature-flags";
+import { boardContextHref } from "@lib/board-workspace"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { isFeatureEnabled } from "../lib/feature-flags"
+import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
+import AchievementsTab from "../components/progress/AchievementsTab.astro"
 
 const scoped = await resolveBoardPageScope(Astro)
 if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
 const workScope = scoped.scope
 const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
 if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
-const achievementsHref = boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/progress#achievements")
 
-// Feature flag guard — redirect if gamification disabled
 if (!(await isFeatureEnabled("gamification"))) {
-  return Astro.redirect(`${Astro.locals.ingressPath || ""}/`);
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/`)
 }
 
-// Ensure schema exists
-try {
-  await ensureGamificationSchema();
-} catch {
-  /* DB not available */
-}
-
-// Fetch all data
-let stats = {
-  currentStreak: 0,
-  longestStreak: 0,
-  todayCompleted: 0,
-  totalCompleted: 0,
-  totalPoints: 0,
-};
-let weekly: Awaited<ReturnType<typeof getWeeklyData>> = [];
-let achievementData = { achievements: [] as any[], total: 0, unlocked: 0 };
-let heatmapData: { date: string; count: number }[] = [];
-
-try {
-  [stats, weekly, achievementData] = await Promise.all([
-    getStats(workScope),
-    getWeeklyData(workScope),
-    getAllAchievements(workScope),
-  ]);
-  heatmapData = await getYearlyHeatmapData(workScope);
-} catch {
-  /* graceful fallback */
-}
-
-const level = getLevel(stats.totalPoints);
-const progress = getProgressToNextLevel(stats.totalPoints);
-const xpToNext = getXpToNextLevel(stats.totalPoints);
-const currentXp = stats.totalPoints - getXpForLevel(level);
-const nextLevelXp = getXpForLevel(level + 1) - getXpForLevel(level);
-const circumference = 2 * Math.PI * 54;
-const dashOffset = circumference * (1 - progress);
-
-// Heatmap helpers
-const today = new Date();
-const currentYear = today.getFullYear();
-const maxCount = Math.max(...heatmapData.map((d) => d.count), 1);
-
-function heatmapColor(count: number): string {
-  if (count === 0) return "var(--bg-hover, #1d211f)";
-  const intensity = Math.min(count / maxCount, 1);
-  if (intensity < 0.25) return "color-mix(in srgb, var(--accent) 28%, var(--bg-card))";
-  if (intensity < 0.5) return "color-mix(in srgb, var(--accent) 50%, var(--bg-card))";
-  if (intensity < 0.75) return "color-mix(in srgb, var(--accent) 75%, var(--bg-card))";
-  return "var(--accent)";
-}
-
-// Group categories for display
-const categories: readonly { key: string; label: string; icon: IconName }[] = [
-  { key: "milestone", label: "Milestones", icon: "target" },
-  { key: "streak", label: "Streaks", icon: "flame" },
-  { key: "xp", label: "XP Earned", icon: "star" },
-  { key: "special", label: "Special", icon: "sparkles" },
-];
+const progressHref = boardContextHref(
+  { boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id },
+  "/progress#achievements",
+)
 ---
 
-<Layout title="Gamification — Meitheal" description="Track your progress, earn achievements, and level up">
+<Layout title="Gamification & Achievements — Meitheal" description="Track your progress, earn achievements, and level up">
+  <Fragment slot="page-title">
+    <span class="inline-flex items-center gap-2">
+      <Icon name="trophy" size={20} sprite={true} />
+      <span>Gamification &amp; Achievements</span>
+    </span>
+  </Fragment>
 
-  <Fragment slot="page-title"><span class="inline-flex items-center gap-2"><Icon name="trophy" size={20} sprite={true} /> Gamification</span></Fragment>
+  <div class="gam-page-shell">
+    <header class="gam-page-header">
+      <div>
+        <div class="subheader">Progress &amp; Growth</div>
+        <h1 class="gam-page-header__title">Gamification &amp; Achievements</h1>
+      </div>
+      <a href={progressHref} class="btn btn-secondary btn-sm">
+        <Icon name="sparkles" size={15} sprite={true} />
+        <span>Open in Progress &amp; Growth</span>
+      </a>
+    </header>
 
-  <div class="gam-page">
-    <!-- Level Card -->
-    <section class="gam-level-card">
-      <div class="gam-level-ring-wrapper">
-        <svg viewBox="0 0 120 120" class="gam-level-ring" aria-hidden="true">
-          <circle cx="60" cy="60" r="54" class="gam-level-ring__bg" />
-          <circle
-            cx="60" cy="60" r="54"
-            class="gam-level-ring__fill"
-            style={`stroke-dasharray: ${circumference}; stroke-dashoffset: ${dashOffset};`}
-          />
-        </svg>
-        <div class="gam-level-ring__content">
-          <span class="gam-level-number">{level}</span>
-          <span class="gam-level-label">Level</span>
-        </div>
-      </div>
-      <div class="gam-level-info">
-        <div class="gam-level-xp-bar">
-          <div class="gam-level-xp-bar__fill" style={`width: ${progress * 100}%;`}></div>
-        </div>
-        <div class="gam-level-xp-text">
-          <span>{currentXp} / {nextLevelXp} XP</span>
-          <span class="text-text-muted">{xpToNext} to Level {level + 1}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Stats Grid -->
-    <section class="gam-stats-grid">
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="star" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{stats.totalPoints.toLocaleString()}</span>
-        <span class="gam-stat-card__label">Total XP</span>
-      </div>
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="checkbox" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{stats.totalCompleted.toLocaleString()}</span>
-        <span class="gam-stat-card__label">Tasks Completed</span>
-      </div>
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="flame" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{stats.currentStreak}</span>
-        <span class="gam-stat-card__label">Current Streak</span>
-      </div>
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="trophy" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{stats.longestStreak}</span>
-        <span class="gam-stat-card__label">Best Streak</span>
-      </div>
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="star" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{achievementData.unlocked} / {achievementData.total}</span>
-        <span class="gam-stat-card__label">Achievements</span>
-      </div>
-      <div class="gam-stat-card">
-        <span class="gam-stat-card__icon"><Icon name="calendar" size={20} sprite={true} /></span>
-        <span class="gam-stat-card__value">{stats.todayCompleted}</span>
-        <span class="gam-stat-card__label">Today</span>
-      </div>
-    </section>
-
-    <!-- Weekly Progress -->
-    <section class="gam-section">
-      <GamificationWidget achievementsHref={achievementsHref} stats={stats} weekly={weekly} />
-    </section>
-
-    <!-- Activity Heatmap -->
-    {heatmapData.length > 0 && (
-      <section class="gam-section">
-        <h2 class="gam-section__title"><Icon name="chart-bar" size={18} sprite={true} /> Activity Heatmap — {currentYear}</h2>
-        <div class="gam-heatmap-container">
-          <div class="gam-heatmap">
-            {heatmapData.map((day) => (
-              <div
-                class="gam-heatmap__cell"
-                style={`background: ${heatmapColor(day.count)};`}
-                title={`${day.date}: ${day.count} task${day.count !== 1 ? "s" : ""}`}
-              />
-            ))}
-          </div>
-          <div class="gam-heatmap-legend">
-            <span class="text-text-muted text-xs">Less</span>
-            <div class="gam-heatmap__cell" style="background: var(--bg-hover, #1d211f);" />
-            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 28%, var(--bg-card));" />
-            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 50%, var(--bg-card));" />
-            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 75%, var(--bg-card));" />
-            <div class="gam-heatmap__cell" style="background: var(--accent);" />
-            <span class="text-text-muted text-xs">More</span>
-          </div>
-        </div>
-      </section>
-    )}
-
-    <!-- Achievement Gallery -->
-    <section class="gam-section">
-      <h2 class="gam-section__title">
-        <Icon name="trophy" size={18} sprite={true} /> Achievements
-        <span class="gam-section__count">{achievementData.unlocked} / {achievementData.total}</span>
-      </h2>
-      {categories.map(({ key, label, icon }) => {
-        const categoryAchievements = achievementData.achievements.filter(
-          (a: any) => a.category === key
-        );
-        if (categoryAchievements.length === 0) return null;
-        return (
-          <div class="gam-achievement-category">
-            <h3 class="gam-achievement-category__title"><Icon name={icon} size={14} sprite={true} /> {label}</h3>
-            <div class="gam-achievement-grid">
-              {categoryAchievements.map((a: any) => (
-                <div class={`gam-achievement-card ${a.unlockedAt ? "gam-achievement-card--unlocked" : ""}`}>
-                  <span class="gam-achievement-card__icon">{a.icon}</span>
-                  <div class="gam-achievement-card__info">
-                    <span class="gam-achievement-card__name">{a.name}</span>
-                    <span class="gam-achievement-card__desc">{a.description}</span>
-                    {a.unlockedAt && (
-                      <span class="gam-achievement-card__date">
-                        <Icon name="check" size={12} sprite={true} /> {new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </section>
+    <AchievementsTab />
   </div>
 </Layout>
 
 <style>
-  .gam-page {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1rem 0;
-    max-width: 1000px;
-  }
-
-  /* Level Card */
-  .gam-level-card {
-    display: flex;
-    align-items: center;
-    gap: 2rem;
-    padding: 1.5rem 2rem;
-    background: var(--bg-card);
-    border-radius: 16px;
-    border: 1px solid var(--border);
-  }
-
-  .gam-level-ring-wrapper {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    flex-shrink: 0;
-  }
-
-  .gam-level-ring {
+  .gam-page-shell {
     width: 100%;
-    height: 100%;
-    transform: rotate(-90deg);
-  }
-
-  .gam-level-ring__bg {
-    fill: none;
-    stroke: var(--border);
-    stroke-width: 6;
-  }
-
-  .gam-level-ring__fill {
-    fill: none;
-    stroke: var(--accent);
-    stroke-width: 6;
-    stroke-linecap: round;
-    transition: stroke-dashoffset 0.8s ease;
-  }
-
-  .gam-level-ring__content {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    line-height: 1;
-  }
-
-  .gam-level-number {
-    font-size: 2.5rem;
-    font-weight: 800;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-    display: block;
-  }
-
-  .gam-level-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-top: 0.125rem;
-  }
-
-  .gam-level-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .gam-level-xp-bar {
-    height: 8px;
-    background: var(--bg-hover);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
-  }
-
-  .gam-level-xp-bar__fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 4px;
-    transition: width 0.6s ease;
-    min-width: 2px;
-  }
-
-  .gam-level-xp-text {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  /* Stats Grid */
-  .gam-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .gam-stat-card {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0.75rem 0 2rem;
     display: flex;
     flex-direction: column;
+    gap: 1rem;
+  }
+
+  :global(:root[data-appearance-width="fluid"]) .gam-page-shell {
+    max-width: none;
+  }
+
+  .gam-page-header {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem;
-    padding: 1rem;
-    background: var(--bg-card);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    text-align: center;
-    transition: transform 0.15s, border-color 0.15s;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
   }
 
-  .gam-stat-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
-  }
-
-  .gam-stat-card__icon {
-    display: inline-flex;
-    color: var(--accent);
-  }
-
-  .gam-stat-card__value {
-    font-size: 1.5rem;
+  .gam-page-header__title {
+    margin: 0.15rem 0 0;
+    font-size: 1.375rem;
     font-weight: 700;
     color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .gam-stat-card__label {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  /* Sections */
-  .gam-section {
-    padding: 1.25rem;
-    background: var(--bg-card);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-  }
-
-  .gam-section__title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 1rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .gam-section__count {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--text-muted);
-    margin-left: auto;
-  }
-
-  /* Heatmap */
-  .gam-heatmap-container {
-    overflow-x: auto;
-  }
-
-  .gam-heatmap {
-    display: grid;
-    grid-template-rows: repeat(7, 1fr);
-    grid-auto-flow: column;
-    grid-auto-columns: 14px;
-    gap: 2px;
-    min-width: fit-content;
-  }
-
-  .gam-heatmap__cell {
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
-    transition: transform 0.1s;
-  }
-
-  .gam-heatmap__cell:hover {
-    transform: scale(1.3);
-    outline: 1px solid var(--accent);
-  }
-
-  .gam-heatmap-legend {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 0.75rem;
-    justify-content: flex-end;
-  }
-
-  /* Achievement Cards */
-  .gam-achievement-category {
-    margin-bottom: 1.25rem;
-  }
-
-  .gam-achievement-category:last-child {
-    margin-bottom: 0;
-  }
-
-  .gam-achievement-category__title {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 0.75rem 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .gam-achievement-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .gam-achievement-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.875rem;
-    background: var(--bg-hover);
-    border-radius: 10px;
-    border: 1px dashed var(--border);
-    transition: border-color 0.2s, transform 0.15s;
-  }
-
-  .gam-achievement-card:not(.gam-achievement-card--unlocked) .gam-achievement-card__icon {
-    opacity: 0.45;
-    filter: grayscale(0.8);
-  }
-
-  .gam-achievement-card:not(.gam-achievement-card--unlocked) .gam-achievement-card__name {
-    color: var(--text-secondary);
-  }
-
-  .gam-achievement-card--unlocked {
-    border-style: solid;
-    border-color: var(--border);
-  }
-
-  .gam-achievement-card--unlocked:hover {
-    border-color: var(--accent);
-    transform: translateY(-1px);
-  }
-
-  .gam-achievement-card__icon {
-    font-size: 1.5rem;
-    flex-shrink: 0;
-    line-height: 1;
-  }
-
-  .gam-achievement-card__info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    min-width: 0;
-  }
-
-  .gam-achievement-card__name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .gam-achievement-card__desc {
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-    line-height: 1.3;
-  }
-
-  .gam-achievement-card__date {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.625rem;
-    color: var(--accent-text);
-    margin-top: 0.125rem;
-  }
-
-  /* Responsive */
-  @media (max-width: 600px) {
-    .gam-level-card {
-      flex-direction: column;
-      text-align: center;
-      gap: 1rem;
-      padding: 1.25rem;
-    }
-
-    .gam-level-ring-wrapper {
-      width: 100px;
-      height: 100px;
-    }
-
-    .gam-level-number {
-      font-size: 2rem;
-    }
-
-    .gam-stats-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    .gam-achievement-grid {
-      grid-template-columns: 1fr;
-    }
   }
 </style>

@@ -52,15 +52,96 @@ function parseShoppingToken(raw: string): { name: string; qty: number } {
   return { name: raw, qty: 1 }
 }
 
+export interface QuickAddUserCandidate {
+  id: string
+  name?: string | null
+  displayName?: string | null
+  username?: string | null
+}
+
+/**
+ * Resolve a raw Quick Add @mention handle against accessible household users.
+ * Returns null if no user matches so task creation never submits an invalid assignee ID.
+ */
+export function resolveQuickAddAssignee(
+  rawAssignee: string | null | undefined,
+  users: readonly QuickAddUserCandidate[],
+): { matchedId: string | null; displayName: string | null } {
+  const needle = typeof rawAssignee === "string" ? rawAssignee.trim().replace(/^@+/, "").toLowerCase() : ""
+  if (!needle || users.length === 0) return { matchedId: null, displayName: null }
+
+  const normalized = users
+    .filter((u): u is QuickAddUserCandidate => Boolean(u && typeof u.id === "string" && u.id.trim()))
+    .map(user => ({
+      id: user.id.trim(),
+      label: String(user.displayName || user.name || user.username || user.id).trim(),
+      keys: [user.id, user.username, user.name, user.displayName]
+        .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+        .map(v => v.trim().toLowerCase()),
+    }))
+
+  const exact = normalized.find(u => u.keys.includes(needle))
+  if (exact) return { matchedId: exact.id, displayName: exact.label }
+
+  const tokenExact = normalized.find(u => u.keys.some(k => k.split(/[\s._-]+/).includes(needle)))
+  if (tokenExact) return { matchedId: tokenExact.id, displayName: tokenExact.label }
+
+  const prefix = normalized.find(u => u.keys.some(k => k.startsWith(needle)))
+  if (prefix) return { matchedId: prefix.id, displayName: prefix.label }
+
+  return { matchedId: null, displayName: null }
+}
+
+let cachedQuickAddUsers: { users: QuickAddUserCandidate[]; fetchedAt: number } | null = null
+
+export async function fetchQuickAddUsers(signal?: AbortSignal): Promise<QuickAddUserCandidate[]> {
+  if (typeof window !== "undefined") {
+    const preloaded = (window as unknown as { __meitheal_users?: QuickAddUserCandidate[] }).__meitheal_users
+    if (Array.isArray(preloaded) && preloaded.length > 0) return preloaded
+  }
+  const now = Date.now()
+  if (cachedQuickAddUsers && now - cachedQuickAddUsers.fetchedAt < 30_000) {
+    return cachedQuickAddUsers.users
+  }
+  try {
+    const res = await fetch("/api/users", { cache: "no-store", signal })
+    if (!res.ok) return []
+    const data = await res.json().catch(() => null) as { users?: QuickAddUserCandidate[] } | null
+    const users = Array.isArray(data?.users) ? data.users : []
+    cachedQuickAddUsers = { users, fetchedAt: now }
+    return users
+  } catch {
+    return []
+  }
+}
+
+export interface QuickAddPayloadOptions {
+  /** When supplied, resolves @mentions against valid users and omits unmatched handles. */
+  users?: readonly QuickAddUserCandidate[]
+}
+
 /** Build the create payload for quick add text. defaultDueDate applies only when the text names no date. */
-export function quickAddPayload(text: string, defaultDueDate: string | null = null): { payload: TaskCreatePayload; parsed: ParsedTask } {
+export function quickAddPayload(
+  text: string,
+  defaultDueDate: string | null = null,
+  options?: QuickAddPayloadOptions,
+): { payload: TaskCreatePayload; parsed: ParsedTask; unresolvedAssignee: string | null } {
   const parsed = parseQuickTask(text)
   const payload: TaskCreatePayload = { title: parsed.title || text.trim() }
   const dueDate = parsed.dueDate ?? defaultDueDate
   if (dueDate) payload.due_date = dueDate
   if (parsed.priority) payload.priority = parsed.priority
   if (parsed.labels.length > 0) payload.labels = JSON.stringify(parsed.labels)
-  if (parsed.assignee) payload.assigned_to = parsed.assignee
+  let unresolvedAssignee: string | null = null
+  if (parsed.assignee) {
+    if (options?.users) {
+      const resolved = resolveQuickAddAssignee(parsed.assignee, options.users)
+      if (resolved.matchedId) payload.assigned_to = resolved.matchedId
+      else unresolvedAssignee = parsed.assignee
+    } else {
+      payload.assigned_to = parsed.assignee
+    }
+  }
 
   const cleanedSource = (parsed.title || text).trim()
   for (const list of CHECKLIST_LISTS) {
@@ -73,7 +154,7 @@ export function quickAddPayload(text: string, defaultDueDate: string | null = nu
     if (list.taskKind === "shopping_item") {
       const structured = rawItems.map(entry => {
         const { name, qty } = parseShoppingToken(entry)
-        return { name, qty, category: "" }
+        return { name, qty, unit: "pcs", category: "" }
       })
       payload.custom_fields = JSON.stringify({ items: structured })
       payload.checklists = JSON.stringify(
@@ -84,5 +165,22 @@ export function quickAddPayload(text: string, defaultDueDate: string | null = nu
     }
     break
   }
-  return { payload, parsed }
+  return { payload, parsed, unresolvedAssignee }
 }
+
+export function formatQuickAddPreviewText(text: string, users: readonly QuickAddUserCandidate[]): string {
+  const { parsed } = quickAddPayload(text, null, { users })
+  const assigneeHint = parsed.assignee
+    ? (() => {
+        const resolved = resolveQuickAddAssignee(parsed.assignee, users)
+        return resolved.displayName ? `@${resolved.displayName}` : `@${parsed.assignee} (unmatched)`
+      })()
+    : null
+  return [
+    parsed.dueDate && `Due ${parsed.dueDate}`,
+    parsed.priority && `P${parsed.priority}`,
+    ...parsed.labels.map(l => `#${l}`),
+    assigneeHint,
+  ].filter(Boolean).join(" · ")
+}
+

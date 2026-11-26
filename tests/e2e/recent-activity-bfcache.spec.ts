@@ -43,6 +43,7 @@ for (const revoked of [false, true]) {
         if (request.isNavigationRequest()) return route.fallback()
         const path = new URL(request.url()).pathname.slice(prefix.length)
         // App-wide warmups are unrelated to restoring and rechecking the activity document.
+        if (path === "/api/settings" && request.method() === "GET") return route.fulfill({ json: {} })
         if (["/api/pomodoro", "/api/task-pins"].includes(path) ||
             (request.resourceType() === "fetch" && ["/", "/boards", "/planning", "/progress", "/settings", "/tasks", "/today", "/upcoming"].includes(path))) {
           return route.fulfill({ status: 204 })
@@ -89,9 +90,13 @@ for (const revoked of [false, true]) {
       }
       expect(await context.cookies(origin)).toEqual(cookies)
 
+      const { currentIndex, entries } = await cdp.send("Page.getNavigationHistory")
+      const activityEntry = entries[currentIndex - 1]
+      expect(activityEntry?.url).toBe(url)
+      // The persisted pageshow handler reloads immediately, so Back may never commit.
       const [response] = await Promise.all([
         page.waitForResponse(response => response.url() === url && response.request().isNavigationRequest()),
-        page.goBack({ waitUntil: "commit" }),
+        cdp.send("Page.navigateToHistoryEntry", { entryId: activityEntry!.id }),
       ])
       try {
         await expect.poll(() => snapshot).toEqual({ hidden: true, rows: 0, filters: 0, retainedSentinel: false })

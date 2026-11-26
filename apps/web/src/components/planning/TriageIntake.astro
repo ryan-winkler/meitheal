@@ -7,6 +7,7 @@ import { formatCalendarDay } from "@lib/calendar-day"
 import type { Locale } from "@lib/locale"
 import type { TriageMode } from "@lib/triage-mode"
 import { t } from "../../i18n/translations"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -42,59 +43,102 @@ function pageHref(target: number, open?: string): string {
 
   {!scoped.ok || !placement?.ok ? <p role="status">Triage is unavailable. Reload to try again.</p> : <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
     <header class="intake-header">
-      {!embedded && <a href={planningHref} data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
-      <Heading id="triage-heading" tabindex="-1">{t("triage.title", locale)}</Heading>
-      <p>{t("triage.description", locale)}</p>
+      {!embedded && (
+        <a class="intake-back-link" href={planningHref} data-astro-prefetch="false">
+          <Icon name="eisenhower" size={14} sprite />
+          <span>{t("triage.planning", locale)}</span>
+        </a>
+      )}
+      <div class="intake-header__title-group">
+        <span class="intake-header__icon" aria-hidden="true">
+          <Icon name="inbox" size={20} sprite />
+        </span>
+        <div>
+          <Heading id="triage-heading" class="intake-header__title" tabindex="-1">{t("triage.title", locale)}</Heading>
+          <p class="intake-header__desc">{t("triage.description", locale)}</p>
+        </div>
+      </div>
     </header>
-    <p data-triage-status role="status" aria-atomic="true">{t("triage.loading", locale)}</p>
-    <a href={pageHref(page)} class="btn btn-outline" data-triage-reload data-astro-prefetch="false" hidden>
-      {t("triage.reload", locale)}
+    <p class="intake-status" data-triage-status role="status" aria-atomic="true">{t("triage.loading", locale)}</p>
+    <a href={pageHref(page)} class="btn btn-outline btn-sm" data-triage-reload data-astro-prefetch="false" hidden>
+      <Icon name="refresh" size={14} sprite />
+      <span>{t("triage.reload", locale)}</span>
     </a>
     <div data-triage-content></div>
     {mode && <template data-triage-fragment data-triage-mode={mode}>
       {mode === "visible" ? (
-        <>
-          <p class="intake-summary" data-triage-count>
-            {t("triage.total", locale, { count: String(total) })}
-          </p>
-          {tasks.length ? (
-            <ul class="intake-list">
-              {tasks.map(task => {
-                const due = formatCalendarDay(task.due_date, locale, true)
-                return (
-                  <li class="intake-card" data-triage-card={task.id} data-triage-version={task.updated_at}>
-                    <div class="intake-card-main">
-                      <p class="intake-ticket">{task.ticket_key}</p>
-                      <CardHeading>{task.title}</CardHeading>
-                      {task.description && <p>{task.description.slice(0, 240)}</p>}
-                      {due && <p>{t("triage.due", locale, { date: due })}</p>}
-                    </div>
-                    <div class="intake-actions">
-                      <a href={pageHref(page, task.id)} class="btn btn-outline" data-triage-details data-astro-prefetch="false">{t("triage.details", locale)}</a>
-                      <button type="button" class="btn btn-primary" data-triage-decision="pending">{t("triage.accept", locale)}</button>
-                      <button type="button" class="btn btn-outline" data-triage-decision="active">{t("triage.start", locale)}</button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : <p data-triage-empty>{t("triage.empty", locale)}</p>}
-          {total > 25 && (
-            <nav class="intake-pages" aria-label={t("triage.pagination", locale)}>
-              <span data-triage-range>{t("triage.range", locale, {
-                first: String(first), last: String(last), total: String(total),
-              })}</span>
-              {page > 1 && <a href={pageHref(page - 1)} class="btn btn-outline" data-triage-page={page - 1} data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
-              {last < total && <a href={pageHref(page + 1)} class="btn btn-outline" data-triage-page={page + 1} data-astro-prefetch="false">{t("triage.next", locale)}</a>}
-            </nav>
-          )}
-        </>
+        <div class="intake-panel card">
+          <div class="card-header intake-panel__header">
+            <p class="intake-summary" data-triage-count>
+              {t("triage.total", locale, { count: String(total) })}
+            </p>
+            <span class="intake-panel__count">{total}</span>
+          </div>
+          <div class="card-body intake-panel__body">
+            {tasks.length ? (
+              <ul class="intake-list">
+                {tasks.map(task => {
+                  const due = formatCalendarDay(task.due_date, locale, true)
+                  return (
+                    <li class="intake-card" data-triage-card={task.id} data-triage-version={task.updated_at}>
+                      <div class="intake-card-main">
+                        <div class="intake-card-meta">
+                          <span class="intake-ticket">{task.ticket_key}</span>
+                          {due && (
+                            <span class="intake-due">
+                              <Icon name="calendar" size={13} sprite />
+                              <span>{t("triage.due", locale, { date: due })}</span>
+                            </span>
+                          )}
+                        </div>
+                        <CardHeading>{task.title}</CardHeading>
+                        {task.description && <p class="intake-card-desc">{task.description.slice(0, 240)}</p>}
+                      </div>
+                      <div class="intake-actions">
+                        <a href={pageHref(page, task.id)} class="btn btn-outline btn-sm" data-triage-details data-astro-prefetch="false">
+                          <Icon name="eye" size={14} sprite />
+                          <span>{t("triage.details", locale)}</span>
+                        </a>
+                        <button type="button" class="btn btn-primary btn-sm" data-triage-decision="pending">
+                          <Icon name="check" size={14} sprite />
+                          <span>{t("triage.accept", locale)}</span>
+                        </button>
+                        <button type="button" class="btn btn-outline btn-sm" data-triage-decision="active">
+                          <Icon name="bolt" size={14} sprite />
+                          <span>{t("triage.start", locale)}</span>
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <div class="intake-empty-state" data-triage-empty>
+                <Icon name="check" size={24} sprite />
+                <p>{t("triage.empty", locale)}</p>
+              </div>
+            )}
+            {total > 25 && (
+              <nav class="intake-pages" aria-label={t("triage.pagination", locale)}>
+                <span class="intake-pages__range" data-triage-range>{t("triage.range", locale, {
+                  first: String(first), last: String(last), total: String(total),
+                })}</span>
+                <div class="intake-pages__nav">
+                  {page > 1 && <a href={pageHref(page - 1)} class="btn btn-outline btn-sm" data-triage-page={page - 1} data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
+                  {last < total && <a href={pageHref(page + 1)} class="btn btn-outline btn-sm" data-triage-page={page + 1} data-astro-prefetch="false">{t("triage.next", locale)}</a>}
+                </div>
+              </nav>
+            )}
+          </div>
+        </div>
       ) : (
-        <section data-triage-mode-message={mode}>
-          <p>{t(`triage.mode_${mode}`, locale)}</p>
-          {mode === "hidden" && <a href={tableHref} class="btn btn-outline" data-astro-prefetch="false">{t("triage.table", locale)}</a>}
-          {mode === "disabled" && <a href={planningHref} class="btn btn-outline" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
-          {mode === "unavailable" && <a href={pageHref(page)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.reload", locale)}</a>}
+        <section class="intake-mode-card card" data-triage-mode-message={mode}>
+          <div class="card-body intake-mode-card__body">
+            <p>{t(`triage.mode_${mode}`, locale)}</p>
+            {mode === "hidden" && <a href={tableHref} class="btn btn-outline btn-sm" data-astro-prefetch="false">{t("triage.table", locale)}</a>}
+            {mode === "disabled" && <a href={planningHref} class="btn btn-outline btn-sm" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
+            {mode === "unavailable" && <a href={pageHref(page)} class="btn btn-outline btn-sm" data-astro-prefetch="false">{t("triage.reload", locale)}</a>}
+          </div>
         </section>
       )}
     </template>}
@@ -105,66 +149,258 @@ function pageHref(target: number, open?: string): string {
   import "@lib/triage-controller"
 </script>
 
-<style>
+<style is:inline>
   .intake {
     max-width: 66rem;
     margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2.5rem);
+    padding: clamp(1rem, 2.5vw, 2rem) clamp(1rem, 3vw, 2.5rem) 2.5rem;
   }
+
+  :root[data-appearance-width="fluid"] .intake {
+    max-width: 100%;
+  }
+
   .intake-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
   }
-  .intake-header :is(h1, h2) {
-    margin-block: .5rem;
+
+  .intake-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
   }
-  .intake-summary, .intake-ticket {
+
+  .intake-back-link:hover {
+    color: var(--text-primary);
+  }
+
+  .intake-header__title-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+  }
+
+  .intake-header__icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md, 10px);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-text, var(--accent));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .intake-header__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .intake-header__desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
     color: var(--text-secondary);
   }
+
+  .intake-status {
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .intake-status:empty {
+    display: none;
+  }
+
+  .intake-panel,
+  .intake-mode-card {
+    padding: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+  }
+
+  .intake-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-surface) 50%, var(--bg-card));
+  }
+
+  .intake-summary {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .intake-panel__count {
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .intake-panel__body,
+  .intake-mode-card__body {
+    padding: 1rem 1.25rem;
+  }
+
   .intake-list {
     list-style: none;
+    margin: 0;
     padding: 0;
     display: grid;
-    gap: .75rem;
+    gap: 0.625rem;
   }
+
   .intake-card {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 1rem;
-    padding: 1rem;
-    background: var(--bg-card);
+    padding: 0.875rem 1rem;
+    background: var(--bg-surface);
     border: 1px solid var(--border);
-    border-radius: .75rem;
+    border-radius: var(--radius-md, 10px);
+    transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
+  .intake-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    background: var(--bg-hover);
+  }
+
   .intake-card-main {
     min-width: 0;
     overflow-wrap: anywhere;
   }
+
+  .intake-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+  }
+
+  .intake-ticket {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .intake-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
   .intake-card-main :is(h2, h3) {
-    margin: .25rem 0;
-    font-size: 1rem;
+    margin: 0.15rem 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
   }
-  .intake-card-main p {
-    margin: .25rem 0;
+
+  .intake-card-desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
   }
-  .intake-actions, .intake-pages {
+
+  .intake-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: .5rem;
+    gap: 0.5rem;
   }
+
+  .intake-actions > * {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .intake-actions > *:active {
+    transform: scale(0.97);
+  }
+
+  .intake-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.75rem 1rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .intake-empty-state p {
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
   .intake-pages {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
     margin-top: 1rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--border);
   }
+
+  .intake-pages__range {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .intake-pages__nav {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   [data-triage-embedded] [data-triage-mode-message="disabled"] a {
     display: none;
   }
-  .intake-actions > *, .intake-pages > a {
-    min-height: 2.75rem;
-  }
+
   @media (max-width: 680px) {
     .intake-card {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .intake-card,
+    .intake-actions > *,
+    .intake-actions > *:active {
+      transition: none;
+      transform: none;
     }
   }
 </style>

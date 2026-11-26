@@ -1,3 +1,4 @@
+import { stripHtml } from "@lib/strip-html"
 import { getIngressTransport, type IngressTransport } from "../../../scripts/ingress-transport.mjs"
 
 const ingressPathPattern = /^(\/api\/hassio_ingress\/[A-Za-z0-9_-]{1,128})\/*$/
@@ -7,7 +8,19 @@ export interface IngressContext {
   ingressPath?: string
   behindIngress: boolean
   hassUserId?: string
+  hassDisplayName?: string
+  hassUserName?: string
   hassIsAdmin: boolean
+}
+
+function sanitizeIngressHeaderName(raw: string | null): string | undefined {
+  if (!raw) return undefined
+  // Supervisor may pass UTF-8 or Latin-1 encoded display names; strip HTML/control chars safely.
+  const cleaned = stripHtml(raw)
+    .replace(/[<>\u0000-\u001f\u007f-\u009f]/g, "")
+    .trim()
+    .slice(0, 128)
+  return cleaned || undefined
 }
 
 export function resolveIngressContext(
@@ -26,5 +39,14 @@ export function resolveIngressContext(
   }
 
   const groups = headers.get("x-remote-user-groups")?.split(",").map(group => group.trim())
-  return { ingressPath, behindIngress: true, hassUserId: userId, hassIsAdmin: groups?.includes("system-admin") ?? false }
+  const hassDisplayName = sanitizeIngressHeaderName(headers.get("x-remote-user-display-name"))
+  const hassUserName = sanitizeIngressHeaderName(headers.get("x-remote-user-name"))
+  return {
+    ingressPath,
+    behindIngress: true,
+    hassUserId: userId,
+    ...(hassDisplayName ? { hassDisplayName } : {}),
+    ...(hassUserName ? { hassUserName } : {}),
+    hassIsAdmin: groups?.includes("system-admin") ?? false,
+  }
 }

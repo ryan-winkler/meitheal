@@ -235,13 +235,26 @@ export function initUnifiedBarTabOverflow(barId: string): (() => void) | undefin
     })
   }
 
-  const observer = new ResizeObserver(() => {
-    recalcOverflow()
-  })
+  let rafId = 0
+  const scheduleRecalc = (): void => {
+    if (rafId !== 0) return
+    rafId = requestAnimationFrame(() => {
+      rafId = 0
+      if (!pageLifecycle.signal.aborted) recalcOverflow()
+    })
+  }
+
+  const observer = new ResizeObserver(scheduleRecalc)
   observer.observe(tabsContainer)
 
-  requestAnimationFrame(recalcOverflow)
+  scheduleRecalc()
 
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  pageLifecycle.signal.addEventListener("abort", () => {
+    if (rafId !== 0) {
+      cancelAnimationFrame(rafId)
+      rafId = 0
+    }
+    observer.disconnect()
+  }, { once: true })
   return recalcOverflow
 }

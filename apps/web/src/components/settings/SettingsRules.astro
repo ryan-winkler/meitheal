@@ -26,8 +26,10 @@ interface Props {
 const { locale } = Astro.props
 
 const frameworks: Array<{ id: string; label: string; description: string; icon: IconName }> = [
+  { id: "eisenhower", label: "Eisenhower", description: "Urgency × Importance 4-quadrant matrix triage", icon: "eisenhower" },
   { id: "rice", label: "RICE", description: t("settings.frameworks.rice_desc", locale), icon: "chart-bar" },
   { id: "drice", label: "DRICE", description: t("settings.frameworks.drice_desc", locale), icon: "target" },
+  { id: "story-points", label: "Story Points", description: "Fibonacci relative effort sizing (1, 2, 3, 5, 8, 13, 21)", icon: "calculator" },
   { id: "heart", label: "HEART", description: t("settings.frameworks.heart_desc", locale), icon: "sparkles" },
   { id: "ddd", label: "DDD", description: t("settings.frameworks.ddd_desc", locale), icon: "sliders" },
   { id: "kcs", label: "KCS", description: t("settings.frameworks.kcs_desc", locale), icon: "book" },
@@ -77,7 +79,7 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
         </button>
       ))}
     </div>
-    <div class="rules-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <div class="rules-actions">
       <button class="btn btn-ghost btn-sm" id="rules-restore-defaults" type="button" title="Reset all rules to default presets">
         <Icon name="refresh" size={14} sprite={true} />
         {t("settings.rules_restore_defaults", locale)}
@@ -86,8 +88,8 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
         <Icon name="download" size={14} sprite={true} />
         {t("settings.rules_export", locale)}
       </button>
-      <label class="settings-file-picker btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
-        <Icon name="download" size={14} sprite={true} />
+      <label class="settings-file-picker btn btn-ghost btn-sm" title="Import rules from a JSON file">
+        <Icon name="upload" size={14} sprite={true} />
         {t("settings.rules_import", locale)}
         <input type="file" id="rules-import-input" accept=".json" />
       </label>
@@ -213,6 +215,20 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
     <div class="rules-fw-reference">
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
+          <strong class="inline-flex items-center gap-1.5"><Icon name="eisenhower" size={14} sprite={true} /> Eisenhower Matrix</strong>
+          <a href="/eisenhower" class="rules-fw-ref-link">Open Matrix →</a>
+        </div>
+        <p><strong>Urgency × Importance</strong> (0–5 each). Classifies tasks into four action quadrants: <em>Do First</em>, <em>Schedule</em>, <em>Delegate</em>, and <em>Not Now</em>.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong class="inline-flex items-center gap-1.5"><Icon name="calculator" size={14} sprite={true} /> Story Points</strong>
+          <a href="/planning#rice" class="rules-fw-ref-link">Planning &amp; Triage →</a>
+        </div>
+        <p><strong>Fibonacci relative sizing</strong> (1, 2, 3, 5, 8, 13, 21) for estimating effort and complexity across sprints, epics, and projects without guessing exact hours.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
           <strong class="inline-flex items-center gap-1.5"><Icon name="chart-bar" size={14} sprite={true} /> RICE</strong>
           <a href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Intercom Blog →</a>
         </div>
@@ -303,61 +319,90 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
   </dialog>
 </div>
 
-<style>
+<style is:inline>
+  #settings-rules-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+  }
+
   /* Presets */
   .rules-presets {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 195px), 1fr));
+    gap: 12px;
   }
   .rules-preset-btn {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
     padding: 14px;
     border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--bg-card);
+    border-radius: var(--radius-lg, 10px);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     text-align: left;
-    transition: border-color 200ms ease, background 200ms ease, transform 150ms ease;
+    min-width: 0;
+    transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .rules-preset-btn:hover,
   .rules-preset-btn.is-active {
     border-color: var(--accent);
-    background: color-mix(in srgb, var(--bg-card) 90%, var(--accent) 8%);
-    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+  }
+  .rules-preset-btn:active {
+    transform: scale(0.98);
   }
   .rules-preset-btn.is-active {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
   }
   .rules-preset-icon {
-    font-size: 22px;
+    display: inline-flex;
+    color: var(--accent-text, var(--accent));
   }
   .rules-preset-label {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 0.875rem;
+    color: var(--text-primary);
   }
   .rules-preset-desc {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.4;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  .rules-actions {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .rules-actions .settings-file-picker {
+    cursor: pointer;
   }
 
   /* Assignment grid */
   .rules-assignment-grid {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
   .rules-assignment-row {
     display: grid;
-    grid-template-columns: 100px 1fr;
+    grid-template-columns: minmax(140px, 170px) minmax(0, 1fr);
     gap: 12px;
     align-items: center;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-md, 8px);
     background: var(--bg-secondary);
   }
   .rules-assignment-type {
@@ -365,44 +410,71 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
     align-items: center;
     gap: 8px;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    min-width: 0;
   }
   .rules-assignment-type-icon {
-    font-size: 16px;
+    display: inline-flex;
+    color: var(--text-secondary);
+    flex-shrink: 0;
   }
   .rules-assignment-frameworks {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
+    min-width: 0;
   }
   .rules-framework-toggle {
+    position: relative;
+    display: inline-flex;
     cursor: pointer;
   }
   .rules-framework-toggle input {
-    display: none;
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
   }
   .rules-fw-pill {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 5px 10px;
+    gap: 5px;
+    min-height: 32px;
+    padding: 4px 10px;
     border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: 12px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.78rem;
     font-weight: 500;
     background: var(--bg-card);
     color: var(--text-secondary);
-    transition: background 200ms ease, color 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 200ms ease;
+    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 110ms cubic-bezier(0.23, 1, 0.32, 1);
     user-select: none;
   }
+  .rules-fw-pill:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--text-primary);
+  }
+  .rules-fw-pill:active {
+    transform: scale(0.97);
+  }
   .rules-fw-pill-icon {
-    font-size: 13px;
+    display: inline-flex;
   }
   .rules-framework-toggle input:checked + .rules-fw-pill {
     border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
     color: var(--accent-text);
     font-weight: 600;
+  }
+  .rules-framework-toggle input:focus-visible + .rules-fw-pill {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   /* AI Scope */
@@ -473,6 +545,7 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
   .rules-fw-config-header {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 10px;
   }
@@ -549,16 +622,24 @@ const presets: Array<{ id: string; label: string; description: string; icon: Ico
   }
 
   @media (max-width: 768px) {
+    .rules-assignment-row {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .rules-actions {
+      gap: 6px;
+    }
+    .rules-fw-field {
+      gap: 6px;
+    }
+  }
+  @media (max-width: 480px) {
     .rules-presets {
       grid-template-columns: 1fr;
     }
-    .rules-assignment-row {
-      grid-template-columns: 1fr;
-      gap: 8px;
-    }
-    .rules-fw-field {
-      grid-template-columns: 1fr;
-      gap: 4px;
+    .rules-actions > * {
+      flex: 1 1 auto;
+      justify-content: center;
     }
   }
 

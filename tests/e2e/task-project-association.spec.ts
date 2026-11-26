@@ -180,10 +180,8 @@ for (const { label, rule, nextDueDate } of [
       { id: "first-step", text: "Check supplies", done: true },
       "Keep the receipt",
       { text: "", done: false },
-      { id: "first-step", text: "Confirm the duplicate step", done: 1 },
+      { id: "first-step", text: "Confirm the duplicate step", done: true },
       { id: "second-step", text: "Read the meter" },
-      { id: "second-step", text: 27 },
-      null,
     ])
     const created = await request.post("/api/tasks", {
       data: {

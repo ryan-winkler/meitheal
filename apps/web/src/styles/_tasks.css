@@ -161,102 +161,81 @@
   animation: flash-success 0.6s ease;
 }
 
-  /* --- Bento Grid (Dashboard) --- */
+  /* --- Bento Grid (Dashboard Recent Tasks using canonical KanbanTaskCard) --- */
   .bento-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 14px;
+    padding-top: 6px;
+    align-items: start;
   }
 
   .bento-empty-state {
     grid-column: 1 / -1;
   }
 
-  .bento-card {
-    position: relative;
-    display: flex;
-    overflow: hidden;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    cursor: pointer;
-    min-height: 100px;
-    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-      box-shadow 0.25s ease,
-      border-color 0.25s ease;
-  }
-
-  .dashboard-task-card {
-    border-left: 3px solid var(--dashboard-task-accent);
-  }
-
-  .bento-card:hover {
-    transform: translateY(-3px) scale(1.01);
-    border-color: var(--accent);
-    box-shadow: 0 8px 24px rgb(var(--accent-rgb) / 0.12),
-      0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .dashboard-task-card:hover {
-    border-left-color: var(--dashboard-task-accent);
-  }
-
-  .bento-card-body {
-    flex: 1;
-    padding: 12px 14px;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .bento-card-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: var(--text-primary);
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .bento-card-title.done {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .bento-card-footer {
-    display: flex;
+  .bento-area-badge {
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .bento-card-due {
-    font-size: 0.65rem;
-    color: var(--text-muted);
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid color-mix(in srgb, var(--area-accent, var(--accent)) 30%, var(--border));
+    background: color-mix(in srgb, var(--area-accent, var(--accent)) 12%, var(--bg-secondary));
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 550;
+    line-height: 1.25;
     white-space: nowrap;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-      .bento-card-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 6px;
-      }
+  .bento-area-badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--area-accent, var(--accent));
+    flex-shrink: 0;
+  }
 
-      .bento-ticket-key {
-        font-size: 10px;
-        font-family: 'JetBrains Mono', monospace;
-        color: var(--text-muted);
-        margin-right: 4px;
-        font-weight: 500;
-        background: rgba(255, 255, 255, 0.06);
-        padding: 1px 4px;
-        border-radius: 3px;
-      }
+  .task-promoted-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 18%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--tblr-yellow, #f59f00) 45%, var(--border));
+    color: var(--warning-text, #b45309);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.1;
+    flex-shrink: 0;
+  }
+
+  :is(html.dark, [data-theme="dark"], [data-theme="velvet"], [data-theme="plainspace"], [data-theme="rainbow"], [data-theme="liquid-glass"], [data-theme="knight-rider"]) .task-promoted-pill {
+    color: #fbbf24;
+  }
+
+  /* Shared CardCustomizer preferences across Dashboard, Today & Upcoming */
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-key :is(.dashboard-ticket-key, .tli__ticket, .upcoming-ticket-key) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-type :is(.task-type-icon, .kanban-type-icon) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-priority :is(.priority-label, .priority-dot, .focus-card__priority) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-due-date :is(.dashboard-task-due, .tli__due-date, .focus-card__due) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-labels .label-badges { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-checklist :is(.tli__checklist, .task-checklist-count) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-assignee :is(.tli__assignee, .upcoming-assignee) { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-progress .tli__progress { display: none !important; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).hide-field-rice .framework-badge { display: none !important; }
+
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).density-compact .kanban-card { padding: 8px 10px; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).density-compact .tli { padding: 6px 12px; gap: 8px; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).density-spacious .kanban-card { padding: 16px 18px; }
+  :is(#dashboard-shell, #page-shell, #upcoming-shell).density-spacious .tli { padding: 14px 18px; }
+
 
 
 /* --- Task action buttons --- */
@@ -345,7 +324,7 @@
   border-color: color-mix(in srgb, var(--knight-task-color) 75%, var(--border));
 }
 
-:is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item, .dashboard-task-card)[data-task-color] {
+:is(html.light, [data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item, .dashboard-task-card)[data-task-color] {
   background-color: color-mix(in srgb, var(--knight-task-color) 16%, var(--bg-card));
 }
 

@@ -29,6 +29,12 @@
 
 import { createSpriteIconElement } from "../generated/icon-registry"
 import { UNPROMOTED_BLOCKING_OVERLAY_SELECTOR, canRestoreFocusTarget } from "./dialog-overlay"
+import {
+  loadNotificationPreferences,
+  playNotificationSound,
+  resolveToastDurationMs,
+  shouldDisplayToast,
+} from "./notification-preferences"
 import { bindSwipeDismiss } from "./swipe-dismiss"
 
 export type ToastType = "success" | "error" | "warning" | "info"
@@ -731,7 +737,21 @@ export function pushToast(options: ToastOptions): ToastHandle {
   const displayMessage = translate(options.message)
   const displayDescription = options.description ? translate(options.description) : ""
   const persistent = Boolean(options.persistent) || options.duration === Infinity
-  const duration = persistent ? Infinity : (options.duration ?? DEFAULT_DURATIONS[type])
+  const userPrefs = loadNotificationPreferences()
+  const duration = resolveToastDurationMs(userPrefs, {
+    type,
+    explicitDuration: options.duration,
+    persistent,
+  })
+
+  if (!shouldDisplayToast(userPrefs, { type, persistent, hasAction: Boolean(options.action) })) {
+    announceStatus(displayMessage)
+    return {
+      id: options.id ?? `m-toast-muted-${nextAutoId++}`,
+      element: typeof document !== "undefined" ? document.createElement("div") : ({} as HTMLElement),
+      dismiss: () => {},
+    }
+  }
 
   if (options.id) {
     const existing = activeRecords.get(`id:${options.id}`)
@@ -875,7 +895,7 @@ export function pushToast(options: ToastOptions): ToastHandle {
   bindSwipeDismiss({
     element: toastEl,
     signal: controller.signal,
-    canStart: () => record.dismissible && !record.leaving,
+    canStart: () => record.dismissible && !record.leaving && loadNotificationPreferences().swipeToDismiss,
     allowVertical: () => (window.innerWidth <= 768 || isTopDocked(getContainer(false))) && getContainer(false)?.dataset.scrollable !== "true",
     horizontalSign: () => {
       if (window.innerWidth <= 768) return 0
@@ -893,6 +913,7 @@ export function pushToast(options: ToastOptions): ToastHandle {
   syncPopoverLayer(container)
   syncScrollableState(container)
   notifyDockStateIfChanged(container)
+  if (userPrefs.soundEnabled) playNotificationSound(type)
   if (document.hidden) pauseTimer(record, "hidden")
   startTimer(record)
   return handle

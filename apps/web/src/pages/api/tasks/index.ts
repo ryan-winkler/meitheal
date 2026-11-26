@@ -261,12 +261,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
       ...(placement ? { area_id: placement.areaId, project_id: placement.projectId } : {}),
       source: effectiveSource, created_by: effectiveCreatedBy,
     })
-    if (!prepared.ok) {
-      if (prepared.errorCode === "hierarchy_invalid") {
-        return Response.json({ error: prepared.error, detail: prepared.error, errorCode: "hierarchy_invalid" }, { status: 400 })
-      }
-      return apiError(prepared.error, 400)
-    }
+    if (!prepared.ok) return apiError(prepared.error, 400)
     let newLabels: string[] | undefined
     if (body.new_labels !== undefined) {
       if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
@@ -288,11 +283,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
     })
     if (!result.ok) {
       if (result.errorCode === "hierarchy_invalid") {
-        return Response.json({
-          error: result.message ?? "Invalid task hierarchy.",
-          detail: result.message ?? "Invalid task hierarchy.",
-          errorCode: result.errorCode,
-        }, { status: 400 })
+        return Response.json({ error: result.message ?? "Invalid task hierarchy.", errorCode: result.errorCode }, { status: 400 })
       }
       const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
         : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400
@@ -317,10 +308,10 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
         ...authority, ...(clientKey ? { "idempotency-key-status": result.replayed ? "cached" : "processed" } : {}),
       } })
   } catch (err) {
-    if ((err as Error)?.name === "AbortError") throw err
     const scoped = boardScopeErrorResponse(err)
     if (scoped) return scoped
     if (isDbUnavailable(err)) return db503Response("tasks-post", err)
+    if (err instanceof Error && err.name === "AbortError") throw err
     logApiError("tasks-post", "POST failed", err)
     return apiError("Failed to create task", 500)
   }

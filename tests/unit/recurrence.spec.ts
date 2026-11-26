@@ -221,14 +221,12 @@ test.describe("getNextOccurrence", () => {
       expect(next.getUTCDate()).toBe(15)
     })
 
-    test("leap year: Feb 29 → Mar 1 next year", () => {
-      // 2028 is a leap year with Feb 29
+    test("annual task on February 29 stays in February in a common year", () => {
       const rule: RecurrenceRule = { freq: "YEARLY", interval: 1 }
       const next = getNextOccurrence(rule, utcDate(2028, 2, 29))!
-      // 2029 has no Feb 29 — Date auto-rolls to March 1
       expect(next.getUTCFullYear()).toBe(2029)
-      expect(next.getUTCMonth()).toBe(2)
-      expect(next.getUTCDate()).toBe(1)
+      expect(next.getUTCMonth()).toBe(1)
+      expect(next.getUTCDate()).toBe(28)
     })
 
     test("advances by custom interval", () => {
@@ -314,16 +312,16 @@ test.describe("toRRuleString", () => {
 // ── describeRule ────────────────────────────────────────────────────────
 
 test.describe("describeRule", () => {
-  test("DAILY interval 1 → 'Every day'", () => {
-    expect(describeRule({ freq: "DAILY", interval: 1 })).toBe("Every day")
+  test("DAILY interval 1 → 'Daily'", () => {
+    expect(describeRule({ freq: "DAILY", interval: 1 })).toBe("Daily")
   })
 
   test("DAILY interval 3 → 'Every 3 days'", () => {
     expect(describeRule({ freq: "DAILY", interval: 3 })).toBe("Every 3 days")
   })
 
-  test("WEEKLY interval 1 → 'Every week'", () => {
-    expect(describeRule({ freq: "WEEKLY", interval: 1 })).toBe("Every week")
+  test("WEEKLY interval 1 → 'Weekly'", () => {
+    expect(describeRule({ freq: "WEEKLY", interval: 1 })).toBe("Weekly")
   })
 
   test("WEEKLY interval 2 → 'Every 2 weeks'", () => {
@@ -332,7 +330,7 @@ test.describe("describeRule", () => {
 
   test("WEEKLY with BYDAY → lists days", () => {
     const desc = describeRule({ freq: "WEEKLY", interval: 1, byDay: ["MO", "WE", "FR"] })
-    expect(desc).toBe("Every Monday, Wednesday, Friday")
+    expect(desc).toBe("Weekly on Monday, Wednesday, Friday")
   })
 
   test("WEEKLY with BYDAY and interval → includes weeks", () => {
@@ -340,16 +338,16 @@ test.describe("describeRule", () => {
     expect(desc).toBe("Every 2 weeks on Monday, Friday")
   })
 
-  test("MONTHLY interval 1 → 'Every month'", () => {
-    expect(describeRule({ freq: "MONTHLY", interval: 1 })).toBe("Every month")
+  test("MONTHLY interval 1 → 'Monthly'", () => {
+    expect(describeRule({ freq: "MONTHLY", interval: 1 })).toBe("Monthly")
   })
 
   test("MONTHLY interval 3 → 'Every 3 months'", () => {
     expect(describeRule({ freq: "MONTHLY", interval: 3 })).toBe("Every 3 months")
   })
 
-  test("YEARLY interval 1 → 'Every year'", () => {
-    expect(describeRule({ freq: "YEARLY", interval: 1 })).toBe("Every year")
+  test("YEARLY interval 1 → 'Annually'", () => {
+    expect(describeRule({ freq: "YEARLY", interval: 1 })).toBe("Annually")
   })
 
   test("YEARLY interval 2 → 'Every 2 years'", () => {
@@ -358,16 +356,16 @@ test.describe("describeRule", () => {
 
   test("COUNT suffix appended", () => {
     const desc = describeRule({ freq: "DAILY", interval: 1, count: 5 })
-    expect(desc).toBe("Every day (5 times)")
+    expect(desc).toBe("Daily, 5 times")
   })
 
   test("UNTIL suffix appended", () => {
     const desc = describeRule({ freq: "WEEKLY", interval: 1, until: "2026-12-31" })
-    expect(desc).toBe("Every week until 2026-12-31")
+    expect(desc).toBe("Weekly, until 2026-12-31")
   })
 
   test("COUNT and UNTIL both appended", () => {
     const desc = describeRule({ freq: "DAILY", interval: 1, count: 10, until: "2026-06-01" })
-    expect(desc).toBe("Every day (10 times) until 2026-06-01")
+    expect(desc).toBe("Daily, 10 times, until 2026-06-01")
   })
 })

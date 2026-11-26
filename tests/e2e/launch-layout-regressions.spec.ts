@@ -13,12 +13,13 @@ function shiftDay(day: string, days: number) {
 test.describe("Launch layout and due-date regressions", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
-  test("a first visit follows the system or Home Assistant appearance", async ({ browser }) => {
+  test("a first standalone visit follows the system appearance", async ({ browser }) => {
     for (const colorScheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ colorScheme })
       const page = await context.newPage()
       await page.goto("/today")
-      await expect(page.locator("html")).toHaveAttribute("data-theme", "auto")
+      await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${colorScheme}\\b`))
+      await expect(page.locator("html")).toHaveAttribute("data-theme", colorScheme === "dark" ? "knight-rider" : "light")
       await context.close()
     }
   })

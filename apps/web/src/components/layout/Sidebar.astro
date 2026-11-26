@@ -1,6 +1,8 @@
 ---
 import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
-import sidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
+import rawSidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
+import { minifyInlineCss } from "../../lib/minify-inline-css"
+const sidebarReorderCss = minifyInlineCss(rawSidebarReorderCss)
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
@@ -35,6 +37,7 @@ import {
   serializeSidebarConfig,
 } from "@domains/navigation/sidebar-menu"
 import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
+import { getCachedHAUserName } from "@domains/ha"
 
 const currentPath = Astro.url.pathname
 const workNavigation = Astro.props.workNavigation
@@ -64,7 +67,7 @@ interface NavItemDef {
 
 const taskViewBaseUrl = new URL(boardContext ? `/boards/${encodeURIComponent(boardContext.boardId)}` : "/tasks", Astro.url)
 const taskViewHref = (view: TaskView) => {
-  const url = taskViewUrl(taskViewBaseUrl, view, true)
+  const url = taskViewUrl(taskViewBaseUrl, view, true, Astro.request.headers.get("user-agent") ?? "")
   return url.pathname + url.search + url.hash
 }
 
@@ -259,15 +262,14 @@ const pinnedTaskViews: TaskView[] = TASK_VIEW_ITEM_KEYS
 const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
 const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
 
-const haDisplayName = (Astro.locals as unknown as Record<string, unknown>).hassDisplayName
-const haUsername = (Astro.locals as unknown as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
+const hassUserId = Astro.locals.hassUserId
+const cachedHaRosterName = hassUserId ? getCachedHAUserName(hassUserId) : undefined
+const withoutRawHaId = (name?: string) => name && !/^[0-9a-f]{32}$/i.test(name.trim()) ? name.trim() : undefined
+const haDisplayName = withoutRawHaId(Astro.locals.hassDisplayName || cachedHaRosterName || Astro.locals.hassUserName)
+const haUsername = withoutRawHaId(Astro.locals.hassUserName)
 const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
-  displayName: typeof haDisplayName === "string" && haDisplayName.trim()
-    ? haDisplayName
-    : typeof haUsername === "string" && haUsername.trim()
-      ? haUsername
-      : "Household Member",
-  username: typeof haUsername === "string" && haUsername.trim() ? haUsername : "local",
+  displayName: haDisplayName ?? "Household Member",
+  username: haUsername ?? (haDisplayName ? haDisplayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) : "local"),
   role: Astro.locals.hassIsAdmin ? "Admin" : "",
 })
 
@@ -300,12 +302,12 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   </button>
 
   <div class="sidebar-header flex items-center gap-2 pb-3 mb-0">
-    <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
+    <div class="sidebar-brand-group relative flex flex-col flex-1 min-w-0">
       <a
         href="/?view=dashboard"
-        data-astro-prefetch="viewport"
+        data-astro-prefetch="hover"
         class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
-        aria-label="Meitheal Home"
+        aria-label="meitheal. Home"
         title="meitheal. — Keep track of the work your home needs"
       >
         <svg
@@ -325,7 +327,9 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
             stroke-width="5"></path>
           <circle cx="52" cy="40" r="3.8" fill="var(--accent, #75e9be)"></circle>
         </svg>
-        <span class="sidebar-brand-text truncate">meitheal.</span>
+        <span class="sidebar-brand-stack">
+          <span class="sidebar-brand-text truncate">meitheal.</span>
+        </span>
       </a>
       <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
     </div>
@@ -509,7 +513,11 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   {gamificationEnabled && currentStreak > 0 && (
     <div class="sidebar-gamification-wrapper">
-      <StreakBadge streak={currentStreak} compact />
+      <StreakBadge
+        streak={currentStreak}
+        compact
+        href={boardLinks?.progress ? `${boardLinks.progress.replace(/#.*$/, "")}#achievements-streaks` : "/progress#achievements-streaks"}
+      />
     </div>
   )}
 
@@ -565,9 +573,14 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
     width: var(--sidebar-width, 240px);
     position: fixed;
-    z-index: 40;
+    z-index: 75;
     padding: 0.875rem 0.75rem;
     overflow: visible;
+  }
+
+  :global(body.sidebar-collapsed) .sidebar {
+    width: 64px;
+    padding-inline: 0.5rem;
   }
 
   @media (min-width: 769px) {
@@ -605,20 +618,36 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-header {
-    margin-bottom: 0.5rem;
-    padding: 0 0.125rem;
+    margin-bottom: 0.625rem;
+    padding: 0.125rem 0.25rem 0.625rem;
     position: relative;
   }
 
+  .sidebar-brand-stack {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 36px;
+  }
+
+  .sidebar-brand-text {
+    line-height: 22px;
+    height: 22px;
+  }
+
   .sidebar-ipa {
+    position: absolute;
+    inset-inline-start: 34px;
+    inset-block-end: 0;
+    pointer-events: none;
     display: block;
-    font-size: 9.5px;
+    font-size: 10px;
     font-style: normal;
-    color: var(--text-muted);
-    letter-spacing: 0.09em;
-    padding-inline-start: 2.125rem;
-    margin-top: 2px;
-    line-height: 1;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    line-height: 12px;
+    height: 12px;
+    overflow: hidden;
     user-select: none;
     font-family: "JetBrains Mono", ui-monospace, monospace;
   }
@@ -666,7 +695,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   :global(.sidebar .nav-link.active) {
     background: rgb(var(--accent-rgb) / 0.1);
-    color: var(--accent-text);
+    color: var(--text-primary);
   }
 
   :global(.sidebar .nav-link.active .nav-icon) {
@@ -731,14 +760,13 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none !important; }
   body.sidebar-collapsed .sidebar-board-children { display: none; }
-  .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children .sidebar-board-row > a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
   .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
   .sidebar-board-children .sidebar-board-row .nav-link { flex: 1; min-width: 0; }
   .sidebar-board-children .sidebar-board-toggle { min-inline-size: 26px; inline-size: 26px; block-size: 26px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-secondary); }
   .sidebar-board-children .sidebar-board-toggle:hover,
   .sidebar-board-children .sidebar-board-toggle:focus-visible { background: var(--bg-hover); color: var(--text-primary); }
   .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
-  .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
   .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
 
   [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {
@@ -756,9 +784,9 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-edge-toggle {
-    position: absolute; top: 37px; right: -16px; width: 32px; height: 32px; padding: 0; border: 0;
+    position: absolute; top: 35px; right: -18px; width: 36px; height: 36px; padding: 0; border: 0;
     background: transparent; display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer; z-index: 50; color: var(--text-secondary);
+    cursor: pointer; z-index: 80; color: var(--text-secondary);
     transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .sidebar-edge-toggle__circle {

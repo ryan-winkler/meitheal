@@ -1,9 +1,11 @@
 import { resolveTaskEpics } from "@domains/tasks"
 import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 
+import { formatEisenhowerShort, formatTaskFrameworkScore, readTaskStoryPoints } from "./active-scoring"
 import { getEpicGroupLabel } from "./epic-group-labels"
 import { parseCalendarDay } from "./calendar-day"
 import { getGroupKey, isTaskVisible, type FilterState } from "./filter-state"
+import type { TriageFrameworkId } from "./scoring-triage"
 import { CANONICAL_STATUSES, normalizeStatus, STATUS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
 import { formatTicketKey } from "./ticket-key"
@@ -49,7 +51,7 @@ function compareGroups(dimension: string, a: string, b: string): number {
   return rank(a) - rank(b) || a.localeCompare(b)
 }
 
-function sortValue(task: TaskViewItem, column: string): string | number | null {
+function sortValue(task: TaskViewItem, column: string, activeFramework: TriageFrameworkId | null = "rice"): string | number | null {
   switch (column) {
     case "title": return task.title.toLowerCase()
     case "key": return formatTicketKey(task.ticket_number) ?? "#" + task.id.slice(0, 8)
@@ -60,7 +62,26 @@ function sortValue(task: TaskViewItem, column: string): string | number | null {
       const date = Date.parse(effectiveTaskScheduledDate(task) ?? "")
       return Number.isFinite(date) ? date : null
     }
-    case "rice": return task.rice ?? 0
+    case "start_date": {
+      const date = Date.parse(task.start_date ?? "")
+      return Number.isFinite(date) ? date : null
+    }
+    case "effort": return typeof task.effort_minutes === "number" && task.effort_minutes > 0 ? task.effort_minutes : null
+    case "story_points": return readTaskStoryPoints(task)
+    case "eisenhower": {
+      const rank = formatEisenhowerShort(task).rank
+      return rank > 0 ? rank : null
+    }
+    case "progress": return typeof task.progress === "number" ? task.progress : 0
+    case "created": {
+      const date = Date.parse(task.created_at ?? "")
+      return Number.isFinite(date) ? date : null
+    }
+    case "rice": {
+      if (!activeFramework) return null
+      if (activeFramework === "rice") return task.rice ?? null
+      return formatTaskFrameworkScore(task, activeFramework).numeric
+    }
     case "manual": return task.table_position ?? null
     default: return 0
   }
@@ -154,6 +175,7 @@ export function getTablePage(
   requestedPage: string | null,
   workflowColumns: readonly TableWorkflowColumn[] = [],
   timezone?: string,
+  activeFramework: TriageFrameworkId | null = "rice",
 ) {
   const { createdFrom, createdThrough } = filters
   const creationDay = createdFrom || createdThrough ? creationDateFormatter(timezone) : undefined
@@ -177,8 +199,8 @@ export function getTablePage(
     (epicLabels.get(a) ?? "").localeCompare(epicLabels.get(b) ?? "") || a.localeCompare(b)
   const [column = "", direction] = (filters.sort ?? "").split("-")
   const compare = (a: TaskViewItem, b: TaskViewItem) => {
-    const left = sortValue(a, column)
-    const right = sortValue(b, column)
+    const left = sortValue(a, column, activeFramework)
+    const right = sortValue(b, column, activeFramework)
     if (left === null || right === null) return Number(left === null) - Number(right === null)
     const order = typeof left === "number" && typeof right === "number"
       ? left - right
@@ -231,14 +253,17 @@ export function getTablePage(
     const group = groupBy === "none" ? "" : getGroupKey(row, groupBy)
     const subgroup = subgroupBy === "none" ? "" : JSON.stringify([group, getGroupKey(row, subgroupBy)])
     matching.set(task.id, { task, group, subgroup, workflowColumnId, epicGroup })
-    recordMatch(total, task.rice)
+    const scoreNum = activeFramework
+      ? (activeFramework === "rice" ? task.rice : formatTaskFrameworkScore(task, activeFramework).numeric)
+      : null
+    recordMatch(total, scoreNum)
     if (task.status === STATUS.ACTIVE && task.deferred_at === null) active++
     if (task.is_overdue) overdue++
     if (groupBy === "none") continue
-    groupStats(groups, group, task.rice)
+    groupStats(groups, group, scoreNum)
     if (subgroupBy !== "none") {
       if (!subgroupOrder.has(subgroup)) subgroupOrder.set(subgroup, subgroupOrder.size)
-      groupStats(subgroups, subgroup, task.rice)
+      groupStats(subgroups, subgroup, scoreNum)
     }
   }
 

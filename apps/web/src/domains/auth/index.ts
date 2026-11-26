@@ -8,7 +8,9 @@ export {
   getAgentTokenByHash,
   getAgentTokenById,
   listAgentTokens,
+  renewAgentToken,
   revokeAgentToken,
+  rotateAgentToken,
   updateAgentToken,
   updateAgentTokenLastUsed,
 } from "./agent-token-store"

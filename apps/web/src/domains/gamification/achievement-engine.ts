@@ -2,16 +2,13 @@ import {
   BoardOperationError,
   canReadBoardAggregate,
   ensureSchema,
+  getPersistenceClient,
+  scopePermits,
   type BoardScope,
 } from "@domains/tasks"
 import { gamificationClient, gamificationRead } from "./scoped-gamification"
 
-import {
-  parseStatsRows,
-  prepareCompletionStatsWrite,
-  statsQuery,
-  type GamificationStats,
-} from "./streak-tracker"
+import { parseStatsRows, statsDayKey, statsQuery, type GamificationStats } from "./streak-tracker"
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -185,11 +182,9 @@ async function unlockEligibleAchievementsInTx(
   tx: Pick<import("@libsql/client").Transaction, "execute" | "batch">,
   scope: BoardScope,
   eligible: readonly Achievement[],
-  knownUnlocked?: Set<string>,
 ): Promise<AchievementCheckResult> {
-  const unlocked = knownUnlocked ?? new Set(
-    (await tx.execute(gamificationRead(scope, "SELECT id FROM board_achievements"))).rows.map(row => String(row.id)),
-  )
+  const existing = await tx.execute(gamificationRead(scope, "SELECT id FROM board_achievements"))
+  const unlocked = new Set(existing.rows.map(row => String(row.id)))
   const candidates = eligible.filter(achievement => !unlocked.has(achievement.id))
   const unlockedAt = new Date().toISOString()
   if (candidates.length) {
@@ -207,7 +202,8 @@ async function unlockEligibleAchievementsInTx(
 
 /**
  * Record a task completion, read updated stats, and unlock any eligible
- * achievements atomically in a single Board write transaction.
+ * achievements in one single Board write batch (with an unlock write transaction
+ * only when new achievements qualify).
  */
 export async function completeTaskGamification(
   scope: BoardScope,
@@ -215,33 +211,52 @@ export async function completeTaskGamification(
   now = new Date(),
   timezone = "UTC",
 ): Promise<TaskCompletionGamificationResult> {
-  const prepared = await prepareCompletionStatsWrite(scope, points, now, timezone)
-  if (!prepared) return { stats: null, achievements: null }
+  await ensureAchievementSchema()
+  const base = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const insertStatement = {
+    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
+          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
+            WHERE board_id = ? AND date = ?), 0)), ?)
+          ON CONFLICT(board_id,date) DO UPDATE SET
+            completed_count = completed_count + 1,
+            points = points + excluded.points`,
+    args: [scope.boardId, today, scope.boardId, yesterday, points],
+  }
+  if (!scopePermits(scope, { resource: "task", action: "read" })) {
+    await client.execute(insertStatement)
+    return { stats: null, achievements: null }
+  }
+  if (!await canReadBoardAggregate(base, scope)) {
+    await client.execute(insertStatement)
+    throw new BoardOperationError("unavailable")
+  }
   const query = gamificationRead(scope, "SELECT id FROM board_achievements")
-  const tx = await prepared.client.transaction("write")
-  let stats: GamificationStats
-  let achievements: AchievementCheckResult
-  try {
-    const [, agg, snapshot] = await tx.batch([
-      prepared.insertStatement,
-      statsQuery(scope, prepared.today, prepared.yesterday),
-      query,
-    ])
-    stats = parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
-    const eligible = computeEligibleAchievements(stats)
-    const observed = new Set((snapshot?.rows ?? []).map(row => String(row.id)))
-    const missing = eligible.filter(achievement => !observed.has(achievement.id))
-    if (missing.length === 0) {
-      achievements = { newlyUnlocked: [], total: ACHIEVEMENTS.length, unlocked: observed.size }
-    } else {
-      achievements = await unlockEligibleAchievementsInTx(tx, scope, missing, observed)
+  const [, agg, snapshot] = await client.batch([
+    insertStatement,
+    statsQuery(scope, today, yesterday),
+    query,
+  ], "write")
+  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
+  const stats = parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
+  const eligible = computeEligibleAchievements(stats)
+  const observed = new Set((snapshot?.rows ?? []).map(row => String(row.id)))
+  if (eligible.every(achievement => observed.has(achievement.id))) {
+    return {
+      stats,
+      achievements: { newlyUnlocked: [], total: ACHIEVEMENTS.length, unlocked: observed.size },
     }
+  }
+  const tx = await client.transaction("write")
+  try {
+    const achievements = await unlockEligibleAchievementsInTx(tx, scope, eligible)
     await tx.commit()
+    return { stats, achievements }
   } finally {
     tx.close()
   }
-  if (!await canReadBoardAggregate(prepared.base, scope)) throw new BoardOperationError("unavailable")
-  return { stats, achievements }
 }
 
 export async function checkAchievements(

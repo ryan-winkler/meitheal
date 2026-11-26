@@ -1,7 +1,8 @@
 import { createSpriteIconElement, type IconName } from "../generated/icon-registry"
-import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 /** Shared accessible Markdown / Visual (HugeRTE) / Preview description editor enhancer. */
+
+let unnamedEditorCount = 0
 
 export type DescriptionEditorMode = "markdown" | "visual" | "preview"
 
@@ -43,11 +44,7 @@ interface HistorySnapshot {
 
 const HUGERTE_PLUGINS = "advlist autolink lists link code codesample table"
 const HUGERTE_TOOLBAR =
-  "undo redo | blocks | bold italic strikethrough backcolor | bullist numlist outdent indent | blockquote link code codesample table | removeformat"
-
-let nextEditorInstanceId = 0
-
-let hugeRteLoadPromise: Promise<HugeRteGlobal | null> | null = null
+  "undo redo | blocks | bold italic strikethrough | bullist numlist | blockquote link code table | backcolor outdent indent codesample removeformat"
 
 const getHugeRteBaseUrl = () =>
   `${((window as Window & { __ingress_path?: string }).__ingress_path || "").replace(/\/+$/, "")}/vendor/hugerte`
@@ -78,25 +75,7 @@ function readEditorThemeVars(anchor: HTMLElement): string {
 
 function loadHugeRte(): Promise<HugeRteGlobal | null> {
   const win = window as Window & { hugeRTE?: HugeRteGlobal }
-  if (win.hugeRTE) return Promise.resolve(win.hugeRTE)
-  if (hugeRteLoadPromise) return hugeRteLoadPromise
-  hugeRteLoadPromise = new Promise(resolve => {
-    const scriptUrl = `${getHugeRteBaseUrl()}/hugerte.min.js`
-    const existing = document.querySelector<HTMLScriptElement>(`script[data-hugerte-src="${scriptUrl}"]`)
-    if (existing) {
-      existing.addEventListener("load", () => resolve(win.hugeRTE ?? null), { once: true })
-      existing.addEventListener("error", () => { hugeRteLoadPromise = null; resolve(null) }, { once: true })
-      return
-    }
-    const s = domEl("script")
-    s.src = scriptUrl
-    s.async = true
-    s.dataset.hugerteSrc = scriptUrl
-    s.onload = () => resolve(win.hugeRTE ?? null)
-    s.onerror = () => { hugeRteLoadPromise = null; s.remove(); resolve(null) }
-    document.head.appendChild(s)
-  })
-  return hugeRteLoadPromise
+  return Promise.resolve(win.hugeRTE ?? null)
 }
 
 export async function renderMarkdownPreviewInto(
@@ -107,8 +86,10 @@ export async function renderMarkdownPreviewInto(
   const { afterRender, shouldApply } = options
   if (!md.trim()) {
     if (shouldApply && !shouldApply()) return false
-    const p = domEl("p")
-    const empty = domEl("em", "text-text-muted", "No description provided.")
+    const p = document.createElement("p")
+    const empty = document.createElement("em")
+    empty.className = "text-text-muted"
+    empty.textContent = "No description provided."
     p.append(empty)
     target.replaceChildren(p)
     return true
@@ -139,7 +120,7 @@ function serializeInlineCode(raw: string): string {
 function serializeTable(table: HTMLTableElement, depth: number): string {
   const rows = Array.from(table.querySelectorAll("tr")).map(tr =>
     Array.from(tr.querySelectorAll("th, td")).map(cell =>
-      serializeChildren(cell, depth).replace(/\\/g, "\\\\").replace(/\s*\n+\s*/g, " ").replace(/\|/g, "\\|").trim(),
+      serializeChildren(cell, depth).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "\\|").trim(),
     ),
   )
   if (!rows[0]?.length) return ""
@@ -171,7 +152,7 @@ function serializeListElement(listEl: HTMLElement, depth: number): string {
   const indent = "  ".repeat(depth)
   const items = Array.from(listEl.children).filter(c => c.tagName.toLowerCase() === "li").map((node, idx) => {
     const li = node as HTMLLIElement
-    const check = qs(li, ":scope > .md-check")
+    const check = li.querySelector(":scope > .md-check")
     const { inline, nested } = serializeListItemChildren(li, depth)
     let prefix = ol ? `${idx + 1}.` : "-"
     let text = inline
@@ -353,98 +334,186 @@ export function enhanceDescriptionEditor(
     ],
   ]
 
-  const frame = domEl("div")
+  const frame = document.createElement("div")
   frame.className = "md-editor-frame"
-  const header = domEl("div")
+  const header = document.createElement("div")
   header.className = "md-editor-header"
-  const toolbar = domEl("div")
+  const toolbar = document.createElement("div")
   toolbar.className = "md-editor-toolbar"
-  setAttr(toolbar, "role", "toolbar")
-  setAttr(toolbar, "aria-label", "Formatting tools")
+  toolbar.setAttribute("role", "toolbar")
+  toolbar.setAttribute("aria-label", "Formatting tools")
 
-  toolbarGroups.forEach((group, gi) => {
-    if (gi > 0) {
-      const sep = domEl("span")
-      sep.className = "md-toolbar-sep"
-      setAttr(sep, "aria-hidden", "true")
-      toolbar.appendChild(sep)
-    }
-    const gEl = domEl("div", "md-toolbar-group")
-    for (const [id, label, icon, run] of group) {
-      const btn = domEl("button")
-      btn.type = "button"
-      btn.className = "md-tool-btn"
-      btn.dataset.mdAction = id
-      btn.title = label
-      setAttr(btn, "aria-label", label)
-      btn.appendChild(createSpriteIconElement(icon, { size: 16 }))
-      btn.addEventListener("click", () => { if (currentMode !== "markdown") void setMode("markdown"); run(field) }, { signal })
-      gEl.appendChild(btn)
-    }
-    toolbar.appendChild(gEl)
-  })
-
-  const visualStatusHint = domEl("span", "md-editor-mode-label")
-  visualStatusHint.hidden = true
-
-  const modesWrap = domEl("div", "md-editor-modes")
-  setAttr(modesWrap, "role", "tablist")
-  setAttr(modesWrap, "aria-label", "Description editor mode")
-
-  const baseId = field.id || `md-editor-${++nextEditorInstanceId}`
-  const modes: readonly DescriptionEditorMode[] = ["visual", "markdown", "preview"]
-  const panelIds: Record<DescriptionEditorMode, string> = {
-    visual: `${baseId}-panel-visual`, markdown: `${baseId}-panel-markdown`, preview: `${baseId}-panel-preview`,
-  }
-
-  const visual = domEl("div")
-  visual.id = panelIds.visual
-  visual.className = "md-visual-surface"
-  setAttr(visual, "role", "tabpanel")
-  visual.hidden = true
-  setAttr(visual, "aria-label", field.getAttribute("aria-label") || "Visual description editor")
-
-  const preview = domEl("div")
-  preview.id = panelIds.preview
-  preview.className = "prose md-preview-surface wrap-break-word"
-  setAttr(preview, "role", "tabpanel")
-  preview.hidden = true
-
-  const modeButtons = new Map<DescriptionEditorMode, HTMLButtonElement>()
-  for (const [m, text] of [["visual", "Visual"], ["markdown", "Markdown"], ["preview", "Preview"]] as const) {
-    const btn = domEl("button")
-    btn.type = "button"
-    btn.id = `${baseId}-tab-${m}`
-    btn.role = "tab"
-    btn.className = "md-mode-btn"
-    btn.dataset.mdMode = m
-    btn.textContent = text
-    setAttr(btn, "aria-controls", m === "markdown" ? field.id || panelIds.markdown : panelIds[m])
-    setAttr(btn, "aria-selected", String(m === "markdown"))
-    btn.classList.toggle("active", m === "markdown")
-    btn.tabIndex = m === "markdown" ? 0 : -1
-    modeButtons.set(m, btn)
-    modesWrap.appendChild(btn)
-  }
-  setAttr(visual, "aria-labelledby", modeButtons.get("visual")!.id)
-  setAttr(preview, "aria-labelledby", modeButtons.get("preview")!.id)
-  header.append(toolbar, visualStatusHint, modesWrap)
-
-  const notice = domEl("p")
-  notice.className = "md-editor-notice"
-  setAttr(notice, "role", "status")
-  notice.hidden = true
-
-  field.parentElement!.insertBefore(frame, field)
-  frame.append(header, notice, field, visual, preview)
-
-  let currentMode: DescriptionEditorMode = "markdown"
+  let currentMode: DescriptionEditorMode = "visual"
   let activeHugeRte: HugeRteEditorInstance | null = null
   let fallbackEditable: HTMLDivElement | null = null
   let visualDirty = false
   let syncingFromInit = false
   let lossyLocked = false
   let renderSeq = 0
+
+  function applyVisualFormat(actionId: string): void {
+    if (lossyLocked) {
+      void setMode("markdown", true)
+      return
+    }
+    if (!fallbackEditable) return
+    fallbackEditable.focus()
+    const sel = window.getSelection()
+    const wrapSelectionTag = (tag: "code" | "a", placeholder: string) => {
+      if (!sel || sel.rangeCount === 0) return
+      const range = sel.getRangeAt(0)
+      if (!fallbackEditable?.contains(range.commonAncestorContainer)) return
+      const selected = range.toString() || placeholder
+      const el = document.createElement(tag)
+      if (tag === "a") {
+        el.setAttribute("href", "https://example.com")
+        el.setAttribute("target", "_blank")
+        el.setAttribute("rel", "noopener noreferrer")
+      }
+      el.textContent = selected
+      range.deleteContents()
+      range.insertNode(el)
+      const after = document.createRange()
+      after.selectNodeContents(el)
+      sel.removeAllRanges()
+      sel.addRange(after)
+    }
+
+    switch (actionId) {
+      case "undo": document.execCommand("undo"); break
+      case "redo": document.execCommand("redo"); break
+      case "bold": document.execCommand("bold"); break
+      case "italic": document.execCommand("italic"); break
+      case "strike": document.execCommand("strikeThrough"); break
+      case "code": wrapSelectionTag("code", "code"); break
+      case "ul": document.execCommand("insertUnorderedList"); break
+      case "ol": document.execCommand("insertOrderedList"); break
+      case "task": {
+        if (!sel || sel.rangeCount === 0) break
+        const range = sel.getRangeAt(0)
+        if (!fallbackEditable.contains(range.commonAncestorContainer)) break
+        const text = range.toString().trim() || "Task item"
+        const ul = document.createElement("ul")
+        const li = document.createElement("li")
+        const check = document.createElement("span")
+        check.className = "md-check"
+        check.textContent = "☐"
+        li.append(check, document.createTextNode(` ${text}`))
+        ul.appendChild(li)
+        range.deleteContents()
+        range.insertNode(ul)
+        break
+      }
+      case "outdent": document.execCommand("outdent"); break
+      case "indent": document.execCommand("indent"); break
+      case "quote": document.execCommand("formatBlock", false, "blockquote"); break
+      case "link": wrapSelectionTag("a", "link text"); break
+      case "codeblock": {
+        if (!sel || sel.rangeCount === 0) break
+        const range = sel.getRangeAt(0)
+        if (!fallbackEditable.contains(range.commonAncestorContainer)) break
+        const pre = document.createElement("pre")
+        const code = document.createElement("code")
+        code.textContent = range.toString() || "code block"
+        pre.appendChild(code)
+        range.deleteContents()
+        range.insertNode(pre)
+        break
+      }
+      case "clear": document.execCommand("removeFormat"); break
+      default: break
+    }
+    visualDirty = true
+    flushVisualToTextarea(true)
+  }
+
+  toolbarGroups.forEach((group, gi) => {
+    if (gi > 0) {
+      const sep = document.createElement("span")
+      sep.className = "md-toolbar-sep"
+      sep.setAttribute("aria-hidden", "true")
+      toolbar.appendChild(sep)
+    }
+    const gEl = document.createElement("div")
+    gEl.className = "md-toolbar-group"
+    for (const [id, label, icon, run] of group) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "md-tool-btn"
+      btn.dataset.mdAction = id
+      btn.title = label
+      btn.setAttribute("aria-label", label)
+      btn.appendChild(createSpriteIconElement(icon, { size: 16 }))
+      // Prevent toolbar click from clearing active rich-text selection in contentEditable
+      btn.addEventListener("mousedown", e => { e.preventDefault() }, { signal })
+      btn.addEventListener("click", () => {
+        if (currentMode === "visual") {
+          applyVisualFormat(id)
+        } else {
+          run(field)
+        }
+      }, { signal })
+      gEl.appendChild(btn)
+    }
+    toolbar.appendChild(gEl)
+  })
+
+  const visualStatusHint = document.createElement("span")
+  visualStatusHint.className = "md-editor-mode-label"
+  visualStatusHint.hidden = true
+
+  const modesWrap = document.createElement("div")
+  modesWrap.className = "md-editor-modes"
+  modesWrap.setAttribute("role", "tablist")
+  modesWrap.setAttribute("aria-label", "Description editor mode")
+
+  const baseId = field.id || `md-editor-${++unnamedEditorCount}`
+  const modes: readonly DescriptionEditorMode[] = ["visual", "markdown", "preview"]
+  const panelIds: Record<DescriptionEditorMode, string> = {
+    visual: `${baseId}-panel-visual`, markdown: `${baseId}-panel-markdown`, preview: `${baseId}-panel-preview`,
+  }
+
+  const visual = document.createElement("div")
+  visual.id = panelIds.visual
+  visual.className = "md-visual-surface"
+  visual.setAttribute("role", "tabpanel")
+  visual.hidden = false
+  visual.setAttribute("aria-label", field.getAttribute("aria-label") || "Visual description editor")
+
+  const preview = document.createElement("div")
+  preview.id = panelIds.preview
+  preview.className = "prose md-preview-surface wrap-break-word"
+  preview.setAttribute("role", "tabpanel")
+  preview.hidden = true
+
+  const modeButtons = new Map<DescriptionEditorMode, HTMLButtonElement>()
+  for (const [m, text] of [["visual", "Visual"], ["markdown", "Markdown"], ["preview", "Preview"]] as const) {
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.id = `${baseId}-tab-${m}`
+    btn.role = "tab"
+    btn.className = "md-mode-btn"
+    btn.dataset.mdMode = m
+    btn.textContent = text
+    btn.setAttribute("aria-controls", m === "markdown" ? field.id || panelIds.markdown : panelIds[m])
+    btn.setAttribute("aria-selected", String(m === "visual"))
+    btn.classList.toggle("active", m === "visual")
+    btn.tabIndex = m === "visual" ? 0 : -1
+    modeButtons.set(m, btn)
+    modesWrap.appendChild(btn)
+  }
+  visual.setAttribute("aria-labelledby", modeButtons.get("visual")!.id)
+  preview.setAttribute("aria-labelledby", modeButtons.get("preview")!.id)
+  header.append(toolbar, visualStatusHint, modesWrap)
+
+  const notice = document.createElement("p")
+  notice.className = "md-editor-notice"
+  notice.setAttribute("role", "status")
+  notice.hidden = true
+
+  field.hidden = true
+  field.parentElement!.insertBefore(frame, field)
+  frame.append(header, notice, field, visual, preview)
 
   function flushVisualToTextarea(force = false): void {
     if (currentMode !== "visual" || lossyLocked || (!force && !visualDirty)) return
@@ -459,7 +528,18 @@ export function enhanceDescriptionEditor(
     }
   }
 
+  let activeResizeObserver: ResizeObserver | null = null
+  let activeResizeRaf = 0
+
   function destroyVisualInstance(): void {
+    if (activeResizeRaf) {
+      cancelAnimationFrame(activeResizeRaf)
+      activeResizeRaf = 0
+    }
+    if (activeResizeObserver) {
+      activeResizeObserver.disconnect()
+      activeResizeObserver = null
+    }
     try { activeHugeRte?.destroy() } catch { /* ignore teardown noise */ }
     activeHugeRte = null
     fallbackEditable = null
@@ -476,9 +556,12 @@ export function enhanceDescriptionEditor(
 
   async function renderFallbackEditable(md: string, readonly: boolean, seq: number): Promise<void> {
     if (signal.aborted || seq !== renderSeq) return
-    const surface = domEl("div", "md-visual-fallback prose")
+    const surface = document.createElement("div")
+    surface.className = "md-visual-fallback prose"
     surface.contentEditable = readonly ? "false" : "true"
-    setAttr(surface, "aria-label", field.getAttribute("aria-label") || "Visual description editor")
+    surface.setAttribute("aria-label", field.getAttribute("aria-label") || "Visual description editor")
+    const placeholder = field.getAttribute("placeholder")
+    if (placeholder) surface.dataset.placeholder = placeholder
     visual.replaceChildren(surface)
     fallbackEditable = surface
 
@@ -497,7 +580,7 @@ export function enhanceDescriptionEditor(
         const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
         const pasted = await sanitizePastedHtml(html, e.clipboardData?.getData("text/plain") ?? "")
         if (!pasted || signal.aborted) return
-        if (qs(pasted.doc.body, "table, pre") || hasLossyStructure(pasted.md)) {
+        if (pasted.doc.body.querySelector("table, pre") || hasLossyStructure(pasted.md)) {
           const s = field.selectionStart ?? field.value.length, end = field.selectionEnd ?? field.value.length
           field.setRangeText(pasted.md, s, end, "end")
           field.dispatchEvent(new Event("input", { bubbles: true }))
@@ -518,7 +601,7 @@ export function enhanceDescriptionEditor(
       }, { signal })
     }
 
-    if (!md.trim()) { surface.replaceChildren(domEl("p")); return }
+    if (!md.trim()) { surface.replaceChildren(); return }
     await renderMarkdownPreviewInto(surface, md, { shouldApply: () => !signal.aborted && seq === renderSeq })
   }
 
@@ -528,6 +611,7 @@ export function enhanceDescriptionEditor(
     if (lossyLocked) {
       notice.textContent = "This description uses fenced code blocks or raw HTML that edit safely in Markdown mode."
       notice.hidden = false
+      toolbar.hidden = true
       await renderFallbackEditable(md, true, seq)
       return
     }
@@ -536,9 +620,14 @@ export function enhanceDescriptionEditor(
     ])
     if (signal.aborted || seq !== renderSeq || currentMode !== "visual") return
     const initialHtml = md.trim() ? sanitizeClient(renderMarkdownToHtml(md)) : ""
-    if (!hugeRte) { await renderFallbackEditable(md, false, seq); return }
+    if (!hugeRte) {
+      toolbar.hidden = false
+      visualStatusHint.hidden = true
+      await renderFallbackEditable(md, false, seq)
+      return
+    }
 
-    const target = domEl("textarea")
+    const target = document.createElement("textarea")
     target.className = "md-hugerte-target"
     target.value = initialHtml
     visual.replaceChildren(target)
@@ -546,7 +635,8 @@ export function enhanceDescriptionEditor(
     const dark = isDarkThemeActive(), baseUrl = getHugeRteBaseUrl()
     const editors = await hugeRte.init({
       target, base_url: baseUrl, suffix: ".min", menubar: false, statusbar: false, branding: false,
-      promotion: false, resize: false, min_height: 180, plugins: HUGERTE_PLUGINS, toolbar: HUGERTE_TOOLBAR,
+      promotion: false, resize: false, width: "100%", height: 195, min_height: 140,
+      plugins: HUGERTE_PLUGINS, toolbar: HUGERTE_TOOLBAR,
       toolbar_mode: "sliding", skin: dark ? "oxide-dark" : "oxide",
       skin_url: `${baseUrl}/skins/ui/${dark ? "oxide-dark" : "oxide"}`,
       content_css: `${baseUrl}/skins/content/${dark ? "dark" : "default"}/content.min.css`,
@@ -559,6 +649,11 @@ export function enhanceDescriptionEditor(
           if (initialHtml) editor.setContent(initialHtml)
           syncingFromInit = false
           visualDirty = false
+          requestAnimationFrame(() => {
+            if (!signal.aborted && activeHugeRte === editor) {
+              window.dispatchEvent(new Event("resize"))
+            }
+          })
         })
         editor.on("input change Dirty ExecCommand Paste Cut Undo Redo", () => {
           if (syncingFromInit || signal.aborted || currentMode !== "visual") return
@@ -570,16 +665,45 @@ export function enhanceDescriptionEditor(
     const mounted = editors[0] ?? null
     if (!mounted || signal.aborted || seq !== renderSeq || currentMode !== "visual") {
       try { mounted?.destroy() } catch { /* ignore teardown race */ }
-      if (!mounted && !signal.aborted && seq === renderSeq && currentMode === "visual") await renderFallbackEditable(md, false, seq)
+      if (!mounted && !signal.aborted && seq === renderSeq && currentMode === "visual") {
+        toolbar.hidden = false
+        visualStatusHint.hidden = true
+        await renderFallbackEditable(md, false, seq)
+      }
       return
     }
+    // HugeRTE renders its own integrated formatting toolbar inside the visual frame
+    toolbar.hidden = true
+    visualStatusHint.hidden = false
+    visualStatusHint.textContent = "Rich text"
     activeHugeRte = mounted
+
+    if (typeof ResizeObserver !== "undefined") {
+      let lastWidth = Math.round(visual.getBoundingClientRect().width)
+      const ro = new ResizeObserver((entries) => {
+        const nextWidth = Math.round(entries[0]?.contentRect.width ?? 0)
+        if (nextWidth > 0 && Math.abs(nextWidth - lastWidth) > 8) {
+          lastWidth = nextWidth
+          if (activeResizeRaf) cancelAnimationFrame(activeResizeRaf)
+          activeResizeRaf = requestAnimationFrame(() => {
+            activeResizeRaf = 0
+            if (!signal.aborted && activeHugeRte === mounted && !mounted.removed) {
+              window.dispatchEvent(new Event("resize"))
+            }
+          })
+        }
+      })
+      ro.observe(visual)
+      activeResizeObserver = ro
+    }
   }
 
   async function renderPreview(md: string, seq: number): Promise<void> {
     if (signal.aborted || seq !== renderSeq) return
     if (!md.trim()) {
-      const empty = domEl("em", "text-text-muted", "Nothing to preview.")
+      const empty = document.createElement("em")
+      empty.className = "text-text-muted"
+      empty.textContent = "Nothing to preview."
       preview.replaceChildren(empty)
       return
     }
@@ -587,19 +711,21 @@ export function enhanceDescriptionEditor(
   }
 
   async function setMode(nextMode: DescriptionEditorMode, focus = true): Promise<void> {
+    const focusOrigin = document.activeElement
     if (currentMode === "visual" && nextMode !== "visual") { flushVisualToTextarea(); destroyVisualInstance() }
     const seq = ++renderSeq
     currentMode = nextMode
     visualDirty = false
     for (const [m, btn] of modeButtons) {
       const sel = m === nextMode
-      setAttr(btn, "aria-selected", String(sel))
+      btn.setAttribute("aria-selected", String(sel))
       btn.tabIndex = sel ? 0 : -1
       btn.classList.toggle("active", sel)
     }
-    toolbar.hidden = nextMode !== "markdown"
-    visualStatusHint.hidden = nextMode === "markdown"
-    visualStatusHint.textContent = nextMode === "visual" ? "Rich text (HugeRTE)" : "Preview"
+    // Visual shows the rich formatting toolbar; Markdown is plain text; Preview is read-only
+    toolbar.hidden = nextMode !== "visual"
+    visualStatusHint.hidden = nextMode === "visual"
+    visualStatusHint.textContent = nextMode === "markdown" ? "Plain Markdown" : "Preview"
     field.hidden = nextMode !== "markdown"
     visual.hidden = nextMode !== "visual"
     preview.hidden = nextMode !== "preview"
@@ -607,13 +733,21 @@ export function enhanceDescriptionEditor(
 
     if (nextMode === "visual") {
       await mountHugeRteVisual(field.value, seq)
-      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq) activeHugeRte?.removed === false ? activeHugeRte.focus?.() : fallbackEditable?.focus()
+      const currentFocus = document.activeElement
+      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq &&
+          (currentFocus === focusOrigin || (currentFocus === document.body && !focusOrigin?.isConnected))) {
+        if (activeHugeRte?.removed === false) activeHugeRte.focus?.()
+        else fallbackEditable?.focus()
+      }
     } else if (nextMode === "preview") {
       await renderPreview(field.value, seq)
     } else if (focus) field.focus()
   }
 
   for (const [m, btn] of modeButtons) btn.addEventListener("click", () => void setMode(m), { signal })
+
+  // Mount Visual WYSIWYG mode immediately on initialization without stealing focus
+  void setMode("visual", false)
 
   modesWrap.addEventListener("keydown", e => {
     const idx = modes.findIndex(m => modeButtons.get(m) === document.activeElement)

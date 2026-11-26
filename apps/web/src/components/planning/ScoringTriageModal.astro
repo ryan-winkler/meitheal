@@ -1,0 +1,748 @@
+---
+/**
+ * ScoringTriageModal — Unified Tabler Multi-Framework Scoring Triage Modal
+ *
+ * Supports Eisenhower, RICE, DRICE, ICE, WSJF, MoSCoW, and Story Points
+ * with Sprint/Cycle, Epic, Project, and Area queue filters.
+ *
+ * @domain strategy / planning
+ */
+import Icon from "../ui/Icon.astro"
+import { TRIAGE_FRAMEWORKS, STORY_POINT_CHOICES, type TriageFrameworkId } from "@lib/scoring-triage"
+
+interface Props {
+  defaultFramework?: TriageFrameworkId
+}
+
+const { defaultFramework = "eisenhower" } = Astro.props
+---
+
+<div
+  id="scoring-triage-modal"
+  class="st-modal-backdrop"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="st-modal-title"
+  data-default-framework={defaultFramework}
+  hidden
+>
+  <div class="st-modal-dialog card">
+    <!-- Tabler Modal Header -->
+    <header class="st-modal-header card-header">
+      <div class="st-modal-header__left">
+        <span class="st-modal-header__icon" aria-hidden="true">
+          <Icon name="sliders" size={18} sprite />
+        </span>
+        <div>
+          <h2 id="st-modal-title" class="st-modal-title">Scoring Triage</h2>
+          <p id="st-framework-desc" class="st-modal-subtitle">Classify and score open tasks one at a time.</p>
+        </div>
+      </div>
+      <div class="st-modal-header__right">
+        <span id="st-progress-badge" class="st-progress-badge">0 / 0</span>
+        <button type="button" class="btn-icon st-close-btn" id="st-close-btn" aria-label="Close triage" title="Close (Esc)">
+          <Icon name="x" size={16} sprite />
+        </button>
+      </div>
+    </header>
+
+    <!-- Thin progress indicator -->
+    <div class="st-progress-track" aria-hidden="true">
+      <div class="st-progress-fill" id="st-progress-fill" style="width: 0%;"></div>
+    </div>
+
+    <!-- Framework Switcher + Scope Filters (Sprint / Epic / Project / Area) -->
+    <div class="st-toolbar">
+      <div class="st-toolbar__row st-toolbar__row--primary">
+        <div class="st-field-compact">
+          <label class="st-filter-label" for="st-framework-select">Scoring Framework</label>
+          <select id="st-framework-select" class="form-select form-select-sm st-select">
+            {TRIAGE_FRAMEWORKS.map((fw) => (
+              <option value={fw.id} selected={fw.id === defaultFramework}>{fw.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <label class="st-switch-label" for="st-unscored-only" title="Show only tasks not yet scored in this framework">
+          <input type="checkbox" id="st-unscored-only" class="form-check-input" checked />
+          <span>Unscored only</span>
+        </label>
+      </div>
+
+      <div class="st-toolbar__filters" aria-label="Filter triage queue">
+        <div class="st-field-compact">
+          <label class="st-filter-label" for="st-filter-sprint">Sprint / Cycle</label>
+          <select id="st-filter-sprint" class="form-select form-select-sm st-select">
+            <option value="">All sprints &amp; dates</option>
+            <option value="due:this-week">Due this week</option>
+            <option value="due:next-2-weeks">Next 2 weeks</option>
+            <option value="due:overdue">Overdue</option>
+            <option value="due:unscheduled">Unscheduled</option>
+          </select>
+        </div>
+
+        <div class="st-field-compact">
+          <label class="st-filter-label" for="st-filter-epic">Epic</label>
+          <select id="st-filter-epic" class="form-select form-select-sm st-select">
+            <option value="">All epics</option>
+          </select>
+        </div>
+
+        <div class="st-field-compact">
+          <label class="st-filter-label" for="st-filter-project">Project</label>
+          <select id="st-filter-project" class="form-select form-select-sm st-select">
+            <option value="">All projects</option>
+          </select>
+        </div>
+
+        <div class="st-field-compact">
+          <label class="st-filter-label" for="st-filter-area">Area</label>
+          <select id="st-filter-area" class="form-select form-select-sm st-select">
+            <option value="">All areas</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Body -->
+    <div class="st-modal-body card-body">
+      <!-- Empty Queue State -->
+      <div id="st-empty-state" class="st-empty-state" hidden>
+        <span class="st-empty-state__icon" aria-hidden="true">
+          <Icon name="check" size={24} sprite />
+        </span>
+        <h3 id="st-empty-title" class="st-empty-state__title">No tasks match these filters</h3>
+        <p id="st-empty-desc" class="st-empty-state__desc">
+          Everything in this queue is already scored, or no open tasks match your selected Sprint, Epic, Project, or Area.
+        </p>
+        <div class="st-empty-state__actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="st-show-all-btn">Include already-scored tasks</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="st-reset-filters-btn">Reset filters</button>
+        </div>
+      </div>
+
+      <!-- Active Task Workspace -->
+      <div id="st-task-workspace" class="st-task-workspace">
+        <div class="st-task-card">
+          <div class="st-task-card__meta" id="st-task-meta"></div>
+          <h3 class="st-task-card__title" id="st-task-title">Loading tasks…</h3>
+        </div>
+
+        <!-- Dynamic Framework Scoring Controls (Tabler range + number / selectgroup) -->
+        <div id="st-controls" class="st-controls"></div>
+
+        <!-- Live Score / Quadrant Preview -->
+        <div id="st-preview" class="st-preview" data-tone="muted" aria-live="polite">
+          <span class="st-preview__badge" id="st-preview-badge">Unclassified</span>
+          <span class="st-preview__detail" id="st-preview-detail">Adjust controls above to score this task</span>
+        </div>
+
+        <!-- Progressive Disclosure: Story Points Quick-Tag & Planning Details -->
+        <details class="st-details" id="st-details">
+          <summary class="st-details__summary">
+            <Icon name="sliders" size={14} sprite />
+            <span>Story Points &amp; Planning Details</span>
+          </summary>
+          <div class="st-details__grid">
+            <div class="st-detail-group st-detail-group--full" id="st-quick-sp-group">
+              <span class="st-detail-label">Story Points (Fibonacci)</span>
+              <div class="form-selectgroup st-selectgroup" role="radiogroup" aria-label="Story points">
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-quick-sp" value="" class="form-selectgroup-input" checked />
+                  <span class="form-selectgroup-label st-sg-label">—</span>
+                </label>
+                {STORY_POINT_CHOICES.map((c) => (
+                  <label class="form-selectgroup-item st-sg-item" title={`${c.label} pt — ${c.hint}`}>
+                    <input type="radio" name="st-quick-sp" value={String(c.value)} class="form-selectgroup-input" />
+                    <span class="form-selectgroup-label st-sg-label">{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div class="st-detail-group">
+              <label class="st-detail-label" for="st-detail-effort">Estimated Effort</label>
+              <select id="st-detail-effort" class="form-select form-select-sm st-select">
+                <option value="">— Not set</option>
+                <option value="5">5m (Quick)</option>
+                <option value="15">15m (Quick)</option>
+                <option value="30">30m (Medium)</option>
+                <option value="60">1h (Medium)</option>
+                <option value="120">2h (Deep)</option>
+                <option value="240">4h (Deep)</option>
+              </select>
+            </div>
+
+            <div class="st-detail-group">
+              <label class="st-detail-label" for="st-detail-delay">Delay Impact</label>
+              <select id="st-detail-delay" class="form-select form-select-sm st-select">
+                <option value="none">None — no impact</option>
+                <option value="inconvenient">Inconvenient</option>
+                <option value="costly">Costly</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+
+            <div class="st-detail-group st-detail-group--full">
+              <span class="st-detail-label">Work Type</span>
+              <div class="form-selectgroup st-selectgroup" role="radiogroup" aria-label="Work type">
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-effort-type" value="" class="form-selectgroup-input" checked />
+                  <span class="form-selectgroup-label st-sg-label">—</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-effort-type" value="deep" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Deep</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-effort-type" value="shallow" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Shallow</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-effort-type" value="admin" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Admin</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="st-detail-group st-detail-group--full">
+              <span class="st-detail-label">Interest Level</span>
+              <div class="form-selectgroup st-selectgroup" role="radiogroup" aria-label="Interest level">
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-interest" value="" class="form-selectgroup-input" checked />
+                  <span class="form-selectgroup-label st-sg-label">—</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-interest" value="engaging" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Engaging</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-interest" value="neutral" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Neutral</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-interest" value="dreaded" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Dreaded</span>
+                </label>
+                <label class="form-selectgroup-item st-sg-item">
+                  <input type="radio" name="st-interest" value="quick-win" class="form-selectgroup-input" />
+                  <span class="form-selectgroup-label st-sg-label">Quick Win</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Tabler Modal Footer -->
+    <footer class="st-modal-footer card-footer">
+      <div class="st-footer-left">
+        <button type="button" class="btn btn-ghost btn-sm" id="st-prev-btn">
+          <span>Previous</span>
+        </button>
+      </div>
+      <div class="st-footer-right">
+        <button type="button" class="btn btn-secondary btn-sm" id="st-skip-btn">
+          <span>Skip</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" id="st-save-btn">
+          <Icon name="check" size={14} sprite />
+          <span>Save &amp; Next</span>
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<style is:inline>
+  .st-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 320;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(8, 12, 18, 0.72);
+    animation: st-fade-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .st-modal-backdrop[hidden] {
+    display: none;
+  }
+  @keyframes st-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .st-modal-dialog {
+    width: min(700px, 100%);
+    max-height: min(90vh, 820px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+  }
+  .st-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .st-modal-header__left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .st-modal-header__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+    color: var(--accent-text, var(--accent));
+    flex-shrink: 0;
+  }
+  .st-modal-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .st-modal-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+  }
+  .st-modal-header__right {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .st-progress-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+  .st-progress-track {
+    height: 3px;
+    width: 100%;
+    background: var(--bg-secondary);
+    overflow: hidden;
+  }
+  .st-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .st-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 18px;
+    background: color-mix(in srgb, var(--bg-secondary) 70%, var(--bg-card));
+    border-bottom: 1px solid var(--border);
+  }
+  .st-toolbar__row--primary {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .st-toolbar__row--primary .st-field-compact {
+    flex: 1 1 240px;
+  }
+  .st-toolbar__filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .st-field-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .st-filter-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .st-select {
+    width: 100%;
+    height: 32px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+  .st-switch-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-card);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .st-modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .st-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    padding: 36px 16px;
+  }
+  .st-empty-state[hidden] {
+    display: none;
+  }
+  .st-empty-state__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+    color: var(--accent-text, var(--accent));
+  }
+  .st-empty-state__title {
+    margin: 4px 0 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .st-empty-state__desc {
+    margin: 0;
+    max-width: 420px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+  .st-empty-state__actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .st-task-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .st-task-workspace[hidden] {
+    display: none;
+  }
+  .st-task-card {
+    padding: 12px 14px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .st-task-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+  }
+  .st-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+  .st-meta-chip--key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--accent-text, var(--accent));
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+  .st-task-card__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.35;
+  }
+  .st-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 12px;
+  }
+  .st-control-card {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .st-control-card--full {
+    grid-column: 1 / -1;
+  }
+  .st-control-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .st-control-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .st-control-num-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .st-control-num {
+    width: 68px;
+    height: 30px;
+    padding: 2px 6px;
+    text-align: right;
+    font-size: 0.84rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+  .st-control-suffix {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .st-control-range {
+    width: 100%;
+    height: 22px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .st-control-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+  .st-control-hint {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+  }
+  .st-selectgroup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .st-sg-item {
+    position: relative;
+    display: inline-flex;
+    cursor: pointer;
+  }
+  .st-sg-item input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+  }
+  .st-sg-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    min-width: 38px;
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 110ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .st-sg-label:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+  .st-sg-label:active {
+    transform: scale(0.97);
+  }
+  .st-sg-item input:checked + .st-sg-label {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+    color: var(--accent-text, var(--accent));
+  }
+  .st-sg-item input:focus-visible + .st-sg-label {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .st-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .st-preview[data-tone="danger"] {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+    background: color-mix(in srgb, var(--danger) 10%, var(--bg-card));
+  }
+  .st-preview[data-tone="warning"] {
+    border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+    background: color-mix(in srgb, var(--warning) 10%, var(--bg-card));
+  }
+  .st-preview[data-tone="info"] {
+    border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border));
+    background: color-mix(in srgb, var(--info, var(--accent)) 10%, var(--bg-card));
+  }
+  .st-preview[data-tone="success"] {
+    border-color: color-mix(in srgb, var(--success, #22c55e) 45%, var(--border));
+    background: color-mix(in srgb, var(--success, #22c55e) 10%, var(--bg-card));
+  }
+  .st-preview__badge {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .st-preview__detail {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .st-details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-secondary);
+    overflow: hidden;
+  }
+  .st-details__summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+  }
+  .st-details__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .st-detail-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+  .st-detail-group--full {
+    grid-column: 1 / -1;
+  }
+  .st-detail-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .st-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .st-footer-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .st-modal-footer .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  @media (max-width: 680px) {
+    .st-toolbar__filters {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .st-details__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .st-modal-backdrop,
+    .st-progress-fill,
+    .st-sg-label {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>

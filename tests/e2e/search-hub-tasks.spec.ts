@@ -207,8 +207,10 @@ test("Search-owned Details handles DELETE rejection and cancels a pending receip
         page.goBack(),
       ])
       expect(cancelled.failure()?.errorText).toBe("net::ERR_ABORTED")
+      const restoredTitle = page.locator("#td-title")
+      await expect(restoredTitle).toBeEditable()
+      await expect(restoredTitle).toHaveValue(title)
       await expect(page).toHaveURL(older)
-      await expect(page.locator("#td-title")).toHaveValue(title)
     } finally {
       held.resolve()
     }

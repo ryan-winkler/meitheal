@@ -9,6 +9,7 @@ class FixtureElement extends EventTarget {
   readonly classes = new Set<string>()
   readonly classList = {
     contains: (name: string) => this.classes.has(name),
+    remove: (...names: string[]) => names.forEach(name => this.classes.delete(name)),
     toggle: (name: string, force: boolean) => {
       if (force) this.classes.add(name)
       else this.classes.delete(name)

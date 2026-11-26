@@ -66,6 +66,8 @@ test("Household picker and every task view retain context; modal, lane and draft
     await page.goto(app + `/boards/household?project=${project.id}`)
     await page.locator("#kanban-bar-new-task").click()
     await page.locator("#new-task-title-input").fill("Modal Project capture")
+    await page.locator("#nt-split-toggle").click()
+    await page.locator('[data-after-create="open"]').click()
     const saved = page.waitForResponse(response => response.url().endsWith("/api/tasks") && response.request().method() === "POST")
     await page.locator("#submit-new-task-btn").click()
     const modalTask = await (await saved).json()

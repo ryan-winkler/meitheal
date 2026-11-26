@@ -1,16 +1,18 @@
 /**
- * habits-card-renderer.ts — Habit card DOM builder, formatters, and stats
+ * habits-card-renderer.ts — Routine card DOM builder, formatters, and stats
  *
  * @domain tasks
  * @kcs Extracted from habits-controller.ts for decomposition.
  *      Pure rendering functions — no side effects, no fetch calls.
- *      Takes habit data array and renders cards + updates stat elements.
+ *      Takes routine data array and renders Tabler cards + updates stat elements.
  */
 
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { buildIngressPagePath } from "@lib/page-shell-links"
 import { formatCalendarDay } from "@lib/calendar-day"
 import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { taskDetailPath } from "@lib/task-page-url"
+import { cadenceToRRule, describeRule, parseRRule } from "@domains/tasks/recurrence"
 import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
@@ -24,7 +26,7 @@ export interface HabitData {
   id: string
   name: string
   icon: string
-  cadence: "daily" | "weekly"
+  cadence: string
   todayCompleted: boolean
   todayTaskId: string | null
   lastCompletedDate: string | null
@@ -37,8 +39,16 @@ export interface HabitData {
   checklists: HabitChecklistItem[]
 }
 
-function formatCadence(cadence: HabitData["cadence"]): string {
-  return cadence === "weekly" ? "Weekly" : "Daily"
+function formatCadence(cadence: string): string {
+  return describeRule(cadence) || "Daily"
+}
+
+function streakUnit(cadence: string): string {
+  const parsed = parseRRule(cadenceToRRule(cadence) ?? cadence)
+  if (parsed?.freq === "WEEKLY") return "week"
+  if (parsed?.freq === "MONTHLY") return "month"
+  if (parsed?.freq === "YEARLY") return "year"
+  return "day"
 }
 
 function formatLastCompletedDate(value: string | null): string {
@@ -50,22 +60,17 @@ function formatLastCompletedDate(value: string | null): string {
 
 function priorityLabel(priority: number): string {
   switch (priority) {
-    case 1:
-      return "P1"
-    case 2:
-      return "P2"
-    case 4:
-      return "P4"
-    case 5:
-      return "P5"
-    default:
-      return "P3"
+    case 1: return "P1"
+    case 2: return "P2"
+    case 4: return "P4"
+    case 5: return "P5"
+    default: return "P3"
   }
 }
 
 function createMetaItem(text: string, className?: string): HTMLSpanElement {
   const item = document.createElement("span")
-  item.className = className ? `habit-card__meta-item ${className}` : "habit-card__meta-item"
+  item.className = className ? `badge habit-card__meta-item ${className}` : "badge habit-card__meta-item"
   item.textContent = text
   return item
 }
@@ -117,7 +122,7 @@ function createChecklistList(habit: HabitData): HTMLUListElement {
 
 function createHabitCard(habit: HabitData): HTMLElement {
   const card = document.createElement("article")
-  card.className = `habit-card${habit.todayCompleted ? " completed" : ""}`
+  card.className = `card habit-card${habit.todayCompleted ? " completed" : ""}`
   card.dataset.habitId = habit.id
 
   const top = document.createElement("div")
@@ -135,7 +140,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   completeButton.setAttribute("aria-pressed", habit.todayCompleted ? "true" : "false")
   completeButton.setAttribute(
     "aria-label",
-    habit.todayCompleted ? `${habit.name} completed for this period` : `Complete ${habit.name} today`,
+    habit.todayCompleted ? `${habit.name} completed for this period` : `Complete ${habit.name}`,
   )
   if (habit.todayCompleted) {
     completeButton.replaceChildren(createSpriteIconElement("check", { size: 16 }))
@@ -145,7 +150,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   icon.className = "habit-card__icon"
   icon.setAttribute("aria-hidden", "true")
   const mappedIcon = mapEntityEmojiToTabler(habit.icon)
-  if (mappedIcon) icon.replaceChildren(createSpriteIconElement(mappedIcon, { size: 20 }))
+  if (mappedIcon) icon.replaceChildren(createSpriteIconElement(mappedIcon, { size: 18 }))
   else icon.textContent = habit.icon || ""
 
   const info = document.createElement("div")
@@ -157,8 +162,16 @@ function createHabitCard(habit: HabitData): HTMLElement {
 
   const meta = document.createElement("div")
   meta.className = "habit-card__meta"
+
+  const cadenceBadge = document.createElement("span")
+  cadenceBadge.className = "badge habit-card__meta-item habit-card__cadence"
+  cadenceBadge.replaceChildren(
+    createSpriteIconElement("repeat", { size: 12 }),
+    document.createTextNode(formatCadence(habit.cadence)),
+  )
+
   meta.append(
-    createMetaItem(formatCadence(habit.cadence)),
+    cadenceBadge,
     createMetaItem(priorityLabel(habit.priority)),
     createMetaItem(`${habit.totalCompletions} total`),
     createMetaItem(formatLastCompletedDate(habit.lastCompletedDate)),
@@ -166,13 +179,10 @@ function createHabitCard(habit: HabitData): HTMLElement {
 
   if (habit.currentStreak > 0) {
     const streakItem = document.createElement("span")
-    streakItem.className = "habit-card__meta-item habit-card__streak"
-    streakItem.style.display = "inline-flex"
-    streakItem.style.alignItems = "center"
-    streakItem.style.gap = "4px"
+    streakItem.className = "badge habit-card__meta-item habit-card__streak"
     streakItem.replaceChildren(
-      createSpriteIconElement("flame", { size: 14 }),
-      document.createTextNode(`${habit.currentStreak} ${habit.cadence === "weekly" ? "week" : "day"} streak`),
+      createSpriteIconElement("flame", { size: 13 }),
+      document.createTextNode(`${habit.currentStreak} ${streakUnit(habit.cadence)} streak`),
     )
     meta.prepend(streakItem)
   }
@@ -183,14 +193,20 @@ function createHabitCard(habit: HabitData): HTMLElement {
 
   if (habit.todayTaskId) {
     const taskLink = document.createElement("a")
-    taskLink.className = "habit-card__meta-item habit-card__task-link"
-    taskLink.href = taskDetailPath(habit.todayTaskId)
-    taskLink.textContent = "View task"
+    taskLink.className = "badge habit-card__meta-item habit-card__task-link"
+    taskLink.href = buildIngressPagePath(taskDetailPath(habit.todayTaskId))
+    taskLink.dataset.taskDetailLink = habit.todayTaskId
+    taskLink.replaceChildren(
+      createSpriteIconElement("external-link", { size: 12 }),
+      document.createTextNode("View task"),
+    )
     meta.append(taskLink)
   }
 
   if (habit.checklists.length > 0) {
-    meta.append(createMetaItem(`${habit.checklists.length} checklist items`))
+    meta.append(
+      createMetaItem(`${habit.checklists.length} checklist item${habit.checklists.length === 1 ? "" : "s"}`),
+    )
   }
 
   info.append(name, meta)
@@ -221,7 +237,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
 }
 
 /**
- * Render habits list into the DOM.
+ * Render routines list into the DOM.
  */
 export function renderHabits(habits: HabitData[]): void {
   const list = document.getElementById("habits-list")
@@ -235,8 +251,11 @@ export function renderHabits(habits: HabitData[]): void {
 
     const title = document.createElement("p")
     title.className = "habits-empty__title"
-    title.textContent = "No routines yet."
-    emptyState.append(title)
+    title.textContent = "No routines yet"
+    const detail = document.createElement("p")
+    detail.className = "habits-empty__detail"
+    detail.textContent = "Create a routine with any daily, weekly, monthly, or custom schedule and Meitheal will add each occurrence to your task list automatically."
+    emptyState.append(title, detail)
     list.append(emptyState)
     return
   }
@@ -247,7 +266,7 @@ export function renderHabits(habits: HabitData[]): void {
 }
 
 /**
- * Update the stats panel with current habit data.
+ * Update the stats panel with current routine data.
  */
 export function updateStats(habits: HabitData[]): void {
   const activeCount = habits.length
@@ -257,8 +276,25 @@ export function updateStats(habits: HabitData[]): void {
     (sum, habit) => sum + habit.totalCompletions,
     0,
   )
-  const dailyCount = habits.filter((habit) => habit.cadence === "daily").length
-  const weeklyCount = habits.filter((habit) => habit.cadence === "weekly").length
+
+  let daily = 0
+  let weekly = 0
+  let monthly = 0
+  let yearly = 0
+  for (const habit of habits) {
+    const parsed = parseRRule(cadenceToRRule(habit.cadence) ?? habit.cadence)
+    switch (parsed?.freq) {
+      case "WEEKLY": weekly++; break
+      case "MONTHLY": monthly++; break
+      case "YEARLY": yearly++; break
+      default: daily++; break
+    }
+  }
+  const parts: string[] = []
+  if (daily > 0) parts.push(`${daily} daily`)
+  if (weekly > 0) parts.push(`${weekly} weekly`)
+  if (monthly > 0) parts.push(`${monthly} monthly`)
+  if (yearly > 0) parts.push(`${yearly} yearly`)
 
   const statActive = document.getElementById("stat-active")
   const statCompletedToday = document.getElementById("stat-completed-today")
@@ -275,8 +311,8 @@ export function updateStats(habits: HabitData[]): void {
   if (cadenceSummary) {
     cadenceSummary.textContent =
       activeCount === 0
-        ? "Create your first routine to begin a consistent cadence."
-        : `${dailyCount} daily · ${weeklyCount} weekly routines`
+        ? "Create your first routine to automatically schedule repeating tasks."
+        : `${parts.join(" · ")} routine${activeCount === 1 ? "" : "s"}`
   }
 
   if (libraryCount) {
@@ -286,7 +322,7 @@ export function updateStats(habits: HabitData[]): void {
 }
 
 /**
- * Create a checklist builder item for the habit modal form.
+ * Create a checklist builder item for the routine modal form.
  */
 export function createChecklistBuilderItem(text = ""): HTMLDivElement {
   const row = document.createElement("div")
@@ -294,7 +330,7 @@ export function createChecklistBuilderItem(text = ""): HTMLDivElement {
 
   const input = document.createElement("input")
   input.type = "text"
-  input.className = "checklist-text"
+  input.className = "form-control checklist-text"
   input.placeholder = "Checklist item"
   input.value = text
 

@@ -435,9 +435,11 @@ test.describe("Calendar filters and recovery", () => {
   test("month navigation retains a filter while the calendar is still loading", async ({ page }) => {
     let releaseRequest = () => {}
     const pending = new Promise<void>(resolve => { releaseRequest = resolve })
+    const requested: URL[] = []
     await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      requested.push(new URL(route.request().url()))
       await pending
-      await route.abort().catch(() => {})
+      await route.continue().catch(() => {})
     })
     try {
       await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
@@ -450,8 +452,15 @@ test.describe("Calendar filters and recovery", () => {
       await expect(newTab).toHaveURL(url => url.searchParams.has("month") && !url.searchParams.has("search"))
       await newTab.close()
       await expect(next).toHaveAttribute("href", canonicalHref!)
+      const nextMonth = new URL(canonicalHref!, page.url()).searchParams.get("month")
+      // Month navigation refreshes in place: the pending request carries the filter
+      // and the address follows once that month is shown.
       await next.click()
-      await expect(page).toHaveURL(/[?&]search=roof(?:&|#)/)
+      await expect.poll(() => requested.at(-1)?.searchParams.get("month")).toBe(nextMonth)
+      expect(requested.at(-1)!.searchParams.get("search")).toBe("roof")
+      await expect(page.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
+      releaseRequest()
+      await expect(page).toHaveURL(url => url.searchParams.get("search") === "roof" && url.searchParams.get("month") === nextMonth)
       await expect(page.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
     } finally {
       releaseRequest()

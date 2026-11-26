@@ -413,6 +413,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   })).total).toBe(1)
   expect((await repo.searchCatalog({ query: `MTH-${epicTicket}`, limit: 10 })).some(r => r.id === "epic-1")).toBe(true)
   expect((await repo.searchCatalog({ query: "radiator", status: "pending", sort: "relevance" })).some(r => r.id === "child-1")).toBe(true)
+  expect(await repo.searchCatalog({ query: "radiator".repeat(65) })).toEqual([])
   expect((await repo.exportAll()).length).toBeGreaterThanOrEqual(4)
 
   // Updates, NFC, Activity log, Deferral, Comments, Kanban reorder

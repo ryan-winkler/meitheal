@@ -47,7 +47,7 @@ test.describe("workspace setup", () => {
     await expect(quick.getByRole("textbox")).toBeFocused()
     const title = "First setup task " + Date.now()
     await quick.getByRole("textbox").fill(title)
-    await quick.getByRole("button", { name: "Add", exact: true }).click()
+    await quick.getByRole("button", { name: "Add task", exact: true }).click()
     await expect(page.locator("#task-list")).toContainText(title)
 
     await page.goto("/tasks?view=kanban")
@@ -66,7 +66,9 @@ test.describe("workspace setup", () => {
     await expect(rerun).toBeFocused()
     await rerun.press("Enter")
     await expect(page).toHaveURL(/\/setup$/)
-    await page.getByText("Advanced", { exact: true }).click()
+    const advanced = page.getByRole("radio", { name: /^Advanced/ })
+    await advanced.press("Space")
+    await expect(advanced).toBeChecked()
     await expect(page.getByRole("combobox", { name: "Theme" })).toHaveValue("dark")
     await page.getByText("AI Setup", { exact: true }).click()
     await expect(page.locator('a[href*="#ai-agents-settings"]').last()).toBeVisible()
@@ -96,7 +98,7 @@ test.describe("workspace setup", () => {
     await page.locator("#dashboard-bar-new-task").click()
     const quick = page.getByRole("dialog", { name: "Quick Add" })
     await quick.getByRole("textbox").fill("One uncertain task")
-    await quick.getByRole("button", { name: "Add", exact: true }).click()
+    await quick.getByRole("button", { name: "Add task", exact: true }).click()
     try {
       await expect(quick.getByText("Saving task…")).toBeVisible()
       await page.keyboard.press("Escape")
@@ -106,7 +108,7 @@ test.describe("workspace setup", () => {
     }
     await expect(quick.getByRole("alert")).toContainText("Check your tasks")
     await expect(quick.getByRole("textbox")).toHaveValue("One uncertain task")
-    await expect(quick.getByRole("button", { name: "Add", exact: true })).toBeDisabled()
+    await expect(quick.getByRole("button", { name: "Add task", exact: true })).toBeDisabled()
     await expect(quick.getByRole("button", { name: "Open full task form" })).toBeDisabled()
     expect(submits).toBe(1)
   })

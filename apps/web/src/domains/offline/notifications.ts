@@ -9,6 +9,7 @@ import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
  */
 
 import { buildIngressPagePath } from "@lib/page-shell-links"
+import { loadNotificationPreferences, playNotificationSound } from "@lib/notification-preferences"
 import { taskDetailPath } from "@lib/task-page-url"
 import { isPwaSupported } from "./sw-register"
 
@@ -33,6 +34,8 @@ interface TaskNotification {
 
 /** Submit a notification to this installation's active worker. */
 export async function showTaskNotification(notification: TaskNotification): Promise<boolean> {
+  const prefs = loadNotificationPreferences()
+  if (!prefs.browserNotificationsEnabled) return false
   if (!isPwaSupported() || getNotificationPermission() !== "granted") return false
 
   const context = currentTaskApiContext()
@@ -85,6 +88,7 @@ export async function showTaskNotification(notification: TaskNotification): Prom
       data: { url: url.href },
       requireInteraction: notification.requireInteraction === true,
     })
+    if (prefs.soundEnabled) playNotificationSound("info")
     return true
   } catch {
     return false
@@ -121,7 +125,7 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
     const due = new Date(task.dueDate)
     if (due < now) {
       const delivered = await showTaskNotification({
-        title: "⏰ Overdue Task",
+        title: "Overdue Task",
         body: task.title,
         tag: `overdue-${task.id}`,
         url: taskDetailPath(task),
@@ -156,7 +160,7 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
     if (due > now && due <= oneHourFromNow) {
       const minutesUntilDue = Math.round((due.getTime() - now.getTime()) / 60000)
       const delivered = await showTaskNotification({
-        title: "📋 Task Due Soon",
+        title: "Task Due Soon",
         body: `${task.title} — due in ${minutesUntilDue} minutes`,
         tag: `upcoming-${task.id}`,
         url: taskDetailPath(task),

@@ -33,7 +33,7 @@ const { id, class: extraClass } = Astro.props
   </div>
 </div>
 
-<style>
+<style is:inline>
   .signal-bar {
     display: flex;
     align-items: center;
@@ -73,12 +73,12 @@ const { id, class: extraClass } = Astro.props
     min-width: 0;
   }
 
-  .signal-bar :global(strong) {
+  .signal-bar strong {
     color: var(--text-primary);
     font-weight: 600;
   }
 
-  .signal-bar :global(.summary-overdue) {
+  .signal-bar .summary-overdue {
     color: var(--danger-text);
     font-weight: 600;
   }

@@ -165,31 +165,23 @@
             "description": "Initial status (e.g. backlog, pending, active, complete)"
           },
           "priority": {
-            "type": "number",
+            "type": "integer",
             "minimum": 1,
             "maximum": 5,
-            "description": "Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5."
+            "description": "Priority 1-5 (1=Urgent, 5=Minimal)"
           },
           "due_date": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Due date (YYYY-MM-DD or ISO timestamp)"
+            "type": "string",
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD or ISO datetime)"
           },
           "start_date": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Start date or ISO timestamp"
+            "type": "string",
+            "nullable": true
           },
           "end_date": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "End date or ISO timestamp"
+            "type": "string",
+            "nullable": true
           },
           "progress": {
             "type": "integer",
@@ -214,6 +206,7 @@
               "standard_action",
               "shopping_item",
               "checklist",
+              "routine_instance",
               "calendar_event",
               "quick_capture"
             ],
@@ -231,49 +224,6 @@
             "type": "string",
             "nullable": true
           },
-          "recurrence_rule": {
-            "type": "string",
-            "nullable": true
-          },
-          "urgency": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 5
-          },
-          "importance": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 5
-          },
-          "effort_minutes": {
-            "type": "integer",
-            "nullable": true,
-            "minimum": 1,
-            "maximum": 480
-          },
-          "effort_type": {
-            "type": "string",
-            "enum": [
-              "deep",
-              "shallow",
-              "admin"
-            ],
-            "nullable": true
-          },
-          "blocked_by": {
-            "type": "string",
-            "nullable": true
-          },
-          "is_promoted": {
-            "type": "boolean",
-            "description": "Pin the new task to the top of its Kanban lane with a promoted ribbon sash."
-          },
-          "assigned_to": {
-            "type": "string",
-            "maxLength": 255,
-            "nullable": true,
-            "description": "Must start with 'ha_' or 'custom_'"
-          },
           "labels": {
             "oneOf": [
               {
@@ -288,35 +238,6 @@
               }
             ],
             "description": "Label names, as an array or as a JSON-encoded array."
-          },
-          "checklists": {
-            "oneOf": [
-              {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "text"
-                  ],
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "text": {
-                      "type": "string"
-                    },
-                    "done": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              {
-                "type": "string",
-                "description": "JSON-encoded checklist array"
-              }
-            ]
           },
           "custom_fields": {
             "oneOf": [
@@ -379,6 +300,78 @@
                 "description": "JSON-encoded custom fields object"
               }
             ]
+          },
+          "checklists": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "done": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded checklist array"
+              }
+            ]
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "urgency": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "importance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "effort_minutes": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 480
+          },
+          "effort_type": {
+            "type": "string",
+            "enum": [
+              "deep",
+              "shallow",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "blocked_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_promoted": {
+            "type": "boolean",
+            "description": "Pin the new task to the top of its Kanban lane with a promoted ribbon sash."
+          },
+          "assigned_to": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true,
+            "description": "Must start with 'ha_' or 'custom_'"
           },
           "frameworkPayload": {
             "type": "object"
@@ -2631,7 +2624,7 @@
     },
     {
       "name": "listPlugins",
-      "description": "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      "description": "Returns the plugin catalog, health reports, and Safe Mode state for administrators. Active browser sessions can use ?runtime=1 to request enabled runtime bundles without secrets.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2924,11 +2917,45 @@
       }
     },
     {
+      "name": "listRoutines",
+      "description": "List routine templates and streaks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "manageRoutine",
+      "description": "Create, complete, update, or delete a routine",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "syncCalendar",
       "description": "Trigger calendar sync",
       "inputSchema": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "pushTaskToCalendar",
+      "description": "Manually push a scheduled task to the Board's connected Home Assistant calendar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "entity_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ]
       }
     },
     {
@@ -4159,9 +4186,30 @@
       "pathParams": [],
       "queryParams": []
     },
+    "listRoutines": {
+      "method": "GET",
+      "path": "/api/routines",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "manageRoutine": {
+      "method": "POST",
+      "path": "/api/routines",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
     "syncCalendar": {
       "method": "POST",
       "path": "/api/integrations/calendar/sync",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "pushTaskToCalendar": {
+      "method": "POST",
+      "path": "/api/integrations/calendar/push",
       "hasBody": true,
       "pathParams": [],
       "queryParams": []

@@ -49,25 +49,156 @@
 }
 
 .idp-clear-btn {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 10px;
-  padding: 0 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm, 4px);
   line-height: 1;
-  opacity: 0.6;
-  transition: opacity 0.15s, color 0.15s;
-}
-
-.idp-has-date:hover .idp-clear-btn {
-  display: inline;
+  opacity: 0.7;
+  margin-inline-start: auto;
+  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
 }
 
 .idp-clear-btn:hover {
   opacity: 1;
   color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+}
+
+/* ── Form-control host (Tabler Date Picker trigger parity) ─────────────── */
+
+.idp-field-host,
+.nt-due-picker {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.idp-field-host .idp-trigger,
+.nt-due-picker .idp-trigger {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  gap: 8px;
+  border: 1px solid var(--control-border, var(--border));
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.idp-field-host--compact .idp-trigger {
+  min-height: 32px;
+  padding: 4px 9px;
+  font-size: 0.75rem;
+  background: var(--bg-card);
+}
+
+.idp-field-host .idp-trigger:hover,
+.nt-due-picker .idp-trigger:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus, var(--accent));
+}
+
+.idp-field-host .idp-trigger:focus-visible,
+.nt-due-picker .idp-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.idp-field-host .idp-placeholder,
+.nt-due-picker .idp-placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.idp-field-host .idp-trigger > svg:first-child,
+.nt-due-picker .idp-trigger > svg:first-child {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.idp-field-host .idp-has-date > svg:first-child,
+.nt-due-picker .idp-has-date > svg:first-child {
+  color: var(--accent-text, var(--accent));
+}
+
+.idp-field-host .idp-trigger--editable,
+.nt-due-picker .idp-trigger--editable {
+  padding: 0 6px 0 4px;
+  gap: 2px;
+  cursor: text;
+}
+
+.idp-field-host .idp-trigger--editable:focus-within,
+.nt-due-picker .idp-trigger--editable:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb, 105 227 178) / 0.16);
+}
+
+.idp-cal-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 30px;
+  block-size: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 5px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 130ms ease, background-color 130ms ease;
+}
+
+.idp-cal-toggle:hover {
+  color: var(--accent-text, var(--accent));
+  background: var(--bg-hover);
+}
+
+.idp-has-date .idp-cal-toggle {
+  color: var(--accent-text, var(--accent));
+}
+
+.idp-text-input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  min-height: 36px;
+  padding: 4px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.idp-field-host--compact .idp-text-input {
+  min-height: 30px;
+}
+
+.idp-text-input::placeholder {
+  color: var(--text-muted);
+}
+
+.idp-text-input--invalid {
+  color: var(--danger, #ef4444);
+}
+
+.idp-field-host--disabled {
+  opacity: 0.52;
+  pointer-events: none;
 }
 
 /* ── Panel (floating picker) ─────────────────────────────────────────── */
@@ -77,12 +208,156 @@
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.34));
   overflow: hidden;
   font-size: 13px;
-  min-width: 420px;
+  width: 468px;
   max-width: calc(100vw - 16px);
+  animation: idpPanelPop 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.idp-right-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 288px;
+  min-width: 280px;
+}
+
+.idp-time-section {
+  border-top: 1px solid var(--border);
+  padding: 9px 12px 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 60%, var(--bg-card));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.idp-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.idp-time-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.idp-time-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.idp-time-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.idp-time-done {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--accent);
+  color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 130ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.idp-time-done:hover {
+  opacity: 0.92;
+}
+
+.idp-time-done:active {
+  transform: scale(0.97);
+}
+
+.idp-time-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
+}
+
+.idp-time-clear-btn:hover:not(:disabled) {
+  color: var(--danger, #ef4444);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger, #ef4444) 10%, var(--bg-card));
+}
+
+.idp-time-clear-btn.is-empty {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.idp-time-chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.idp-time-chip {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 5px);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.idp-time-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.idp-time-chip.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+  border-color: var(--accent);
+  color: var(--accent-text, var(--accent));
+  font-weight: 600;
+}
+
+@keyframes idpPanelPop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (max-width: 520px) {
@@ -90,7 +365,6 @@
     flex-direction: column;
     min-width: 0;
     width: min(340px, calc(100vw - 16px));
-    /* Stacked quick options plus a six-week month can be taller than a short phone viewport. */
     max-height: calc(100vh - 16px);
     max-height: calc(100dvh - 16px);
     overflow-y: auto;
@@ -101,11 +375,14 @@
 
 .idp-quick-options {
   flex: 0 0 180px;
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-input) 65%, var(--bg-card));
   border-right: 1px solid var(--border);
-  padding: 6px 0;
+  padding: 6px;
   overflow-y: auto;
   max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 @media (max-width: 520px) {
@@ -122,19 +399,20 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 7px 12px;
+  padding: 7px 10px;
   background: none;
   border: none;
+  border-radius: var(--radius-sm, 6px);
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
   color: var(--text-primary);
   text-align: left;
-  transition: background 0.1s;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .idp-quick-option:hover {
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  background: var(--bg-hover);
 }
 
 .idp-quick-label {
@@ -144,13 +422,14 @@
 .idp-quick-sublabel {
   color: var(--text-muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Calendar (right side) ───────────────────────────────────────────── */
 
 .idp-calendar {
   flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   min-width: 240px;
 }
 
@@ -163,18 +442,20 @@
 
 .idp-cal-today-btn {
   background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 12px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm, 4px);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm, 6px);
   font-family: inherit;
-  transition: background 0.1s;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 .idp-cal-today-btn:hover {
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  background: var(--bg-hover);
+  border-color: var(--accent);
   color: var(--text-primary);
 }
 
@@ -186,18 +467,22 @@
 
 .idp-cal-nav-btn {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 16px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm, 4px);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 6px);
   line-height: 1;
-  transition: background 0.1s;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .idp-cal-nav-btn:hover {
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
@@ -205,7 +490,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 120px;
+  min-width: 134px;
   text-align: center;
 }
 
@@ -213,7 +498,7 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 0;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .idp-cal-dow span {
@@ -227,7 +512,8 @@
 .idp-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
+  grid-template-rows: repeat(6, 30px);
+  gap: 2px;
 }
 
 .idp-cal-day {
@@ -235,46 +521,53 @@
   align-items: center;
   justify-content: center;
   width: 30px;
-  height: 28px;
-  border: none;
+  height: 30px;
+  border: 1px solid transparent;
   background: none;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  border-radius: var(--radius-sm, 4px);
-  transition: background 0.1s;
+  border-radius: var(--radius-sm, 6px);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
   margin: 0 auto;
 }
 
 .idp-cal-day:hover {
-  background: var(--bg-hover, var(--bg-secondary));
+  background: var(--bg-hover);
 }
 
 .idp-cal-day--outside {
   color: var(--text-muted);
-  opacity: 0.4;
+  opacity: 0.42;
 }
 
 .idp-cal-day--today {
-  background: var(--danger, #ef4444);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text, var(--accent));
   font-weight: 700;
-  border-radius: 50%;
 }
 
 .idp-cal-day--today:hover {
-  background: var(--danger, #ef4444);
-  opacity: 0.85;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .idp-cal-day--selected {
   background: var(--accent);
+  border-color: var(--accent);
   color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
   font-weight: 600;
 }
 
 .idp-cal-day--selected:hover {
   background: var(--accent);
-  opacity: 0.85;
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idp-panel {
+    animation: none;
+  }
 }

@@ -35,9 +35,7 @@ test("filterReachableSteps skips targets not present on the current page", () =>
       ? selector
       : null,
   )
-  assert.equal(found.length, 2)
-  assert.equal(found[0]?.step.id, "global-search")
-  assert.equal(found[1]?.step.id, "account-menu")
+  assert.deepEqual(found.map(({ step }) => step.id), ["global-search"])
 })
 
 test("clampTourIndex stays within step bounds", () => {

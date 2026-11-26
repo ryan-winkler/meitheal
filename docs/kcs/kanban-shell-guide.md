@@ -8,6 +8,8 @@ description: "Understand the board layout and task controls."
 
 Open **Tasks** and select **Kanban** to see the board. The area picker, task filters, SearchHub, Assist, lane management, and new-task controls sit above it.
 
+**By RICE Score** groups the loaded cards in each lane into High, Medium, Low and Needs a score, using the same thresholds as Table. To change a card's RICE group, edit its score. Dragging between workflow lanes preserves the card's current score.
+
 The Tasks view uses the Household board. A bookmark for an unavailable Board shows a 404 and keeps Household task data out of the response. If a task automation receives that response, check its Board selector and use an Area or Project filter when the intended scope is within Household. The legacy bulk purge returns 400 for an explicit Board selector.
 
 ## Common Jobs
@@ -22,11 +24,11 @@ Choose **Group by → By Area** to group the current page of cards within each l
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
-- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it to the destination lane. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
+- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it into the destination list. The card previews its destination while Meitheal saves. A rejected move returns it to its original lane and group.
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
-Quick actions sit below the task details and wrap within the card.
+Quick actions sit below card details. On desktop they appear on hover or keyboard focus, with space reserved so they do not cover the title or description. On touch devices they remain visible.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
@@ -38,7 +40,7 @@ Closing Details while a task is still loading also clears its pending launch lin
 
 Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
 
-Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority and favorite setting intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
+Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
 
 ### React to a task or comment
 
@@ -52,13 +54,13 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 1. Open `Kanban`.
 2. Open **Lanes**. On a phone, open **Board actions** first.
-3. Keep the board visible while editing lane structure and WIP limits.
+3. Use the controls in each row to rename a lane, change its accent color, or edit its WIP limit. Drag the grip or focus it and press Alt+Up or Alt+Down to reorder lanes. The lane name and status are plain text. Saving a change leaves **Manage Swimlanes** open.
 
 ### Change card density without fighting the shell
 
 1. Open **Fields**. On a phone, open **Board actions** first.
-2. Use the card customizer there instead of expecting field toggles in the shell.
-3. Compact density hides secondary card rows such as description, metadata, labels, progress, and custom fields so dense boards stay scannable.
+2. Use the card customizer search input there to find any built-in or board custom field without expecting field toggles in the shell.
+3. Use **Compact**, **Comfortable**, or **Spacious** to change the padding and spacing. Checked fields show at every size when the task has a value. Select up to four Board custom fields, including Sprint and Story points.
 4. Close **Fields** to return to the board.
 
 ### Page through a large board
@@ -74,6 +76,12 @@ To move a task to another Area on its Board, open **Details** and choose the des
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
 Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
+
+After a keyboard move from a card’s action menu, focus follows the card. If the destination group is collapsed, focus lands on its heading so you can expand it.
+
+On a grouped board, drag a card to a workflow lane heading or choose a lane from its action menu to keep the current grouping value. With **By Type**, drop the card on an Epic, Story, or Task group heading, its card area, or its **Add Task** row to change the task type. The confirmation names the new type and includes the destination lane when it changes. A group has a reorder grip when its lane has another visible group. Drag the grip to move the whole group within its lane or open the grip menu and choose an available direction. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane. The group surface uses your current theme, corner roundness, and panel style.
+
+Kanban moves use the task version shown on the card. If another person changes the task before your move saves, the Board shows a conflict and refreshes the card. Confirmed Type changes also update open Details and Strategic Lens without closing your draft. Editing Type in Timeline refreshes the schedule after the save succeeds.
 
 Open **Group by** on Household or a named Board. **By Area** uses the task’s Area, including the Area inherited from its Project. **By Epic** groups an Epic card under its own name. Other cards use their nearest readable parent Epic, even outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Epic headings sort by name and include the Board’s ticket key to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the Board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 
@@ -102,6 +110,8 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
 Timeline omits empty optional values from its initial task data to reduce download and parsing work. Missing dates still place the task in the undated work list when applicable. The Area field keeps the distinction between Default and unavailable Areas.
+
+Drag empty chart space or hold Shift while scrolling to pan through dates. The range grows as you pan past either edge. Drag a bar to move its dates or drag an edge to resize it. The bar blocks new drag and click actions until its date save ends. A start-only resize keeps its saved end and due dates. If another edit prevents a save, choose **Review saved task** to compare it with your proposed dates.
 
 When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
 

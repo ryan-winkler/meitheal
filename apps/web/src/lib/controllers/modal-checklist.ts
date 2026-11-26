@@ -1,35 +1,28 @@
-import { SHOPPING_CATEGORIES, type ShoppingCategory } from "@meitheal/domain-tasks"
+import Sortable from "sortablejs"
 import { createChecklistItem } from "@lib/checklist-items"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import {
+  SHOPPING_UNITS,
+  clampShoppingQty,
+  defaultShoppingCategories,
+  formatShoppingItemSummary,
+  loadShoppingCategories,
+  normalizeShoppingUnit,
+  type ShoppingCategoryOption,
+} from "@lib/shopping-items"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { defaultChildTaskType } from "@lib/task-editor-fields"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 import { showToast } from "@lib/toast"
 import { createSpriteIconElement } from "../../generated/icon-registry"
-import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 type Item = { id?: string; text: string; done: boolean }
-export type ModalShoppingItem = { name: string; qty: number | string; category: string; checked: boolean }
-type ShoppingMeta = { qty: number | string; category: string }
-
-const formatCategoryLabel = (cat: string) =>
-  cat === "meat" ? "Meat & Fish" : cat[0]!.toUpperCase() + cat.slice(1)
-
-function normalizeQtyValue(raw: unknown): number | string {
-  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
-    return raw
-  }
-  if (typeof raw === "string") {
-    const trimmed = raw.trim()
-    if (trimmed) return trimmed.slice(0, 32)
-  }
-  return 1
-}
+export type ModalShoppingItem = { name: string; qty: number | string; unit: string; category: string; checked: boolean }
+type ShoppingMeta = { name?: string; qty: number; unit: string; category: string }
 
 function normalizeCategoryValue(raw: unknown): string {
   if (typeof raw !== "string") return ""
-  const cat = raw.trim().toLowerCase()
-  return (SHOPPING_CATEGORIES as readonly string[]).includes(cat) ? cat : ""
+  return raw.trim().toLowerCase().slice(0, 48)
 }
 
 const pendingChecklistSaves = new Map<string, Promise<boolean>>()
@@ -41,14 +34,34 @@ export function pendingChecklistSave(taskId: string): Promise<boolean> | undefin
 
 function parseChecklist(raw: string | null): Item[] | null {
   if (raw === null) return []
+  const trimmed = raw.trim()
+  if (!trimmed) return []
   try {
-    const parsed: unknown = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(trimmed)
     if (!Array.isArray(parsed)) return null
     const items: Item[] = []
     for (const item of parsed) {
-      if (typeof item === "string") items.push({ text: item, done: false })
-      else if (item && typeof item.text === "string" && typeof item.done === "boolean") items.push(item)
-      else return null
+      if (typeof item === "string") {
+        items.push({ text: item, done: false })
+      } else if (item && typeof item === "object") {
+        const rec = item as Record<string, unknown>
+        const text = typeof rec.text === "string" ? rec.text : typeof rec.title === "string" ? rec.title : null
+        if (text === null) return null
+        const done = typeof rec.done === "boolean"
+          ? rec.done
+          : typeof rec.checked === "boolean"
+            ? rec.checked
+            : typeof rec.completed === "boolean"
+              ? rec.completed
+              : false
+        items.push({
+          ...(typeof rec.id === "string" && rec.id ? { id: rec.id } : {}),
+          text,
+          done,
+        })
+      } else {
+        return null
+      }
     }
     return items
   } catch {
@@ -72,7 +85,6 @@ function indexed(items: Item[]): Map<string, Item> | null {
 function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item[] | null {
   if (equal(proposed, latest)) return latest
 
-  // An append leaves the old rows untouched, even when they have no stable IDs.
   if (before.every((item, index) => equal(item, proposed[index]))) {
     const additions = proposed.slice(before.length)
     if (!indexed(additions)) return null
@@ -104,7 +116,14 @@ function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item
   return [...current.values()]
 }
 
-type ShoppingInputItem = { name?: unknown; qty?: unknown; quantity?: unknown; category?: unknown; checked?: unknown }
+type ShoppingInputItem = {
+  name?: unknown
+  qty?: unknown
+  quantity?: unknown
+  unit?: unknown
+  category?: unknown
+  checked?: unknown
+}
 
 export function showTaskChecklist(
   taskId: string,
@@ -119,14 +138,14 @@ export function showTaskChecklist(
     buildShoppingCustomFields?: (items: ModalShoppingItem[]) => string
   },
 ) {
-  const container = byId("td-checklists")
+  const container = document.getElementById("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
   const uncheckAll = document.querySelector<HTMLButtonElement>("#td-checklist-uncheck-all")
-  const progress = byId("td-checklist-progress")
-  const done = byId("td-checklist-done")
-  const total = byId("td-checklist-total")
-  const bar = byId("td-checklist-progress-bar")
-  const message = byId("td-checklist-message")
+  const progress = document.getElementById("td-checklist-progress")
+  const done = document.getElementById("td-checklist-done")
+  const total = document.getElementById("td-checklist-total")
+  const bar = document.getElementById("td-checklist-progress-bar")
+  const message = document.getElementById("td-checklist-message")
   const recover = document.querySelector<HTMLButtonElement>("#td-checklist-recover")
   const recoveredDraft = document.querySelector<HTMLDetailsElement>("#td-checklist-draft")
   const draftRows = recoveredDraft?.querySelector("ol")
@@ -140,7 +159,10 @@ export function showTaskChecklist(
   const loaded = parseChecklist(savedRaw)
   let saved = loaded ?? []
   let items = saved.slice()
+  const draftIds = new Set<string>()
+  const persistedItems = () => items.filter(item => !item.id || !draftIds.has(item.id) || item.text.trim())
   const isShopping = options?.taskKind === "shopping_item"
+  let shoppingCategories: ShoppingCategoryOption[] = defaultShoppingCategories()
   const metaByItem = new WeakMap<Item, ShoppingMeta>()
   const metaById = new Map<string, ShoppingMeta>()
   const setItemMeta = (item: Item, meta: ShoppingMeta) => {
@@ -149,12 +171,21 @@ export function showTaskChecklist(
   }
   const getItemMeta = (item: Item): ShoppingMeta | undefined =>
     metaByItem.get(item) ?? (item.id ? metaById.get(item.id) : undefined)
+  const shoppingName = (item: Item): string =>
+    getItemMeta(item)?.name ?? item.text.replace(/^\d+\s*[×x]\s+/i, "").trim()
 
   const reconcileShoppingMeta = (targetItems: Item[], rawList?: ShoppingInputItem[] | null) => {
     if (!isShopping) return
     const entries = Array.isArray(rawList) ? rawList : []
     const used = new Set<number>()
     const matchedIndices = targetItems.map(() => -1)
+    const matchesText = (entry: ShoppingInputItem, value: string) => {
+      if (typeof entry.name !== "string") return false
+      return entry.name.trim().toLowerCase() === value ||
+        formatShoppingItemSummary({
+          name: entry.name, qty: clampShoppingQty(entry.qty ?? entry.quantity), unit: normalizeShoppingUnit(entry.unit),
+        }).toLowerCase() === value
+    }
     const prevByName = new Map<string, ShoppingMeta[]>()
     for (const prev of items) {
       const existing = getItemMeta(prev)
@@ -167,7 +198,7 @@ export function showTaskChecklist(
     targetItems.forEach((item, index) => {
       const nameKey = item.text.trim().toLowerCase()
       const sameIdx = entries[index]
-      if (sameIdx && !used.has(index) && String(sameIdx.name ?? "").trim().toLowerCase() === nameKey) {
+      if (sameIdx && !used.has(index) && matchesText(sameIdx, nameKey)) {
         used.add(index)
         matchedIndices[index] = index
       }
@@ -176,7 +207,7 @@ export function showTaskChecklist(
       if (matchedIndices[index]! >= 0) return
       const nameKey = item.text.trim().toLowerCase()
       const byName = entries.findIndex((entry, idx) =>
-        !used.has(idx) && String(entry.name ?? "").trim().toLowerCase() === nameKey,
+        !used.has(idx) && matchesText(entry, nameKey),
       )
       if (byName >= 0) {
         used.add(byName)
@@ -190,22 +221,26 @@ export function showTaskChecklist(
         matchedIndex = index
       }
       const nameKey = item.text.trim().toLowerCase()
-      const nextMeta = matchedIndex >= 0
+      const entry = entries[matchedIndex]
+      const nextMeta: ShoppingMeta = entry
         ? {
-            qty: normalizeQtyValue(entries[matchedIndex]!.qty ?? entries[matchedIndex]!.quantity),
-            category: normalizeCategoryValue(entries[matchedIndex]!.category),
+            ...(typeof entry.name === "string" ? { name: entry.name.trim() } : {}),
+            qty: clampShoppingQty(entry.qty ?? entry.quantity),
+            unit: normalizeShoppingUnit(entry.unit),
+            category: normalizeCategoryValue(entry.category),
           }
-        : getItemMeta(item) ?? prevByName.get(nameKey)?.shift() ?? { qty: 1, category: "" }
+        : getItemMeta(item) ?? prevByName.get(nameKey)?.shift() ?? { qty: 1, unit: "pcs", category: "" }
       setItemMeta(item, { ...nextMeta })
     })
   }
   reconcileShoppingMeta(items, options?.shoppingItems)
 
-  const buildShoppingItems = (): ModalShoppingItem[] => items.map(item => {
-    const meta = getItemMeta(item) ?? { qty: 1, category: "" }
+  const buildShoppingItems = (): ModalShoppingItem[] => persistedItems().map(item => {
+    const meta = getItemMeta(item) ?? { qty: 1, unit: "pcs", category: "" }
     return {
-      name: item.text.trim() || "Item",
+      name: shoppingName(item) || "Item",
       qty: meta.qty,
+      unit: meta.unit || "pcs",
       category: meta.category,
       checked: Boolean(item.done),
     }
@@ -216,7 +251,6 @@ export function showTaskChecklist(
   }
   let problem: "retry" | "conflict" | null = null
   let textEditPending = false
-  let saveQueued = false
   let rendering = false
 
   add.disabled = loaded === null
@@ -226,6 +260,63 @@ export function showTaskChecklist(
   recoveredDraft.open = false
   draftRows.replaceChildren()
   message.textContent = add.disabled ? "This checklist could not be loaded." : ""
+
+  container.classList.toggle("td-keep-list", !isShopping)
+  container.classList.toggle("td-shop-list", isShopping)
+
+  const refreshCategorySelects = () => {
+    container.querySelectorAll<HTMLSelectElement>(".td-shop-cat").forEach((sel) => {
+      const current = sel.value
+      sel.replaceChildren(new Option("Uncategorized", ""))
+      for (const cat of shoppingCategories) {
+        sel.append(new Option(cat.label, cat.slug))
+      }
+      if (current && !shoppingCategories.some((c) => c.slug === current)) {
+        sel.append(new Option(current, current))
+      }
+      sel.value = current
+    })
+  }
+
+  if (isShopping) {
+    void loadShoppingCategories(signal).then((cats) => {
+      if (signal.aborted) return
+      shoppingCategories = cats
+      refreshCategorySelects()
+    })
+    window.addEventListener("meitheal:shopping-categories-changed", () => {
+      void loadShoppingCategories(signal).then((cats) => {
+        if (signal.aborted) return
+        shoppingCategories = cats
+        refreshCategorySelects()
+      })
+    }, { signal })
+  }
+
+  const sortable = Sortable.create(container, {
+    handle: ".td-cl-drag",
+    animation: 160,
+    easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+    forceFallback: true,
+    fallbackOnBody: true,
+    fallbackTolerance: 3,
+    touchStartThreshold: 4,
+    swapThreshold: 0.65,
+    preventOnFilter: false,
+    ghostClass: "nt-sortable-ghost",
+    chosenClass: "nt-sortable-chosen",
+    fallbackClass: "nt-sortable-fallback",
+    onEnd: (evt) => {
+      if (evt.oldIndex === undefined || evt.newIndex === undefined || evt.oldIndex === evt.newIndex) return
+      const [moved] = items.splice(evt.oldIndex, 1)
+      if (!moved) return
+      items.splice(evt.newIndex, 0, moved)
+      render()
+      if (isShopping) emitShoppingChange()
+      void save()
+    },
+  })
+  signal.addEventListener("abort", () => sortable.destroy(), { once: true })
 
   function updateProgress() {
     const count = items.filter(item => item.done).length
@@ -241,157 +332,226 @@ export function showTaskChecklist(
     if (!current) return null
     const nextItem = { ...current, ...patch }
     const meta = getItemMeta(current)
-    if (meta) setItemMeta(nextItem, meta)
+    if (meta) setItemMeta(nextItem, patch.text === undefined ? meta : { ...meta, name: patch.text })
     items[index] = nextItem
     return nextItem
   }
 
-  function render(focus?: { index: number; selector: string }) {
+  function render(focus?: { index: number; selector: string; scrollIntoView?: boolean; highlight?: boolean }) {
     if (signal.aborted) return
     rendering = true
+    const subtitleEl = document.getElementById("td-checklist-subtitle")
+    if (subtitleEl) {
+      subtitleEl.textContent = isShopping
+        ? "Items on this shopping list — drag the grip handle to sort by aisle."
+        : "Lightweight steps inside this task"
+    }
     const rows = items.map((item, index) => {
-      const row = domEl("div")
-      row.className = "flex items-center gap-2 group td-cl-row"
+      const displayName = isShopping ? shoppingName(item) : item.text
+      const row = document.createElement("div")
+      row.className = isShopping
+        ? `td-cl-row td-shop-row group${item.done ? " is-checked" : ""}`
+        : `td-cl-row td-keep-row group${item.done ? " is-checked" : ""}`
       row.dataset.checklistRow = String(index)
 
-      const checkbox = domEl("input")
+      const dragHandle = document.createElement("button")
+      dragHandle.type = "button"
+      dragHandle.className = "td-cl-drag"
+      dragHandle.setAttribute("aria-label", `Drag to reorder ${displayName || `item ${index + 1}`}`)
+      dragHandle.title = "Drag to reorder"
+      dragHandle.replaceChildren(createSpriteIconElement("grip-vertical", { size: 15 }))
+
+      const checkbox = document.createElement("input")
       checkbox.type = "checkbox"
-      checkbox.className = "form-checkbox h-5 w-5 bg-transparent border-border rounded"
-      setAttr(checkbox, "aria-label", item.text || `Checklist item ${index + 1}`)
+      checkbox.className = "form-check-input td-keep-check"
+      checkbox.setAttribute("aria-label", displayName || `Checklist item ${index + 1}`)
       checkbox.checked = Boolean(item.done)
 
-      const editor = domEl("div")
+      const editor = document.createElement("div")
       editor.className = "checklist-editor"
-      const text = domEl("textarea", "form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)")
+      const text = document.createElement("textarea")
+      text.className = "td-keep-text"
       text.rows = 1
-      setAttr(text, "aria-label", isShopping ? `Shopping item ${index + 1}` : `Checklist item ${index + 1}`)
-      text.placeholder = isShopping ? "Item name..." : "Checklist item..."
-      text.value = item.text
-      editor.dataset.content = item.text
+      text.setAttribute("aria-label", isShopping ? `Shopping item ${index + 1}` : `Checklist item ${index + 1}`)
+      text.placeholder = isShopping ? "Item name…" : "List item…"
+      text.value = displayName
+      editor.dataset.content = displayName
       editor.appendChild(text)
 
-      const rowControls: HTMLElement[] = [checkbox, editor]
-      if (isShopping) {
-        let meta = getItemMeta(item)
-        if (!meta) {
-          meta = { qty: 1, category: "" }
-          setItemMeta(item, meta)
-        }
-        const qtyInput = domEl("input")
-        qtyInput.type = "text"
-        qtyInput.maxLength = 32
-        qtyInput.value = String(meta.qty)
-        qtyInput.className = "form-input text-xs td-shop-qty"
-        setAttr(qtyInput, "aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
-        qtyInput.addEventListener("change", () => {
-          const trimmed = qtyInput.value.trim().slice(0, 32)
-          const nextQty: number | string = !trimmed
-            ? 1
-            : /^[1-9]\d{0,2}$/.test(trimmed)
-              ? Number(trimmed)
-              : trimmed
-          qtyInput.value = String(nextQty)
-          meta.qty = nextQty
-          emitShoppingChange()
-        }, { signal })
+      const promoteBtn = document.createElement("button")
+      promoteBtn.type = "button"
+      promoteBtn.className = "td-cl-action opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+      promoteBtn.setAttribute("aria-label", `Convert checklist item ${index + 1} to child task`)
+      promoteBtn.title = "Convert to child task"
+      promoteBtn.replaceChildren(createSpriteIconElement("corner-down-right", { size: 14 }))
 
-        const catSelect = domEl("select", "form-select text-xs td-shop-cat")
-        setAttr(catSelect, "aria-label", `Category for ${item.text || `item ${index + 1}`}`)
-        catSelect.append(
-          new Option("Uncategorized", ""),
-          ...SHOPPING_CATEGORIES.map(cat => new Option(formatCategoryLabel(cat), cat)),
-        )
-        catSelect.value = meta.category
-        catSelect.addEventListener("change", () => {
-          meta.category = catSelect.value
-          emitShoppingChange()
-        }, { signal })
-
-        rowControls.push(qtyInput, catSelect)
-      } else {
-        const promoteBtn = domEl("button")
-        promoteBtn.type = "button"
-        promoteBtn.className = "text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs px-1"
-        setAttr(promoteBtn, "aria-label", `Convert checklist item ${index + 1} to child task`)
-        promoteBtn.title = "Convert to child task"
-        promoteBtn.textContent = "↳"
-        promoteBtn.addEventListener("click", async () => {
-          const current = items[index]
-          if (!current || promoteBtn.disabled || signal.aborted) return
-          const childTitle = current.text.trim()
-          if (!childTitle) return
-          promoteBtn.disabled = true
-          try {
-            const ctx = currentTaskApiContext()
-            const parentArea = (byId<HTMLSelectElement>("td-area"))?.value || null
-            const parentProject = (byId<HTMLSelectElement>("td-project"))?.value || null
-            const parentType = (byId<HTMLSelectElement>("td-task-type"))?.value
-            const res = await fetch("/api/tasks", { // nosemgrep
-              method: "POST",
-              headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
-              body: JSON.stringify({
-                title: childTitle,
-                parent_id: taskId,
-                task_type: defaultChildTaskType(parentType),
-                status: current.done ? "complete" : "pending",
-                ...(parentArea ? { area_id: parentArea } : {}),
-                ...(parentProject ? { project_id: parentProject } : {}),
-              }),
-              signal,
-            })
-            if (!res.ok) {
-              const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
-              showToast(err?.error ?? err?.detail ?? "Could not convert step to child task", "error")
-              return
-            }
-            items.splice(index, 1)
-            render()
-            await save()
-            if (signal.aborted) return
-            document.dispatchEvent(new CustomEvent("meitheal:refresh-task-detail", { detail: { taskId } }))
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "checklist-promoted" } }))
-            showToast("Converted step to child task", "success")
-          } catch {
-            if (!signal.aborted) showToast("Network error converting step", "error")
-          } finally {
-            if (!signal.aborted) promoteBtn.disabled = false
-          }
-        }, { signal })
-        rowControls.push(promoteBtn)
-      }
-
-      const delBtn = domEl("button")
+      const delBtn = document.createElement("button")
       delBtn.type = "button"
-      delBtn.className = "text-danger td-cl-del"
-      delBtn.dataset.checklistDelete = "1"
-      setAttr(delBtn, "aria-label", `Delete checklist item ${index + 1}`)
+      delBtn.className = "td-cl-del"
+      delBtn.setAttribute("aria-label", `Delete checklist item ${index + 1}`)
       delBtn.title = "Delete item"
       delBtn.replaceChildren(createSpriteIconElement("x", { size: 14 }))
 
-      row.append(...rowControls, delBtn)
+      const rowControls: HTMLElement[] = [dragHandle, checkbox, editor]
+      if (isShopping) {
+        let meta = getItemMeta(item)
+        if (!meta) {
+          meta = { qty: 1, unit: "pcs", category: "" }
+          setItemMeta(item, meta)
+        }
+        const shopControls = document.createElement("div")
+        shopControls.className = "td-shop-controls"
+
+        const stepper = document.createElement("div")
+        stepper.className = "nt-qty-stepper nt-qty-stepper--sm"
+        stepper.setAttribute("role", "group")
+        stepper.setAttribute("aria-label", `Quantity for ${displayName || `item ${index + 1}`}`)
+
+        const decBtn = document.createElement("button")
+        decBtn.type = "button"
+        decBtn.className = "nt-qty-btn"
+        decBtn.setAttribute("aria-label", `Decrease quantity for ${displayName || `item ${index + 1}`}`)
+        decBtn.replaceChildren(createSpriteIconElement("minus", { size: 12 }))
+
+        const qtyInput = document.createElement("input")
+        qtyInput.type = "number"
+        qtyInput.min = "1"
+        qtyInput.max = "999"
+        qtyInput.step = "1"
+        qtyInput.inputMode = "numeric"
+        qtyInput.value = String(meta.qty)
+        qtyInput.className = "nt-qty-input"
+        qtyInput.setAttribute("aria-label", `Quantity for ${displayName || `item ${index + 1}`}`)
+
+        const incBtn = document.createElement("button")
+        incBtn.type = "button"
+        incBtn.className = "nt-qty-btn"
+        incBtn.setAttribute("aria-label", `Increase quantity for ${displayName || `item ${index + 1}`}`)
+        incBtn.replaceChildren(createSpriteIconElement("plus", { size: 12 }))
+
+        const setQty = (val: number) => {
+          const next = clampShoppingQty(val)
+          qtyInput.value = String(next)
+          meta!.qty = next
+          emitShoppingChange()
+        }
+        decBtn.addEventListener("click", () => setQty(Number(qtyInput.value || 1) - 1), { signal })
+        incBtn.addEventListener("click", () => setQty(Number(qtyInput.value || 1) + 1), { signal })
+        qtyInput.addEventListener("change", () => setQty(Number(qtyInput.value || 1)), { signal })
+        stepper.append(decBtn, qtyInput, incBtn)
+
+        const unitSelect = document.createElement("select")
+        unitSelect.className = "form-select text-xs td-shop-unit"
+        unitSelect.setAttribute("aria-label", `Unit for ${displayName || `item ${index + 1}`}`)
+        for (const u of SHOPPING_UNITS) {
+          unitSelect.append(new Option(u.label, u.value))
+        }
+        unitSelect.value = normalizeShoppingUnit(meta.unit)
+        unitSelect.addEventListener("change", () => {
+          meta!.unit = normalizeShoppingUnit(unitSelect.value)
+          emitShoppingChange()
+        }, { signal })
+
+        const catSelect = document.createElement("select")
+        catSelect.className = "form-select text-xs td-shop-cat"
+        catSelect.setAttribute("aria-label", `Category for ${displayName || `item ${index + 1}`}`)
+        catSelect.append(new Option("Uncategorized", ""))
+        for (const cat of shoppingCategories) {
+          catSelect.append(new Option(cat.label, cat.slug))
+        }
+        if (meta.category && !shoppingCategories.some((c) => c.slug === meta!.category)) {
+          catSelect.append(new Option(meta.category, meta.category))
+        }
+        catSelect.value = meta.category
+        catSelect.addEventListener("change", () => {
+          meta!.category = catSelect.value
+          emitShoppingChange()
+        }, { signal })
+
+        shopControls.append(stepper, unitSelect, catSelect)
+        row.append(...rowControls, delBtn, shopControls)
+      } else {
+        row.append(...rowControls, promoteBtn, delBtn)
+      }
+
       text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
         if (!updateItemAt(index, { done: checkbox.checked })) return
+        row.classList.toggle("is-checked", checkbox.checked)
         updateProgress()
+        if (isShopping) emitShoppingChange()
         void save()
       }, { signal })
       text.addEventListener("blur", () => {
         if (rendering || signal.aborted) return
         const next = text.value.trim()
-        if (!items[index] || next === items[index]!.text) return
+        const current = items[index]
+        if (!current || next === (isShopping ? shoppingName(current) : current.text)) return
         updateItemAt(index, { text: next })
-        setAttr(checkbox, "aria-label", next || "Checklist item " + (index + 1))
+        checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
         textEditPending = true
+        if (isShopping) emitShoppingChange()
         void save()
       }, { signal })
       text.addEventListener("keydown", event => {
         if (event.key !== "Enter" || event.isComposing) return
         event.preventDefault()
-        text.blur()
+        const currentText = text.value.trim()
+        if (!currentText && !items[index]?.text) return
+        const current = items[index]
+        if (current && currentText !== (isShopping ? shoppingName(current) : current.text)) {
+          updateItemAt(index, { text: currentText })
+        }
+        insertDraft(index + 1)
+        void save()
+      }, { signal })
+      promoteBtn.addEventListener("click", async () => {
+        const current = items[index]
+        if (!current || promoteBtn.disabled || signal.aborted) return
+        const childTitle = current.text.trim()
+        if (!childTitle) return
+        promoteBtn.disabled = true
+        try {
+          const ctx = currentTaskApiContext()
+          const parentArea = (document.getElementById("td-area") as HTMLSelectElement | null)?.value || null
+          const parentProject = (document.getElementById("td-project") as HTMLSelectElement | null)?.value || null
+          const parentType = (document.getElementById("td-task-type") as HTMLSelectElement | null)?.value
+          const res = await fetch("/api/tasks", { // nosemgrep
+            method: "POST",
+            headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: childTitle,
+              parent_id: taskId,
+              task_type: defaultChildTaskType(parentType),
+              status: current.done ? "complete" : "pending",
+              ...(parentArea ? { area_id: parentArea } : {}),
+              ...(parentProject ? { project_id: parentProject } : {}),
+            }),
+            signal,
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+            showToast(err?.error ?? err?.detail ?? "Could not convert step to child task", "error")
+            return
+          }
+          items.splice(index, 1)
+          render()
+          await save()
+          if (signal.aborted) return
+          document.dispatchEvent(new CustomEvent("meitheal:refresh-task-detail", { detail: { taskId } }))
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "checklist-promoted" } }))
+          showToast("Converted step to child task", "success")
+        } catch {
+          if (!signal.aborted) showToast("Network error converting step", "error")
+        } finally {
+          if (!signal.aborted) promoteBtn.disabled = false
+        }
       }, { signal })
       delBtn.addEventListener("click", () => {
+        if (item.id) draftIds.delete(item.id)
         items.splice(index, 1)
-        render({ index: Math.min(index, items.length - 1), selector: "[data-checklist-delete]" })
+        render({ index: Math.max(0, index - 1), selector: ".td-cl-del" })
+        if (isShopping) emitShoppingChange()
         void save()
       }, { signal })
       return row
@@ -399,7 +559,18 @@ export function showTaskChecklist(
     container!.replaceChildren(...rows)
     rendering = false
     updateProgress()
-    if (focus) (qs<HTMLElement>(rows[focus.index], focus.selector) ?? add!)?.focus()
+    if (focus) {
+      const targetRow = rows[focus.index]
+      if (focus.highlight && targetRow) {
+        targetRow.classList.add("td-cl-row--added")
+        window.setTimeout(() => targetRow.classList.remove("td-cl-row--added"), 700)
+      }
+      const focusTarget = targetRow?.querySelector<HTMLElement>(focus.selector) ?? add!
+      if (focus.scrollIntoView && targetRow) {
+        targetRow.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      }
+      focusTarget?.focus({ preventScroll: Boolean(focus.scrollIntoView) })
+    }
   }
 
   function report(kind: "retry" | "conflict") {
@@ -412,42 +583,29 @@ export function showTaskChecklist(
     recover!.hidden = false
   }
 
-  function save(): Promise<boolean> | undefined {
-    if (problem) return
-    const active = pendingChecklistSaves.get(taskId)
-    if (active) {
-      saveQueued = true
-      return active
-    }
-    if (equal(saved, items)) {
+  function save() {
+    if (problem || pendingChecklistSaves.has(taskId)) return
+    if (equal(saved, persistedItems())) {
       textEditPending = false
       return
     }
-    let pending!: Promise<boolean>
-    pending = (async () => {
-      try {
-        let ok = true
-        do {
-          saveQueued = false
-          ok = await persist()
-        } while (ok && saveQueued && !equal(saved, items) && !problem)
-        if (ok) textEditPending = false
-        return ok
-      } finally {
-        if (pendingChecklistSaves.get(taskId) === pending) pendingChecklistSaves.delete(taskId)
-        if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
-      }
-    })()
+    const pending = persist().then(savedOk => {
+      if (savedOk) textEditPending = false
+      return savedOk
+    }).finally(() => {
+      pendingChecklistSaves.delete(taskId)
+      if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
+    })
     pendingChecklistSaves.set(taskId, pending)
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
-    return pending
   }
 
   async function persist(): Promise<boolean> {
     let rebased = false
     try {
-      while (!equal(saved, items)) {
-        const pending = JSON.stringify(items)
+      let next = persistedItems()
+      while (!equal(saved, next)) {
+        const pending = JSON.stringify(next)
         const ctx = currentTaskApiContext()
         const payload: Record<string, unknown> = {
           checklists: pending,
@@ -466,6 +624,10 @@ export function showTaskChecklist(
           notifyInactivityTaskChanged(taskId)
           savedRaw = pending
           saved = JSON.parse(pending) as Item[]
+          for (const item of saved) {
+            if (item.id) draftIds.delete(item.id)
+          }
+          next = persistedItems()
           continue
         }
         const conflict = response.status === 409 ? await response.json() : null
@@ -507,6 +669,7 @@ export function showTaskChecklist(
         saved = latest
         reconcileShoppingMeta(merged)
         items = merged
+        next = persistedItems()
         const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
         const restored = document.activeElement
@@ -525,18 +688,22 @@ export function showTaskChecklist(
     }
   }
 
+  function insertDraft(index: number, scrollIntoView = false) {
+    const newItem = createChecklistItem("")
+    draftIds.add(newItem.id)
+    if (isShopping) setItemMeta(newItem, { qty: 1, unit: "pcs", category: "" })
+    items.splice(index, 0, newItem)
+    render({ index, selector: "textarea", scrollIntoView, highlight: scrollIntoView })
+  }
+
   add.addEventListener("click", () => {
-    const newItem = createChecklistItem("New Item")
-    if (isShopping) setItemMeta(newItem, { qty: 1, category: "" })
-    items.push(newItem)
-    render({ index: items.length - 1, selector: "textarea" })
-    if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.select()
-    void save()
+    insertDraft(items.length, true)
   }, { signal })
   uncheckAll?.addEventListener("click", () => {
     if (!items.some(item => item.done)) return
     items.forEach((_, idx) => updateItemAt(idx, { done: false }))
     render()
+    if (isShopping) emitShoppingChange()
     void save()
   }, { signal })
   recover.addEventListener("click", async () => {
@@ -560,7 +727,7 @@ export function showTaskChecklist(
       const editing = document.activeElement
       if (editing instanceof HTMLTextAreaElement && container.contains(editing)) editing.blur()
       draftRows.replaceChildren(...(items.length ? items : [{ text: "No items", done: false }]).map(item => {
-        const entry = domEl("li")
+        const entry = document.createElement("li")
         entry.textContent = item.done ? item.text + " (checked)" : item.text
         return entry
       }))
