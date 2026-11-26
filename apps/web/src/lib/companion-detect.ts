@@ -73,20 +73,22 @@ export function isCompanionApp(): boolean {
   return cachedResult
 }
 
+function storedIDBOverride(): string | null {
+  try {
+    return localStorage.getItem("meitheal_force_idb")
+  } catch {
+    return null
+  }
+}
+
 /**
- * Check if IDB should be enabled.
- * IDB is disabled when running inside the Companion app to avoid
- * cache conflicts. Can be overridden via a settings flag.
+ * Check if IDB should be enabled for offline cache and sync.
+ * The Companion app handles its own caching unless storage was explicitly enabled.
  */
 export function shouldEnableIDB(): boolean {
-  // Check for user override in localStorage
-  try {
-    const override = localStorage.getItem("meitheal_force_idb")
-    if (override === "true") return true
-    if (override === "false") return false
-  } catch {
-    // localStorage not available — fall through to detection
-  }
+  const override = storedIDBOverride()
+  if (override === "true") return true
+  if (override === "false") return false
 
   // Disable IDB in companion context
   if (isCompanionApp()) {
@@ -97,6 +99,16 @@ export function shouldEnableIDB(): boolean {
   }
 
   return true
+}
+
+/** Attachments use local browser storage independently of the offline cache. */
+export function shouldEnableAttachmentIDB(): boolean {
+  if (storedIDBOverride() === "false") return false
+  try {
+    return typeof indexedDB !== "undefined"
+  } catch {
+    return false
+  }
 }
 
 /** Reset the cached detection result (testing only) */
