@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { mergeCoverageMaps } from "./coverage-report.mjs"
-import { artifactDigest, shardIdentity, testedTree, testsInReport, validateShardReports } from "./ci-shards.mjs"
+import { artifactDigest, loadPilotShardTimings, shardIdentity, testedTree, testsInReport, validateShardReports } from "./ci-shards.mjs"
 
 const [directory, output, total] = process.argv.slice(2)
 const count = Number(total)
@@ -26,7 +26,8 @@ if (found.join("\n") !== shards.map(shard => basename(shard)).sort().join("\n"))
 }
 const reports = shards.map(shard => JSON.parse(readFileSync(join(shard, "result.json"), "utf8")))
 const identity = shardIdentity(testedTree(resolve(cwd, "..")))
-const outcomes = validateShardReports(reports, files, cases, count, identity)
+const timings = count > 1 ? loadPilotShardTimings() : {}
+const outcomes = validateShardReports(reports, files, cases, count, identity, timings)
 mkdirSync(output, { recursive: true })
 writeFileSync(join(output, "cases.json"), JSON.stringify(outcomes))
 const maps = shards.map(shard => join(shard, "coverage.json"))

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { generateCoverageMap, generateLcovCoverage } from "./coverage-report.mjs"
-import { artifactDigest, parseShard, pathsInShard, shardIdentity, testedTree, testsInReport } from "./ci-shards.mjs"
+import { artifactDigest, loadPilotShardTimings, parseShard, planShards, shardIdentity, testedTree, testsInReport } from "./ci-shards.mjs"
 
 const cwd = fileURLToPath(new URL(".", import.meta.url))
 const repoRoot = resolve(cwd, "..")
@@ -37,7 +37,8 @@ if (!allFiles.length || allFiles.some(file => typeof file !== "string" || !file.
 
 if (exactSpec && !allFiles.includes(exactSpec)) throw new Error("Spec not found: " + exactSpec)
 const shard = parseShard(env.MEITHEAL_CI_SHARD ?? "1/1", allFiles.length)
-const files = exactSpec ? [exactSpec] : pathsInShard(allFiles, shard)
+const timings = shard.count > 1 ? loadPilotShardTimings() : {}
+const files = exactSpec ? [exactSpec] : planShards(allFiles, shard.count, timings)[shard.index - 1]
 const results = []
 if (evidenceDir) await mkdir(evidenceDir, { recursive: true })
 const output = await mkdtemp(join(tmpdir(), "meitheal-ci-"))

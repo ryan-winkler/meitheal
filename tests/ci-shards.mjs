@@ -2,6 +2,13 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 
+// 75th-percentile spec duration from the initial hosted comparison.
+const DEFAULT_SPEC_DURATION_MS = 18_238
+
+export function loadPilotShardTimings() {
+  return JSON.parse(readFileSync(new URL("./ci-shard-timings.json", import.meta.url), "utf8"))
+}
+
 export function testedTree(repoRoot) {
   return execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: repoRoot, encoding: "utf8" }).trim()
 }
@@ -48,14 +55,37 @@ export function testsInReport(report) {
 
 /**
  * @param {string[]} files
- * @param {{ index: number, count: number }} shard
+ * @param {number} count
+ * @param {Record<string, number>} timings
  */
-export function pathsInShard(files, { index, count }) {
-  return files.filter((_, position) => position % count === index - 1)
+export function planShards(files, count, timings = {}) {
+  if (count === 1) return [[...files]]
+
+  const specs = files.map(file => {
+    const observed = timings[file]
+    return {
+      file,
+      duration: Number.isFinite(observed) && observed > 0 ? observed : DEFAULT_SPEC_DURATION_MS,
+    }
+  }).sort((left, right) => {
+    if (left.duration !== right.duration) return right.duration - left.duration
+    if (left.file === right.file) return 0
+    return left.file < right.file ? -1 : 1
+  })
+
+  /** @type {{ files: string[], duration: number }[]} */
+  const shards = Array.from({ length: count }, () => ({ files: [], duration: 0 }))
+  for (const spec of specs) {
+    const shard = shards.reduce((lightest, candidate) => candidate.duration < lightest.duration ? candidate : lightest)
+    shard.files.push(spec.file)
+    shard.duration += spec.duration
+  }
+  return shards.map(shard => shard.files)
 }
 
-export function validateShardReports(reports, files, cases, count, identity) {
+export function validateShardReports(reports, files, cases, count, identity, timings = {}) {
   if (reports.length !== count) throw new Error("Incorrect number of shard reports")
+  const plan = planShards(files, count, timings)
   const expectedCases = new Map(cases.map(test => [test.id, test.file]))
   if (expectedCases.size !== cases.length) throw new Error("Duplicate discovered test identity")
   const observedCases = new Map()
@@ -71,7 +101,7 @@ export function validateShardReports(reports, files, cases, count, identity) {
     if (Object.entries(identity).some(([key, value]) => report.identity?.[key] !== value)) {
       throw new Error("Shard identity differs from the current run")
     }
-    const selected = pathsInShard(files, shard)
+    const selected = plan[shard.index - 1]
     if (results.length !== selected.length || new Set(results.map(result => result.file)).size !== selected.length) {
       throw new Error("Missing or duplicate spec result")
     }

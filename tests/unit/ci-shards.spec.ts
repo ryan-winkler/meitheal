@@ -1,28 +1,43 @@
 import { expect, test } from "@playwright/test"
-import { parseShard, pathsInShard, validateShardReports } from "../ci-shards.mjs"
+import { parseShard, planShards, validateShardReports } from "../ci-shards.mjs"
 
 const files = ["a.spec.ts", "b.spec.ts", "c.spec.ts"]
 const cases = files.map(file => ({ id: file, file, title: file, outcome: "expected", attempts: ["passed"] }))
 const identity = { tree: "tree", run: "24", attempt: "1" }
 
-function report(index: number) {
+function report(index: number, timings?: Record<string, number>) {
   const shard = { index, count: 2 }
   return {
     identity: { ...identity },
     shard,
-    results: pathsInShard(files, shard).map(file => ({
+    results: planShards(files, shard.count, timings)[index - 1]!.map(file => ({
       file, passed: true, cases: cases.filter(candidate => candidate.file === file),
     })),
   }
 }
 
 test("shards select complete and disjoint spec groups", () => {
-  expect(pathsInShard(files, parseShard("1/2", files.length))).toEqual(["a.spec.ts", "c.spec.ts"])
-  expect(pathsInShard(files, parseShard("2/2", files.length))).toEqual(["b.spec.ts"])
+  expect(parseShard("1/2", files.length)).toEqual({ index: 1, count: 2 })
+  expect(planShards(files, 2)).toEqual([["a.spec.ts", "c.spec.ts"], ["b.spec.ts"]])
   expect(() => parseShard("2/1", files.length)).toThrow()
   expect(() => parseShard("1/10", files.length)).toThrow()
   expect(() => parseShard("0/2", files.length)).toThrow()
   expect(validateShardReports([report(2), report(1)], files, cases, 2, identity)).toEqual(cases)
+})
+
+test("the duration plan places longer specs first and covers new specs in stable order", () => {
+  const paths = [...files, "d.spec.ts", "e.spec.ts"]
+  const timings = { "a.spec.ts": 48_000, "b.spec.ts": 25_000, "c.spec.ts": 25_000, "d.spec.ts": 0 }
+  const expected = [["a.spec.ts", "d.spec.ts"], ["b.spec.ts", "c.spec.ts", "e.spec.ts"]]
+  expect(planShards(paths, 2, timings)).toEqual(expected)
+  expect(planShards([...paths].reverse(), 2, timings)).toEqual(expected)
+  expect(planShards([...paths].reverse(), 1, timings)).toEqual([[...paths].reverse()])
+})
+
+test("aggregation verifies results against the same duration plan", () => {
+  const timings = { "b.spec.ts": 60_000, "c.spec.ts": 60_000 }
+  expect(validateShardReports([report(1, timings), report(2, timings)], files, cases, 2, identity, timings)).toEqual(cases)
+  expect(() => validateShardReports([report(1), report(2)], files, cases, 2, identity, timings)).toThrow(/assigned shard/)
 })
 
 test("aggregation rejects missing, duplicate and stale shards", () => {
