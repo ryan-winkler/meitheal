@@ -20,7 +20,7 @@ For repeated startup logging or delayed activation, check `ha.startup.skipped`, 
 
 ## Scoring Triage saves
 
-Scoring Triage reads the task's existing framework values from the selected Board before saving. A failed or malformed read keeps the dialog and its inputs open so you can retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save. If someone edits the task while triage is open, reopen the dialog to review its latest score.
+Scoring Triage reads the task's existing framework values from the selected Board before saving. A failed or malformed read keeps the dialog and its inputs open so you can retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save. If someone edits the task while triage is open, reopen the dialog to review its latest score. If the save response is interrupted, check the current score before retrying. When Board access is temporarily hidden, the score view updates after that Board is verified again. Weekly Review uses the updated quadrants before showing the next task.
 
 RICE Triage accepts confidence from 0% to 100%. A complete set of estimates with 0% confidence has a score of zero and appears in Kanban's Low group.
 

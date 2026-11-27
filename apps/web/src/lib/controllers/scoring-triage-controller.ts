@@ -44,6 +44,7 @@ let queueContext: TaskApiContext | null = null
 let saveInProgress = false
 let writeInProgress = false
 let closeAfterWrite = false
+let needsRefresh = false
 let queue: TriageTaskRecord[] = []
 let currentIndex = 0
 let savedCount = 0
@@ -464,11 +465,17 @@ async function saveCurrentTask(): Promise<void> {
     })
 
     writeInProgress = true
-    const saved = await saveVersionedTask(task.id, patch, version, context, signal)
+    const deadline = AbortSignal.timeout(8_000)
+    const saved = await saveVersionedTask(task.id, patch, version, context, AbortSignal.any([signal, deadline]))
     if (signal.aborted) return
     writeInProgress = false
     if (!saved.ok) {
-      showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
+      if (deadline.aborted || saved.errorCode === "unconfirmed") {
+        needsRefresh = true
+        showToast("Save unconfirmed. Check the task’s score before trying again.", "warning")
+      } else {
+        showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
+      }
       return
     }
     task.task_version = saved.version
@@ -521,7 +528,12 @@ export function closeScoringTriage(completed = false): void {
   returnFocus = undefined
   const complete = onCompleteCb
   onCompleteCb = undefined
-  if (savedCount === 0) return
+  const refresh = needsRefresh
+  needsRefresh = false
+  if (savedCount === 0) {
+    if (refresh) complete?.()
+    return
+  }
   const count = savedCount
   savedCount = 0
   document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "scoring-triage", dataOnly: true } }))
@@ -606,6 +618,7 @@ export async function openScoringTriage(options: OpenScoringTriageOptions = {}):
   saveInProgress = false
   writeInProgress = false
   closeAfterWrite = false
+  needsRefresh = false
   savedCount = 0
   onCompleteCb = options.onComplete
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
