@@ -276,10 +276,24 @@ const boardHref = boardWorkspaceHref(workScope.boardId, {
 </Layout>
 
 <script>
+  import { createScoringPageRefresh } from "@lib/controllers/scoring-page-refresh"
   import { pageLifecycle } from "@lib/page-lifecycle"
   import type { TriageFrameworkId } from "@lib/scoring-triage"
 
   pageLifecycle.onPageLoad((signal) => {
+    const root = document.getElementById("planning-shell")
+    if (!root) return
+    const refreshScores = createScoringPageRefresh(root, signal, html => {
+      const selectors = [
+        "#planning-section-eisenhower .stat-value", "#planning-section-eisenhower .planning-eisenhower-meta",
+        "#planning-section-rice .rice-kpi-grid", "#planning-section-rice .rice-group",
+      ]
+      for (const selector of selectors) {
+        const previous = root.querySelectorAll(selector)
+        const next = html.querySelectorAll(selector)
+        if (previous.length === next.length) previous.forEach((element, index) => element.replaceWith(next[index]!))
+      }
+    })
     document.addEventListener("click", (event) => {
       const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-open-scoring-triage]")
       if (!btn) return
@@ -288,7 +302,7 @@ const boardHref = boardWorkspaceHref(workScope.boardId, {
       void import("@lib/controllers/scoring-triage-controller").then(({ openScoringTriage }) =>
         openScoringTriage({
           framework,
-          onComplete: () => window.location.reload(),
+          onComplete: refreshScores,
         }),
       )
     }, { signal })
