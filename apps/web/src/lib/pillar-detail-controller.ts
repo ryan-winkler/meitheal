@@ -1,7 +1,14 @@
 import type { Principle } from "@domains/pillars/principle-service"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { renderMarkdownPreviewInto } from "@lib/task-description-editor"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { renderIconOrCustomEmoji } from "@lib/tabler-svg"
+
+interface LinkedGoalSummary {
+  id: string
+  title: string
+  status: string
+}
 
 interface PillarDetail {
   id: string
@@ -13,6 +20,7 @@ interface PillarDetail {
   weight: number
   principles: Principle[]
   linkedGoalCount: number
+  linkedGoals?: LinkedGoalSummary[]
   personal?: boolean
   opener?: HTMLElement
   showPrincipleForm?: boolean
@@ -35,7 +43,7 @@ function createShieldIcon(): SVGSVGElement {
   return svg
 }
 
-function renderPrinciples(list: HTMLElement, principles: Principle[]) {
+function renderPrinciples(list: HTMLElement, principles: Principle[], editingPrincipleId: string | null = null) {
   const sorted = [...principles].sort((a, b) => Number(b.isNonNegotiable) - Number(a.isNonNegotiable) || a.position - b.position)
   if (sorted.length === 0) {
     const empty = document.createElement("li")
@@ -48,6 +56,48 @@ function renderPrinciples(list: HTMLElement, principles: Principle[]) {
     const li = document.createElement("li")
     li.className = "pillar-detail-modal__principle-item"
     li.dataset.principleId = p.id
+
+    if (editingPrincipleId === p.id) {
+      const editForm = document.createElement("form")
+      editForm.className = "pillar-detail-modal__principle-edit-form"
+      editForm.dataset.editPrincipleForm = p.id
+
+      const editInput = document.createElement("input")
+      editInput.type = "text"
+      editInput.className = "form-input bg-bg-input pillar-detail-modal__principle-input"
+      editInput.name = "statement"
+      editInput.value = p.statement
+      editInput.maxLength = 500
+      editInput.required = true
+      editInput.setAttribute("aria-label", "Edit principle statement")
+
+      const nnLabel = document.createElement("label")
+      nnLabel.className = "pillar-detail-modal__nn-label"
+      const nnCheck = document.createElement("input")
+      nnCheck.type = "checkbox"
+      nnCheck.className = "pillar-detail-modal__nn-check"
+      nnCheck.name = "isNonNegotiable"
+      nnCheck.checked = p.isNonNegotiable
+      nnLabel.append(nnCheck, document.createTextNode(" Non-Negotiable"))
+
+      const formActions = document.createElement("div")
+      formActions.className = "pillar-detail-modal__principle-edit-actions"
+      const saveBtn = document.createElement("button")
+      saveBtn.type = "submit"
+      saveBtn.className = "btn btn-primary btn-sm"
+      saveBtn.textContent = "Save"
+
+      const cancelBtn = document.createElement("button")
+      cancelBtn.type = "button"
+      cancelBtn.className = "btn btn-secondary btn-sm"
+      cancelBtn.dataset.action = "cancel-edit-principle"
+      cancelBtn.textContent = "Cancel"
+
+      formActions.append(cancelBtn, saveBtn)
+      editForm.append(editInput, nnLabel, formActions)
+      li.appendChild(editForm)
+      return li
+    }
 
     const copy = document.createElement("div")
     copy.className = "pillar-detail-modal__principle-copy"
@@ -64,6 +114,13 @@ function renderPrinciples(list: HTMLElement, principles: Principle[]) {
 
     const actions = document.createElement("div")
     actions.className = "pillar-detail-modal__principle-actions"
+
+    const editBtn = document.createElement("button")
+    editBtn.type = "button"
+    editBtn.className = "btn btn-secondary btn-sm"
+    editBtn.dataset.action = "edit-principle"
+    editBtn.textContent = "Edit"
+
     const toggleBtn = document.createElement("button")
     toggleBtn.type = "button"
     toggleBtn.className = "btn btn-secondary btn-sm"
@@ -77,11 +134,34 @@ function renderPrinciples(list: HTMLElement, principles: Principle[]) {
     deleteBtn.dataset.action = "delete-principle"
     deleteBtn.textContent = "Remove"
 
-    actions.append(toggleBtn, deleteBtn)
+    actions.append(editBtn, toggleBtn, deleteBtn)
     li.append(copy, actions)
     return li
   })
   list.replaceChildren(...items)
+}
+
+function renderLinkedGoals(goalsSection: HTMLElement | null, goalsList: HTMLElement | null, goals: LinkedGoalSummary[] = []) {
+  if (!goalsSection || !goalsList) return
+  if (goals.length === 0) {
+    goalsSection.hidden = true
+    goalsList.replaceChildren()
+    return
+  }
+  goalsSection.hidden = false
+  goalsList.replaceChildren(
+    ...goals.map(goal => {
+      const li = document.createElement("li")
+      li.className = "pillar-detail-modal__goal-item"
+      const title = document.createElement("span")
+      title.textContent = goal.title
+      const status = document.createElement("span")
+      status.className = "pillar-detail-modal__goal-status"
+      status.textContent = goal.status
+      li.append(title, status)
+      return li
+    }),
+  )
 }
 
 pageLifecycle.onPageLoad(signal => {
@@ -93,9 +173,12 @@ pageLifecycle.onPageLoad(signal => {
   const submit = element<HTMLButtonElement>("pillar-detail-principle-save")
   const add = element<HTMLButtonElement>("pillar-detail-add-principle")
   const status = element("pillar-detail-status")
+  const goalsSection = element("pillar-detail-goals-section")
+  const goalsList = element("pillar-detail-goals")
   if (!overlay || !list || !form || !input || !nonNegotiable || !submit || !add || !status) return
 
   let pillar: PillarDetail | null = null
+  let editingPrincipleId: string | null = null
   let busy = false
 
   function showForm(show: boolean) {
@@ -108,6 +191,7 @@ pageLifecycle.onPageLoad(signal => {
     if (!pillar || busy) return
     const opener = pillar.opener
     pillar = null
+    editingPrincipleId = null
     overlay!.classList.remove("active")
     document.body.style.overflow = ""
     if (restoreFocus) opener?.focus()
@@ -121,7 +205,7 @@ pageLifecycle.onPageLoad(signal => {
   function refresh(next: Principle[]) {
     if (!pillar) return
     pillar.principles = next
-    renderPrinciples(list!, next)
+    renderPrinciples(list!, next, editingPrincipleId)
     document.dispatchEvent(new CustomEvent("pillar-principles-saved", { detail: { id: pillar.id, principles: next } }))
   }
 
@@ -155,13 +239,24 @@ pageLifecycle.onPageLoad(signal => {
   document.addEventListener("open-pillar-detail", ((event: CustomEvent<PillarDetail>) => {
     if (busy) return
     pillar = event.detail
+    editingPrincipleId = null
     overlay.style.setProperty("--pillar-accent", pillar.colorHex || "var(--accent)")
     const detailIcon = element("pillar-detail-icon")
     if (detailIcon) renderIconOrCustomEmoji(detailIcon, pillar.icon, "pillars", 22)
     element("pillar-detail-title")!.textContent = pillar.name
     element("pillar-detail-weight")!.textContent = `Weight ${pillar.weight}/10`
-    element("pillar-detail-manifesto-text")!.textContent = pillar.manifesto || "No manifesto yet. Choose Edit pillar to add one."
-    renderPrinciples(list, pillar.principles)
+    const manifestoEl = element("pillar-detail-manifesto-text")!
+    const currentPillarId = pillar.id
+    if (pillar.manifesto?.trim()) {
+      manifestoEl.textContent = pillar.manifesto
+      void renderMarkdownPreviewInto(manifestoEl, pillar.manifesto, {
+        shouldApply: () => !signal.aborted && pillar?.id === currentPillarId,
+      })
+    } else {
+      manifestoEl.textContent = "No manifesto yet. Choose Edit to add one."
+    }
+    renderPrinciples(list, pillar.principles, null)
+    renderLinkedGoals(goalsSection, goalsList, pillar.linkedGoals ?? [])
     form.reset()
     setStatus("")
     overlay.classList.add("active")
@@ -178,6 +273,11 @@ pageLifecycle.onPageLoad(signal => {
     if (!pillar || document.getElementById("meitheal-confirm-overlay")) return
     if (event.key === "Escape") {
       event.preventDefault()
+      if (editingPrincipleId) {
+        editingPrincipleId = null
+        renderPrinciples(list, pillar.principles, null)
+        return
+      }
       close()
     }
     if (event.key !== "Tab") return
@@ -252,11 +352,49 @@ pageLifecycle.onPageLoad(signal => {
     })
   }, { signal })
 
+  list.addEventListener("submit", event => {
+    const editForm = (event.target as Element).closest<HTMLFormElement>("form[data-edit-principle-form]")
+    if (!editForm || !pillar || busy) return
+    event.preventDefault()
+    const principleId = editForm.dataset.editPrincipleForm
+    const principle = pillar.principles.find(item => item.id === principleId)
+    if (!principle) return
+    const statementInput = editForm.querySelector<HTMLInputElement>('input[name="statement"]')
+    const nnInput = editForm.querySelector<HTMLInputElement>('input[name="isNonNegotiable"]')
+    const statement = statementInput?.value.trim() ?? ""
+    if (!statement) {
+      setStatus("Enter a principle before saving.", true)
+      statementInput?.focus()
+      return
+    }
+    const isNonNegotiable = Boolean(nnInput?.checked)
+    void savePrinciple({ action: "update", principleId: principle.id, statement, isNonNegotiable }, () => {
+      if (!pillar) return
+      editingPrincipleId = null
+      refresh(pillar.principles.map(item => item.id === principle.id ? { ...item, statement, isNonNegotiable } : item))
+      setStatus("Principle updated.")
+      list.querySelector<HTMLButtonElement>(`[data-principle-id="${CSS.escape(principle.id)}"] [data-action="edit-principle"]`)?.focus()
+    })
+  }, { signal })
+
   list.addEventListener("click", event => {
     const button = (event.target as Element).closest<HTMLButtonElement>("[data-action]")
     const principle = pillar?.principles.find(item => item.id === button?.closest<HTMLElement>("[data-principle-id]")?.dataset.principleId)
-    if (!button || !principle || busy) return
-    const removing = button.dataset.action === "delete-principle"
+    if (!button || !principle || busy || !pillar) return
+    const action = button.dataset.action
+    if (action === "edit-principle") {
+      editingPrincipleId = principle.id
+      renderPrinciples(list, pillar.principles, editingPrincipleId)
+      list.querySelector<HTMLInputElement>(`[data-edit-principle-form="${CSS.escape(principle.id)}"] input[name="statement"]`)?.focus()
+      return
+    }
+    if (action === "cancel-edit-principle") {
+      editingPrincipleId = null
+      renderPrinciples(list, pillar.principles, null)
+      list.querySelector<HTMLButtonElement>(`[data-principle-id="${CSS.escape(principle.id)}"] [data-action="edit-principle"]`)?.focus()
+      return
+    }
+    const removing = action === "delete-principle"
     const isNonNegotiable = !principle.isNonNegotiable
     const data = removing ? { action: "delete" } : { action: "update", isNonNegotiable }
     void savePrinciple({ ...data, principleId: principle.id }, () => {

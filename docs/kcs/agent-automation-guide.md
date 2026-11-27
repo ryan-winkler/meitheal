@@ -173,6 +173,10 @@ Create a credential from Settings while the intended Board is selected. Credenti
 
 Direct credentials keep their own grants and scope ceiling. A native action with a Home Assistant user additionally verifies that user through the official Supervisor ingress session and Core membership. The App intersects both authorities. Agent-context returns only eligible Board metadata and the existing human session proof for a genuine verified human; a direct credential call does not become a human session.
 
+If the client cancels while task creation is waiting for a write, the app
+stops that attempt. If the response is lost, check its receipt or retry with
+the same idempotency key before creating another task.
+
 Task duplication returns the committed task identity. An identical agent assignment retry can acknowledge its own exact durable receipt after assignment moves away. Missing, corrupted, superseded or unprovable historical receipts fail closed; activity history does not replace current command evidence. Genuine recurrence completion after reopening has a new completion identity, while replaying the same closed completion cannot generate another successor.
 
 The native Core integration patch is **0.3.1**. Its MCP handshake and diagnostics report the installed manifest version through Home Assistant’s loader. The separately staged Core component archive and the Canary App image retain separate release and installation receipts. Use the existing manual update path when no reviewed Marketplace/HACS owner is established; do not create a publishing target implicitly.

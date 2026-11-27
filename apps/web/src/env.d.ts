@@ -5,6 +5,8 @@ declare namespace App {
     ingressPath: string | undefined;
     behindIngress: boolean;
     hassUserId: string | undefined;
+    hassDisplayName?: string | undefined;
+    hassUserName?: string | undefined;
     hassIsAdmin: boolean;
     requestId: string
     timezone: string;
@@ -28,5 +30,7 @@ declare namespace App {
     writeAbortSignal?: AbortSignal | undefined;
     /** Per-request set of sprited Tabler icon names registered during SSR */
     usedIcons?: Set<string> | undefined;
+    /** True when the active page layout renders <IconSpriteDefs /> */
+    hasIconSprite?: boolean | undefined;
   }
 }

@@ -247,6 +247,23 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   `)
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS ha_user_cache (
+      user_id TEXT PRIMARY KEY,
+      display_name TEXT,
+      username TEXT,
+      role TEXT NOT NULL DEFAULT 'member',
+      is_owner INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      source_fingerprint TEXT NOT NULL,
+      verified_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute(`
+    CREATE INDEX IF NOT EXISTS idx_ha_user_cache_fp ON ha_user_cache(source_fingerprint)
+  `)
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS domain_events (
       event_id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,

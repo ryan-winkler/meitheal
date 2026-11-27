@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
@@ -18,6 +20,7 @@ from .api import (
     MeithealConnectionError,
     MeithealResponseError,
     async_credential_context,
+    async_renew_token,
     resolve_origin_headers,
     task_matches_identifier,
     task_path,
@@ -237,12 +240,10 @@ class MeithealTask:
         local_date = self.scheduled_local_date(local_now)
         return local_date == local_now.date() if local_date is not None else False
 
-    @property
-    def is_overdue(self) -> bool:
-        """Check if task is overdue relative to Home Assistant's local clock."""
+    def is_overdue_at(self, local_now: datetime) -> bool:
+        """Check if task is overdue relative to a supplied local timestamp."""
         if self.status in CLOSED_STATUSES:
             return False
-        local_now = dt_util.now()
         end_raw = _non_empty_str(self.end_date)
         if self.task_kind == "calendar_event" and end_raw is not None:
             scheduled = end_raw
@@ -273,20 +274,72 @@ class MeithealTask:
         except (ValueError, TypeError, OverflowError):
             return False
 
+    @property
+    def is_overdue(self) -> bool:
+        """Check if task is overdue relative to Home Assistant's local clock."""
+        return self.is_overdue_at(dt_util.now())
+
 
 class MeithealCoordinatorData:
-    """Structured data from coordinator update."""
+    """Structured data from coordinator update with pre-computed entity indexes."""
 
     def __init__(self, tasks: list[MeithealTask]) -> None:
-        """Compute active, overdue, and daily task summaries from fetched tasks."""
+        """Compute active, overdue, daily, and sensor summaries in a single pass."""
         self.tasks = tasks
-        self.todo_tasks = [task for task in tasks if task.deferred_at is None]
-        self.active_count = sum(1 for t in tasks if t.status not in CLOSED_STATUSES)
-        self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
         local_now = dt_util.now()
-        self.due_today_tasks = [task for task in tasks if task.is_due_on(local_now)]
-        self.due_today_count = len(self.due_today_tasks)
+
+        tasks_by_id: dict[str, MeithealTask] = {}
+        todo_tasks: list[MeithealTask] = []
+        active_tasks: list[MeithealTask] = []
+        overdue_tasks: list[MeithealTask] = []
+        due_today_tasks: list[MeithealTask] = []
+        active_priorities: dict[str, int] = {}
+        active_has_urgent = False
+        active_with_due_date = 0
+        oldest_overdue_due: str | None = None
+        statuses: dict[str, int] = {}
+        all_labels: dict[str, int] = {}
+
+        for task in tasks:
+            if task.id:
+                tasks_by_id[task.id] = task
+            if task.deferred_at is None:
+                todo_tasks.append(task)
+            statuses[task.status] = statuses.get(task.status, 0) + 1
+            for label in task.labels:
+                all_labels[label] = all_labels.get(label, 0) + 1
+            if task.status not in CLOSED_STATUSES:
+                active_tasks.append(task)
+                prio_key = f"p{task.priority}"
+                active_priorities[prio_key] = active_priorities.get(prio_key, 0) + 1
+                if task.priority <= 2:
+                    active_has_urgent = True
+                if task.due_date:
+                    active_with_due_date += 1
+                if task.is_overdue_at(local_now):
+                    overdue_tasks.append(task)
+                    if task.due_date and (
+                        oldest_overdue_due is None or task.due_date < oldest_overdue_due
+                    ):
+                        oldest_overdue_due = task.due_date
+                if task.is_due_on(local_now):
+                    due_today_tasks.append(task)
+
+        self.tasks_by_id = tasks_by_id
+        self.todo_tasks = todo_tasks
+        self.active_tasks = active_tasks
+        self.overdue_tasks = overdue_tasks
+        self.due_today_tasks = due_today_tasks
+        self.active_count = len(active_tasks)
+        self.overdue_count = len(overdue_tasks)
+        self.due_today_count = len(due_today_tasks)
+        self.active_priority_breakdown = active_priorities
+        self.active_has_urgent = active_has_urgent
+        self.active_with_due_date = active_with_due_date
+        self.oldest_overdue_due = oldest_overdue_due
+        self.status_breakdown = statuses
+        self.label_summary = dict(sorted(all_labels.items(), key=lambda x: -x[1])[:10])
         # Streak and XP — populated by coordinator from gamification API
         self.streak: int | None = None
         self.total_points: int | None = None
@@ -311,6 +364,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._was_available: bool = True
         self._cache_key = api.cache_key
         self._shared_entity_delivery = False
+        self._last_renew_attempt: datetime | None = None
+        self._assignee_directory_cache: tuple[str, float, list[dict[str, Any]]] | None = None
 
     # ── Event Bus Helpers ─────────────────────────────────────────────
 
@@ -354,11 +409,36 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         """Only a current approved shared sink may expose cached Board content in HA."""
         return self._shared_entity_delivery and self.api.configured and self.api.cache_key == self._cache_key
 
+    async def _async_maybe_renew_token(self, metadata: dict[str, Any]) -> None:
+        """Auto-extend expiring integration tokens when within 14 days of expiry."""
+        expires_raw = metadata.get("tokenExpiresAt")
+        if not isinstance(expires_raw, str) or not expires_raw.strip():
+            return
+        now = datetime.now(UTC)
+        if self._last_renew_attempt and (now - self._last_renew_attempt) < timedelta(hours=1):
+            return
+        try:
+            expires_dt = datetime.fromisoformat(expires_raw.replace("Z", "+00:00"))
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=UTC)
+        except ValueError:
+            return
+        if expires_dt - now > timedelta(days=14):
+            return
+        self._last_renew_attempt = now
+        try:
+            new_expiry = await async_renew_token(self.api, days=90)
+            if new_expiry:
+                _LOGGER.info("Renewed Meitheal integration token")
+        except (MeithealConnectionError, MeithealResponseError):
+            _LOGGER.debug("Deferred proactive Meitheal token renewal; will retry later")
+
     async def _async_board_metadata(self) -> dict[str, Any]:
         if not self.api.configured or self.api.cache_key != self._cache_key:
             raise MeithealResponseError(401)
         key = self.api.cache_key
         metadata = await async_credential_context(self.api)
+        await self._async_maybe_renew_token(metadata)
         board = next((board for board in metadata["boards"] if board["id"] == self.api.board_id), None)
         if board is None or self.api.cache_key != key:
             raise MeithealResponseError(403)
@@ -372,55 +452,86 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             self._shared_entity_delivery = False
         return self.shared_entity_delivery
 
+    def _parse_task_page(
+        self,
+        data: Any,
+        offset: int,
+        expected_total: int | None,
+        seen: set[str],
+        tasks: list[MeithealTask],
+    ) -> tuple[int | None, int]:
+        """Validate a single task page and append parsed tasks."""
+        raw = data if isinstance(data, list) else data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(raw, list):
+            raise UpdateFailed("Meitheal returned an invalid task list")
+        total = data.get("total") if isinstance(data, dict) else None
+        if isinstance(data, dict):
+            if "total" in data and (type(total) is not int or total < 0):
+                raise UpdateFailed("Meitheal returned an invalid task total")
+            if "offset" in data and (type(data["offset"]) is not int or data["offset"] != offset):
+                raise UpdateFailed("Meitheal returned an unexpected task page")
+            if "limit" in data and (type(data["limit"]) is not int or not 0 < data["limit"] <= 100):
+                raise UpdateFailed("Meitheal returned an invalid task page limit")
+            if total is None and ("offset" in data or "limit" in data):
+                raise UpdateFailed("Meitheal task page is missing its total")
+            if total is not None and len(raw) > data.get("limit", 100):
+                raise UpdateFailed("Meitheal returned an oversized task page")
+        if expected_total is not None and total != expected_total:
+            raise UpdateFailed("Task pagination changed during refresh; retry required")
+        for item in raw:
+            if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                or not item["id"] or not isinstance(item.get("title", ""), str)
+                or not isinstance(item.get("status", STATUS_TODO), str)):
+                raise UpdateFailed("Meitheal returned an invalid task")
+            if item.get("board_id") != self.api.board_id:
+                raise UpdateFailed("Meitheal returned work outside the configured Board")
+            task = MeithealTask(item)
+            if task.id in seen:
+                raise UpdateFailed("Task pagination repeated an item; retry required")
+            seen.add(task.id)
+            tasks.append(task)
+        return total, len(raw)
+
     async def _async_fetch_tasks(self) -> list[MeithealTask]:
-        """Read the complete board or fail without publishing partial counts."""
+        """Read the complete board (parallelizing pages 1..N) or fail without partial counts."""
         tasks: list[MeithealTask] = []
         seen: set[str] = set()
-        offset = 0
-        expected_total: int | None = None
-        while True:
-            data = await self.api.async_request("GET", "/api/tasks", params={
-                "limit": "100", "offset": str(offset),
-                "sort": "kanban_position", "order": "asc",
-            }, read_json=True)
-            raw = data if isinstance(data, list) else data.get("tasks") if isinstance(data, dict) else None
-            if not isinstance(raw, list):
-                raise UpdateFailed("Meitheal returned an invalid task list")
-            total = data.get("total") if isinstance(data, dict) else None
-            if isinstance(data, dict):
-                if "total" in data and (type(total) is not int or total < 0):
-                    raise UpdateFailed("Meitheal returned an invalid task total")
-                if "offset" in data and (type(data["offset"]) is not int or data["offset"] != offset):
-                    raise UpdateFailed("Meitheal returned an unexpected task page")
-                if "limit" in data and (type(data["limit"]) is not int or not 0 < data["limit"] <= 100):
-                    raise UpdateFailed("Meitheal returned an invalid task page limit")
-                if total is None and ("offset" in data or "limit" in data):
-                    raise UpdateFailed("Meitheal task page is missing its total")
-                if total is not None and len(raw) > data.get("limit", 100):
-                    raise UpdateFailed("Meitheal returned an oversized task page")
-            if expected_total is not None and total != expected_total:
-                raise UpdateFailed("Task pagination changed during refresh; retry required")
-            for item in raw:
-                if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
-                    or not item["id"] or not isinstance(item.get("title", ""), str)
-                    or not isinstance(item.get("status", STATUS_TODO), str)):
-                    raise UpdateFailed("Meitheal returned an invalid task")
-                if item.get("board_id") != self.api.board_id:
-                    raise UpdateFailed("Meitheal returned work outside the configured Board")
-                task = MeithealTask(item)
-                if task.id in seen:
-                    raise UpdateFailed("Task pagination repeated an item; retry required")
-                seen.add(task.id)
-                tasks.append(task)
-            offset += len(raw)
-            # Older responses omit pagination metadata and contain the whole list.
-            if total is None:
-                return tasks
-            if offset > total or (not raw and offset < total):
+        first_page = await self.api.async_request("GET", "/api/tasks", params={
+            "limit": "100", "offset": "0",
+            "sort": "kanban_position", "order": "asc",
+        }, read_json=True)
+        total, first_count = self._parse_task_page(first_page, 0, None, seen, tasks)
+        # Older responses omit pagination metadata and contain the whole list.
+        if total is None:
+            return tasks
+        if first_count > total or (first_count == 0 and total > 0):
+            raise UpdateFailed("Meitheal returned an incomplete task page")
+        if first_count == total:
+            return tasks
+
+        expected_total = total
+        page_size = first_count
+        remaining_offsets = list(range(first_count, total, page_size))
+        semaphore = asyncio.Semaphore(4)
+
+        async def _fetch_page(page_offset: int) -> Any:
+            async with semaphore:
+                return await self.api.async_request("GET", "/api/tasks", params={
+                    "limit": "100", "offset": str(page_offset),
+                    "sort": "kanban_position", "order": "asc",
+                }, read_json=True)
+
+        remaining_pages = await asyncio.gather(*(_fetch_page(off) for off in remaining_offsets))
+        offset = first_count
+        for page_offset, page_data in zip(remaining_offsets, remaining_pages, strict=True):
+            _, count = self._parse_task_page(page_data, page_offset, expected_total, seen, tasks)
+            offset += count
+            if offset > expected_total or (count == 0 and offset < expected_total):
                 raise UpdateFailed("Meitheal returned an incomplete task page")
-            if offset == total:
-                return tasks
-            expected_total = total
+
+        if offset != expected_total:
+            raise UpdateFailed("Meitheal returned an incomplete task page")
+        return tasks
 
     async def _async_fetch_gamification(self, data: MeithealCoordinatorData) -> None:
         """Optional or unauthorized statistics remain unknown, not measured zero."""
@@ -500,23 +611,29 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         await self._async_fetch_gamification(data)
         return data
 
-    async def async_resolve_assignee(self, candidate: str) -> str:
-        """Resolve a user name or canonical ID to a single canonical assignee ID."""
-        cleaned = candidate.strip()
-        if not cleaned:
-            raise UpdateFailed("Assignee identifier cannot be empty")
-        if cleaned.startswith(("custom_", "ha_")):
-            return cleaned
-
+    async def _async_get_assignee_directory(self, *, force_refresh: bool = False) -> list[dict[str, Any]]:
+        """Fetch /api/users with a short 60s per-credential TTL cache."""
+        now = time.monotonic()
+        cached = self._assignee_directory_cache
+        if (
+            not force_refresh
+            and cached is not None
+            and cached[0] == self.api.cache_key
+            and (now - cached[1]) < 60.0
+        ):
+            return cached[2]
         payload = await self.api.async_request("GET", "/api/users", read_json=True)
         users = payload.get("users") if isinstance(payload, dict) else None
         if not isinstance(users, list):
             raise UpdateFailed("Meitheal did not return an assignee directory")
+        self._assignee_directory_cache = (self.api.cache_key, now, users)
+        return users
 
+    @staticmethod
+    def _match_assignee_in_directory(users: list[dict[str, Any]], cleaned: str) -> str | None:
         exact_id = [u for u in users if isinstance(u, dict) and u.get("id") == cleaned]
         if len(exact_id) == 1:
             return str(exact_id[0]["id"])
-
         needle = cleaned.casefold()
         matches = [
             str(u["id"])
@@ -532,6 +649,31 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             raise UpdateFailed(
                 f"Multiple assignees match '{cleaned}'; provide an exact assignee ID"
             )
+        return None
+
+    async def async_resolve_assignee(self, candidate: str) -> str:
+        """Resolve a user name or canonical ID to a single canonical assignee ID."""
+        cleaned = candidate.strip()
+        if not cleaned:
+            raise UpdateFailed("Assignee identifier cannot be empty")
+        if cleaned.startswith(("custom_", "ha_")):
+            return cleaned
+
+        used_cache = (
+            self._assignee_directory_cache is not None
+            and self._assignee_directory_cache[0] == self.api.cache_key
+            and (time.monotonic() - self._assignee_directory_cache[1]) < 60.0
+        )
+        users = await self._async_get_assignee_directory(force_refresh=False)
+        resolved = self._match_assignee_in_directory(users, cleaned)
+        if resolved is not None:
+            return resolved
+        if used_cache:
+            # Refresh live on miss so newly added household members resolve immediately.
+            fresh_users = await self._async_get_assignee_directory(force_refresh=True)
+            resolved = self._match_assignee_in_directory(fresh_users, cleaned)
+            if resolved is not None:
+                return resolved
         raise UpdateFailed(f"No assignee found matching '{cleaned}'")
 
     async def async_create_task(
@@ -607,7 +749,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         if not task_id:
             raise UpdateFailed("Task not found")
         if self.data:
-            task = next((task for task in self.data.tasks if task.id == task_id), None)
+            task = self.data.tasks_by_id.get(task_id)
             if task and task.status == STATUS_DONE:
                 # A cached completion may have been reopened or access revoked.
                 current = await self.api.async_request("GET", task_path(task_id), read_json=True)
@@ -741,15 +883,13 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self, task_id: str, *,
         origin_kind: str | None = None, origin_name: str | None = None,
         origin_target: str | None = None,
+        refresh: bool = True,
     ) -> None:
         """Delete a task."""
         # Try to resolve title before deletion for logbook
         task_title = task_id
-        if self.data:
-            for task in self.data.tasks:
-                if task.id == task_id:
-                    task_title = task.title
-                    break
+        if self.data and (cached_task := self.data.tasks_by_id.get(task_id)):
+            task_title = cached_task.title
 
         authority: set[str] = set()
         origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
@@ -763,7 +903,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                 "task_id": task_id, "title": task_title,
             })
         await self._fire_logbook("Meitheal", f"deleted task: {task_title}")
-        await self.async_request_refresh()
+        if refresh:
+            await self.async_request_refresh()
 
     async def async_update_task(
         self, task_id: str, updates: dict[str, Any], *,
@@ -808,11 +949,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
         # Resolve title for logbook
         task_title = task_id
-        if self.data:
-            for task in self.data.tasks:
-                if task.id == task_id:
-                    task_title = task.title
-                    break
+        if self.data and (cached_task := self.data.tasks_by_id.get(task_id)):
+            task_title = cached_task.title
 
         changed_fields = ", ".join(updates.keys())
         if "meitheal_task_updated" not in authority:

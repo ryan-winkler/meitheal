@@ -212,7 +212,7 @@ test("getNextOccurrence advances monthly by 1 month", async () => {
 test("describeRule produces human-readable text", async () => {
   const { parseRRule, describeRule } = await import("../../apps/web/src/domains/tasks/recurrence")
 
-  expect(describeRule(parseRRule("FREQ=DAILY")!)).toMatch(/every day/i)
-  expect(describeRule(parseRRule("FREQ=WEEKLY")!)).toMatch(/every week/i)
-  expect(describeRule(parseRRule("FREQ=MONTHLY")!)).toMatch(/every month/i)
+  expect(describeRule(parseRRule("FREQ=DAILY")!)).toBe("Daily")
+  expect(describeRule(parseRRule("FREQ=WEEKLY")!)).toBe("Weekly")
+  expect(describeRule(parseRRule("FREQ=MONTHLY")!)).toBe("Monthly")
 })

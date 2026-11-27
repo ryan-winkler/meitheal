@@ -57,43 +57,50 @@ const groups = keyboardShortcutGroups(scopes)
   </div>
 )}
 
-<style>
+<style is:inline>
   .shortcut-keys {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 11px;
   }
 
-  /* 12px Outfit closes up word spaces, so small section labels use the body font. */
   .shortcut-modal-grid h4,
   .shortcut-group h4 {
     font-family: inherit;
-    letter-spacing: normal;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
   }
 
   .shortcut-note {
     display: block;
+    margin-top: 2px;
     font-size: 12px;
+    line-height: 1.4;
     color: var(--text-secondary);
   }
 
-  /* Help dialog: one grid so keycaps align across both groups. */
+  /* Help dialog: aligned Tabler keycaps + clean vertical rhythm */
   .shortcut-modal-grid {
     display: grid;
     grid-template-columns: auto 1fr;
-    align-items: baseline;
-    gap: 8px 16px;
+    align-items: start;
+    row-gap: 10px;
+    column-gap: 16px;
     font-size: 13px;
     color: var(--text-primary);
   }
 
   .shortcut-modal-grid h4 {
     grid-column: 1 / -1;
-    margin: 8px 0 0;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
+    margin: 14px 0 4px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   }
 
   .shortcut-modal-grid h4:first-child {
@@ -103,29 +110,45 @@ const groups = keyboardShortcutGroups(scopes)
   .shortcut-modal-grid .shortcut-keys {
     justify-self: end;
     white-space: nowrap;
+    padding-top: 1px;
   }
 
-  .shortcut-modal-grid kbd {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-family: monospace;
-    font-size: 12px;
+  .shortcut-modal-grid .shortcut-label {
+    line-height: 1.45;
+    font-weight: 500;
+    padding-top: 2px;
+  }
+
+  .shortcut-modal-grid kbd,
+  .shortcut-row kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 24px;
+    padding: 0 7px;
+    font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--bg-hover) 72%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--border) 95%, var(--text-muted) 18%);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 80%, transparent);
+    white-space: nowrap;
   }
 
   /* Settings card */
   .shortcut-groups {
     display: grid;
-    gap: 14px;
+    gap: 16px;
     margin-top: 14px;
   }
 
   .shortcut-group h4 {
-    margin: 0 0 4px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
+    margin: 0 0 6px;
   }
 
   .shortcut-grid {
@@ -147,24 +170,5 @@ const groups = keyboardShortcutGroups(scopes)
   .shortcut-row .shortcut-label {
     flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .shortcut-row kbd {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 26px;
-    padding: 0 8px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 6px;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
-    white-space: nowrap;
   }
 </style>

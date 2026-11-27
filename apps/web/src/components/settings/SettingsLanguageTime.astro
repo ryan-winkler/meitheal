@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { buildTimezoneOptions } from "../../lib/timezone-options"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
@@ -11,6 +12,7 @@ interface Props {
 const { locale } = Astro.props
 
 const languageTimeSection = SETTINGS_SECTIONS.find((section) => section.id === "language-time-settings")!
+const timezoneOptions = buildTimezoneOptions(locale)
 ---
 
 <section
@@ -38,22 +40,23 @@ const languageTimeSection = SETTINGS_SECTIONS.find((section) => section.id === "
 
       <div class="form-group mt-3">
         <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
+        <input
+          type="search"
+          id="timezone-search"
+          class="form-control form-control-sm mb-2"
+          style="max-width: 28rem;"
+          placeholder="Search city, country, or GMT offset…"
+          aria-label="Filter time zones"
+          autocomplete="off"
+        />
         <select
-          class="form-select settings-input-narrow"
+          class="form-select"
+          style="max-width: 28rem;"
           id="timezone-select"
         >
-          <option value="Europe/Dublin">Europe/Dublin</option>
-          <option value="Europe/London">Europe/London</option>
-          <option value="Europe/Berlin">Europe/Berlin</option>
-          <option value="Europe/Paris">Europe/Paris</option>
-          <option value="America/New_York">America/New_York</option>
-          <option value="America/Chicago">America/Chicago</option>
-          <option value="America/Denver">America/Denver</option>
-          <option value="America/Los_Angeles">America/Los_Angeles</option>
-          <option value="Asia/Tokyo">Asia/Tokyo</option>
-          <option value="Asia/Shanghai">Asia/Shanghai</option>
-          <option value="Australia/Sydney">Australia/Sydney</option>
-          <option value="UTC">UTC</option>
+          {timezoneOptions.map((tz) => (
+            <option value={tz.value} data-search={tz.searchText}>{tz.label}</option>
+          ))}
         </select>
       </div>
 

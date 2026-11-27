@@ -134,6 +134,17 @@ for (const placement of ["primary", "More", "phone"] as const) {
       const row = trigger.locator("xpath=ancestor::div[contains(@class, 'stree__project')][1]")
       await expect(trigger).toBeVisible()
       expect(await trigger.evaluate(element => Boolean(element.closest("[data-nav-overflow-menu]")))).toBe(placement === "More")
+      const areaLink = page.locator(`[data-area-group="${areaId}"] > .stree__area-row > .stree__area-link`)
+      const projectLink = row.locator(`[data-project-id="${projectId}"]`)
+      for (const [link, kind] of [[areaLink, "area"], [projectLink, "project"]] as const) {
+        await expect(link).toHaveCSS("display", "flex")
+        const aligned = await link.evaluate((element, subject) => {
+          const icon = element.querySelector(`.stree__${subject}-icon`)!.getBoundingClientRect()
+          const text = element.querySelector(`.stree__${subject}-name`)!.getBoundingClientRect()
+          return Math.abs(icon.top + icon.height / 2 - text.top - text.height / 2)
+        }, kind)
+        expect(aligned).toBeLessThan(2)
+      }
       if (placement === "primary") {
         await row.locator(`[data-project-id="${projectId}"]`).click({ button: "right" })
         await expect(page.locator(`[data-board-pinned-list] [data-project-id="${projectId}"]`)).toBeVisible()
@@ -151,7 +162,15 @@ for (const placement of ["primary", "More", "phone"] as const) {
       const menu = page.locator("body > #project-menu-dropdown")
       await expect(menu).toBeVisible()
       await expect(page).toHaveURL(location)
+      if (placement === "phone") {
+        await expect.poll(async () => {
+          const bounds = await menu.boundingBox()
+          return !!bounds && bounds.x >= 7 && bounds.x + bounds.width <= 383
+        }).toBe(true)
+        await expect(menu.getByRole("button", { name: "Rename", exact: true })).toHaveCSS("min-block-size", "44px")
+      }
       await menu.getByRole("button", { name: "Rename", exact: true }).click()
+      await expectHierarchyOpen(page, trigger, placement)
       const input = row.locator(".stree__inline-input")
       await expect(input).toBeVisible()
       await expect(input).toBeFocused()

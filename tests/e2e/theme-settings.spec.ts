@@ -10,7 +10,7 @@ test("an invalid browser theme stays Auto when Settings has no saved theme", asy
   await page.goto("/settings#look-and-feel-settings")
   await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
   await expect(page.locator("#theme-select")).toHaveValue("auto")
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "auto")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
   expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("auto")
 })
 

@@ -51,6 +51,11 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     const member = await currentBoardWriteHeaders(request, "household", session("member"), ingress)
     const admin = await currentBoardWriteHeaders(request, "household", session("admin"), ingress)
     native = await playwright.request.newContext({ extraHTTPHeaders: {} })
+    const retiredFavorite = await request.post(ingress + "/api/tasks", {
+      headers: member, data: { title: "Retired favorite", is_favorite: true },
+    })
+    expect(retiredFavorite.status()).toBe(400)
+    expect(await retiredFavorite.text()).toContain("is_favorite has been retired")
     const create = async (title: string) => {
       const result = await request.post(ingress + "/api/tasks", {
         headers: member, data: { title, priority: 4 },
@@ -73,7 +78,9 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const initial = await read()
     expect(initial.status()).toBe(200)
-    expect(await initial.json()).toMatchObject({ is_promoted: false, priority: 4 })
+    const initialTask = await initial.json()
+    expect(initialTask).toMatchObject({ is_promoted: false, priority: 4 })
+    expect(initialTask).not.toHaveProperty("is_favorite")
     for (const invalid of [0, 1, "true", null, []]) {
       const rejected = await patch(invalid)
       expect(rejected.status()).toBe(400)
@@ -128,7 +135,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await memberBrowser.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     await adminBrowser.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await memberBrowser.newPage()
-    await page.goto(ingress + "/tasks")
+    await page.goto(ingress + "/tasks?view=kanban#kanban")
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const lane = page.locator('.kanban-column[data-status="pending"]')
     const cards = lane.locator(".kanban-card")

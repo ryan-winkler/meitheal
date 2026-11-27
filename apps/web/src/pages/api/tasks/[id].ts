@@ -655,10 +655,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
         apiError("Agent can only update tasks assigned to it", 403)
     }
     if (update.errorCode === "hierarchy_invalid") {
-      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_invalid" }, { status: 400 })
+      return apiError(update.message, 400)
     }
     if (update.errorCode === "hierarchy_conflict") {
-      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_conflict" }, { status: 409 })
+      return apiError(update.message, 409)
     }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)

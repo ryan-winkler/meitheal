@@ -33,7 +33,8 @@ test.describe("Native navigation overflow", () => {
       const summary = more.locator(":scope > summary")
       const menu = more.locator("[data-nav-overflow-menu]")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
+      // Each sidebar section keeps one primary list; all of them share one More.
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(await row.locator("[data-sidebar-section]").count())
       await expect(more).toHaveCount(1)
       const boards = row.locator('[data-sidebar-group="boards"]')
       const household = boards.locator('[data-named-board-shortcut="household"]')
@@ -68,6 +69,13 @@ test.describe("Native navigation overflow", () => {
       await expect(more).toHaveAttribute("open", "")
       await expect(menu.locator("a").first()).toBeFocused()
       await page.keyboard.press("End")
+      await expect(menu.getByRole("link").last()).toBeFocused()
+      await page.keyboard.press("Home")
+      await expect(menu.locator("a").first()).toBeFocused()
+      const links = await menu.getByRole("link").count()
+      for (let i = 0; i < links && !await reference.evaluate(link => link === document.activeElement); i++) {
+        await page.keyboard.press("ArrowDown")
+      }
       await expect(reference).toBeFocused()
       const box = await menu.boundingBox()
       const focusedBox = await reference.boundingBox()
@@ -93,6 +101,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await boardsToggle.press("Enter")
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
+      // The top-navigation Boards popup is fixed so sticky headers cannot clip it.
       await expect(boards.locator("#sidebar-board-children")).toHaveCSS("position", "fixed")
       await expect(boards.locator(':scope > .nav-row a[data-page="boards"]')).toBeInViewport({ ratio: 1 })
       await expect(householdLink).toBeVisible()
@@ -106,10 +115,14 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await reference.focus()
 
-      await row.evaluate(el => { el.style.maxWidth = "200px" })
-      await expect(more).toHaveAttribute("open", "")
+      await row.evaluate(el => { el.style.maxWidth = "300px" })
+      // The focused destination keeps its place in the bar while others move into More.
       await expect(reference).toBeFocused()
-      await reference.press("Escape")
+      await expect(menu.locator('[data-page="overflow-reference"]')).toHaveCount(0)
+      await expect(more).toBeVisible()
+      await summary.click()
+      await expect(more).toHaveAttribute("open", "")
+      await page.keyboard.press("Escape")
       await expect(more).not.toHaveAttribute("open", "")
       await expect(summary).toBeFocused()
       await summary.press("Enter")
@@ -162,9 +175,11 @@ test.describe("Native navigation overflow", () => {
       const household = boards.locator('[data-named-board-shortcut="household"]')
       const toggle = household.locator(".sidebar-board-toggle")
       const householdAreas = household.locator('[data-board-groups="household"]')
+      // Settings stays reachable from the Keyboard utility menu even when navigation hides it.
       const settings = page.locator("#nav-utility-trigger")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
+      // Each sidebar section keeps one primary list; all of them share one More.
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(await row.locator("[data-sidebar-section]").count())
       await expect(more).toHaveCount(1)
       await expect(row.locator('[data-nav-overflow-primary] a[data-page="dashboard"]')).toBeVisible()
       await expect(menu.locator('[data-page="planning"]')).toHaveCount(1)
@@ -206,6 +221,13 @@ test.describe("Native navigation overflow", () => {
       await settings.focus()
       await expect(settings).toBeFocused()
       expect((await (await request.get("/api/settings")).json()).sidebar_config.labels.areas).toBe(longLabel)
+      // The utility menu's Settings action is visible and opens Settings.
+      await settings.press("Enter")
+      const settingsAction = page.locator("#nav-utility-popover").getByRole("menuitem", { name: "Settings", exact: true })
+      await expect(settingsAction).toBeVisible()
+      await expect(settingsAction).toBeInViewport()
+      await settingsAction.click()
+      await expect(page).toHaveURL(url => url.pathname === "/settings")
     } finally {
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })).ok()).toBe(true)
       expect((await request.delete(`/api/areas/${id}`, { headers, data: {} })).ok()).toBe(true)
@@ -214,7 +236,7 @@ test.describe("Native navigation overflow", () => {
 
   test("crowded Tasks views keep the selected native link visible and navigate from More with filters", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 })
-    await page.goto("/tasks?q=overflow-filter&priority=2")
+    await page.goto("/tasks?view=kanban&q=overflow-filter&priority=2#kanban")
     const row = page.locator('[data-nav-overflow="views"]')
     const more = row.locator("[data-nav-overflow-more]")
     const menu = more.locator("[data-nav-overflow-menu]")

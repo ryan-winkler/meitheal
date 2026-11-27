@@ -51,14 +51,14 @@
       },
       "reauth_confirm": {
         "title": "Reconnect Meitheal",
-        "description": "Meitheal denied access to the selected Board. Enter a current credential and its approved Board. Use Reconfigure to change the address.",
+        "description": "Meitheal rejected the current API token or Board access. Open Meitheal → Settings → AI & Automation → Agent Tokens, click Restore/Renew (or Rotate / + New Token using the Home Assistant preset), and paste the token below.",
         "data": {
           "api_token": "Meitheal API token",
           "board_id": "Board ID"
         },
         "data_description": {
-          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions.",
-          "board_id": "Choose the exact Board approved for this credential. Private Board work is not exposed as shared Home Assistant entities."
+          "api_token": "Paste a current Meitheal agent token (Settings → AI & Automation → Agent Tokens). Rotating an existing token keeps its Board access.",
+          "board_id": "Pre-filled with your current Board ID. Change it only if moving to a different Board."
         }
       }
     },

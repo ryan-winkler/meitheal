@@ -72,6 +72,7 @@ export function boardNavigationLinks(context: { boardId: string; area?: string |
   const progress = new URLSearchParams({ board_id: boardId })
   if (project) progress.set("project_id", project)
   else if (area) progress.set("area_id", area)
+  if (project && fromArea) progress.set("from", fromArea)
   return {
     dashboard: `/?${progress}`,
     today: `/today?${progress}`,
@@ -81,10 +82,11 @@ export function boardNavigationLinks(context: { boardId: string; area?: string |
     pinned: `/pinned?board_id=${encodeURIComponent(boardId)}`,
     review: `/review?board_id=${encodeURIComponent(boardId)}`,
     tasks: boardWorkspaceHref(boardId, placement, "kanban"),
-    planning: boardWorkspaceHref(boardId, { ...placement, groups: true }, "groups"),
+    groups: boardWorkspaceHref(boardId, { ...placement, groups: true }, "groups"),
+    planning: `/planning?${progress}#eisenhower`,
     progress: `/progress?${progress}#goals`,
     pillars: `/progress?${progress}#pillars`,
-    routines: `/habits?${progress}`,
+    routines: `/progress?${progress}#routines`,
   }
 }
 

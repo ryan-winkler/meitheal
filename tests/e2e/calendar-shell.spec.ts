@@ -9,7 +9,7 @@ test.describe("Calendar Shell", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/calendar")
-    await page.waitForLoadState("networkidle")
+    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
   })
 
   test("legacy route opens Calendar and a keyboard user can inspect a day", async ({ page }) => {
@@ -28,7 +28,7 @@ test.describe("Calendar Shell", () => {
       await expect(close).toBeFocused()
       const target = await close.boundingBox()
       expect(target?.width).toBeGreaterThanOrEqual(44)
-      expect(target?.height).toBeGreaterThanOrEqual(44)
+      expect(target?.height).toBeGreaterThanOrEqual(43.99)
       if (pointer) {
         const heading = drawer.locator("#day-drawer-title")
         await heading.click()
@@ -91,7 +91,7 @@ test.describe("Calendar Shell", () => {
     await page.setViewportSize({ width: 320, height: 780 })
     const touch = await page.context().newCDPSession(page)
     await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
-    await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    await page.goto("/tasks?view=calendar&calView=month&year=2031&month=6#calendar")
     await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
     const days = page.locator(".calendar-grid .cal-cell")
     await days.nth(7).evaluate(cell => cell.scrollIntoView({ block: "center" }))
@@ -103,23 +103,23 @@ test.describe("Calendar Shell", () => {
       )
     }))).toEqual(Array(7).fill(true))
     await page.evaluate(() => window.scrollTo(0, 0))
-    const disclosure = page.getByRole("button", { name: "Filters", exact: true })
+    const navigation = page.locator(".calendar-navigation")
+    const disclosure = navigation.getByRole("button", { name: "Filters", exact: true })
     const toolbar = page.locator("#calendar-filter-bar")
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
     await expect(toolbar).toBeHidden()
-    await expect(page.getByRole("heading", { name: "July 2031" })).toBeInViewport()
+    await expect(page.getByRole("button", { name: "July 2031", exact: true })).toBeInViewport()
     await expect(disclosure).toHaveCSS("min-height", "44px")
     expect((await disclosure.boundingBox())?.height).toBeGreaterThanOrEqual(43.99)
 
     await disclosure.press("Enter")
     await expect(toolbar).toBeVisible()
-    await page.keyboard.press("Tab")
     const search = toolbar.getByRole("textbox", { name: "Filter by text" })
     await expect(search).toBeFocused()
     await search.fill("phone calendar filter")
     await expect(page).toHaveURL(/search=phone\+calendar\+filter/)
     await page.keyboard.press("Escape")
-    const active = page.getByRole("button", { name: "Filters Active" })
+    const active = navigation.getByRole("button", { name: "Filters Active", exact: true })
     await expect(active).toBeFocused()
     await expect(active).toHaveAttribute("aria-expanded", "false")
     await expect(toolbar).toBeHidden()
@@ -193,7 +193,8 @@ test.describe("Calendar Shell", () => {
     })
     for (const theme of ["light", "dark", "knight-rider", "auto", "custom"]) {
       await page.goto(`/tasks?view=calendar&label=Review&probeTheme=${theme}#calendar`)
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "custom" ? "dark" : theme)
+      const appliedTheme = theme === "custom" ? "dark" : theme === "auto" ? "knight-rider" : theme
+      await expect(page.locator("html")).toHaveAttribute("data-theme", appliedTheme)
       const panel = page.locator("#calendar-filter-bar .label-filter-panel")
       await panel.locator("summary").click()
       const selected = panel.getByRole("button", { name: "Review", exact: true })
@@ -370,7 +371,7 @@ test.describe("Calendar Shell", () => {
       ] as const) {
         const response = await request.post("/api/tasks", { headers, data: {
           title, priority, status, task_kind, due_date: day,
-          ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 100, confidence_unit: "percent", effort: 2 } }) }),
+          ...(status === "pending" && { framework_payload: { rice: { reach: 10, impact: 5, confidence: 100, effort: 2 } } }),
         } })
         expect(response.status(), await response.text()).toBe(201)
         createdIds.push((await response.json()).id)

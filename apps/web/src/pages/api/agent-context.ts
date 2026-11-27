@@ -1,3 +1,4 @@
+import { getAgentTokenById } from "@domains/auth"
 import { boardSessionProof } from "@lib/named-board-request"
 import type { APIRoute } from "astro"
 import { BoardAccessService, canReadBoardAggregate, getPersistenceClient, validateBoardScope, type BoardScope } from "@domains/tasks"
@@ -32,7 +33,12 @@ export const GET: APIRoute = async context => {
     scopes.push(result.scope)
   }
   for (const scope of scopes) if (!(await validateBoardScope(scope, db, { resource: "task", action: "read" })).ok) return apiError("Credential access changed.", 409)
-  const response = apiJson({ boards, enrollmentBoardId: boards.length === 1 ? boards[0]?.id ?? null : null })
+  const tokenRecord = await getAgentTokenById(principal.id).catch(() => null)
+  const response = apiJson({
+    boards,
+    enrollmentBoardId: boards.length === 1 ? boards[0]?.id ?? null : null,
+    tokenExpiresAt: tokenRecord?.expiresAt ?? null,
+  })
   if (human) response.headers.set("X-Meitheal-Board-Session", boardSessionProof(human.id))
   response.headers.set("Cache-Control", "private, no-store")
   return response

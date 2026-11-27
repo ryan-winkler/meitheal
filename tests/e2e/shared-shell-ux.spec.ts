@@ -153,8 +153,7 @@ for (const theme of ["light", "dark"]) {
         const scan = new AxeBuilder({ page }).withRules(["color-contrast", "nested-interactive", "target-size", "link-in-text-block"])
         if (path.startsWith("/settings")) {
           await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert")
-          const sections = page.locator("#settings-sections-toggle")
-          if (await sections.getAttribute("aria-expanded") === "false") await sections.click()
+          await expect(page.locator("#settings-directory")).toBeVisible()
           scan
             .include(".sidebar")
             .include("#settings-bar")

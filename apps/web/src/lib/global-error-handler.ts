@@ -28,13 +28,8 @@ export function initGlobalErrorHandler(): void {
   const recoverStaleChunk = (): boolean =>
     attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())
 
-  window.addEventListener("vite:preloadError", (event) => {
-    if ((w.__meithealHandledPreloads ?? 0) > 0) return
-    event.preventDefault()
-    if (!recoverStaleChunk()) {
-      log.warn("Module preload failed after reload cooldown")
-    }
-  })
+  // A failed dynamic import still rejects so a caller's fallback can run.
+  // Only an unhandled stale-chunk rejection below reloads the page.
 
   window.addEventListener("error", (event) => {
     // Match the layout logger: the browser defers these resize notifications without an application failure.

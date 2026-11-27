@@ -12,6 +12,11 @@
 @source not "../generated";
 @source not "../pages/api";
 @source not "../domains";
+@source not "../i18n";
+@source not "../middleware.ts";
+@source not "../types";
+@source not "../content";
+@source not "../lib/__tests__";
 
 /* 1. Design tokens: fonts, CSS vars, themes, @theme overrides */
 @import './_tokens.css';
@@ -28,7 +33,6 @@
 @import './_parent-page.css';
 @import './_tasks.css';
 @import './_kanban.css';
-@import './_table.css';
 @import './_filter-toolbar.css';
 @import './_feedback.css';
 @import './_avatar.css';
@@ -38,7 +42,6 @@
 @import './inline-date-picker.css';
 @import './_labels.css';
 @import './_settings-shared.css';
-@import './settings-utilities.css';
 
 /* 4. Cross-cutting concerns */
 @import './_responsive.css';

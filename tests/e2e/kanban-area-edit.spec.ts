@@ -197,8 +197,18 @@ test("Area changes update the Kanban groups and preserve the board context throu
     const remembered = await rememberedArea()
     await card(task).click()
     const lateReopen = await holdMove(original)
+    // Let the close request its native Back now, then deliver that traversal
+    // after a ticket-key open has been requested.
+    await page.evaluate(() => {
+      const back = history.back.bind(history)
+      history.back = () => {
+        history.back = back
+        document.addEventListener("test:release-drawer-close", back, { once: true })
+      }
+    })
     await close.click()
     await expect(drawer).toBeHidden()
+    await expect(page).toHaveURL(url => url.pathname.toLowerCase().endsWith("/tickets/" + ticketKey))
     let saveAcknowledged = false
     const save = page.waitForResponse(res => res.url() === api && res.request().method() === "PUT")
       .then(() => { saveAcknowledged = true })
@@ -206,6 +216,9 @@ test("Area changes update the Kanban groups and preserve the board context throu
       .then(() => saveAcknowledged)
     const reopenedTask = page.waitForResponse(res => res.url() === ticketApi && res.request().method() === "GET")
     await openByTicketKey()
+    await page.evaluate(() => document.dispatchEvent(new Event("test:release-drawer-close")))
+    await expect(drawer).toHaveAttribute("data-open-task-id", ticketKey)
+    await expect(select).toBeDisabled()
     await lateReopen()
     await save
     expect({

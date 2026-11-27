@@ -37,7 +37,7 @@ export const TODAY_SECTIONS = defineSections<TodaySectionId>([
   },
   {
     id: "today-habits",
-    label: "Habits",
+    label: "Routines",
     icon: "repeat",
     description: "Routine completions that flow back into shared task execution.",
   },

@@ -1,27 +1,16 @@
 /**
- * FieldPickerPanel — Shared ClickUp-style column/field visibility manager.
+ * FieldPickerPanel — Shared Tabler-styled column/field visibility manager.
  *
- * Renders a panel with search, Shown/Hidden sections, and toggle switches
- * for task fields. Persists visibility state per-view in localStorage.
- * Emits `meitheal:fields-changed` CustomEvent when fields change.
+ * Renders an elevated popover panel with search, Shown/Hidden sections,
+ * Tabler SVG icons, and accessible toggle switches for task fields.
+ * Persists visibility state per-view in localStorage and emits
+ * `meitheal:fields-changed` CustomEvent when fields change.
  *
  * @domain tasks (shared view-layer component)
  * @phase 20 — Field Picker Panel
- *
- * @usage
- * ```ts
- * import { FieldPickerPanel, TASK_FIELD_DEFS } from "@lib/field-picker-panel"
- *
- * const panel = new FieldPickerPanel({
- *   viewId: "timeline",
- *   fields: TASK_FIELD_DEFS,
- *   triggerEl: myButton,
- *   onChanged: (visibleIds) => reRender(visibleIds),
- *   signal: abortSignal,
- * })
- * panel.toggle()
- * ```
  */
+
+import { createSpriteIconElement, type CanonicalIconName } from "../generated/icon-registry"
 
 // ── Field Definition ───────────────────────────────────────────────────────
 
@@ -30,10 +19,10 @@ export interface FieldDef {
   id: string
   /** Human-readable label */
   label: string
-  /** Emoji or text icon for the field */
-  icon: string
+  /** Canonical Tabler icon name from icon-registry */
+  icon: CanonicalIconName
   /** Grouping category for organisation */
-  group: "date" | "meta" | "tracking"
+  group: "date" | "meta" | "tracking" | "planning"
   /** If true, field cannot be hidden (e.g. task name) */
   alwaysVisible?: boolean
   /** Default visibility when no localStorage state exists */
@@ -45,14 +34,18 @@ export interface FieldDef {
  * Views import this and pass it to FieldPickerPanel.
  */
 export const TASK_FIELD_DEFS: FieldDef[] = [
-  { id: "due_date",       label: "Due Date",   icon: "📅", group: "date",     defaultVisible: true },
-  { id: "start_date",     label: "Start Date",  icon: "🗓️", group: "date",     defaultVisible: false },
-  { id: "priority",       label: "Priority",    icon: "🔥", group: "meta",     defaultVisible: false },
-  { id: "status",         label: "Status",      icon: "⬤",  group: "meta",     defaultVisible: false },
-  { id: "ticket_number",  label: "Task ID",     icon: "🔢", group: "meta",     defaultVisible: false },
-  { id: "progress",       label: "Progress",    icon: "📊", group: "tracking", defaultVisible: false },
-  { id: "effort_minutes", label: "Effort",      icon: "⏱️", group: "tracking", defaultVisible: false },
-  { id: "task_kind",      label: "Type",        icon: "🏷️", group: "meta",     defaultVisible: false },
+  { id: "due_date",       label: "Due Date",     icon: "calendar-due", group: "date",     defaultVisible: true },
+  { id: "start_date",     label: "Start Date",   icon: "calendar",     group: "date",     defaultVisible: false },
+  { id: "priority",       label: "Priority",     icon: "flame",        group: "meta",     defaultVisible: false },
+  { id: "status",         label: "Status",       icon: "checkbox",     group: "meta",     defaultVisible: false },
+  { id: "ticket_number",  label: "Task ID",      icon: "hash",         group: "meta",     defaultVisible: false },
+  { id: "progress",       label: "Progress",     icon: "chart-bar",    group: "tracking", defaultVisible: false },
+  { id: "effort_minutes", label: "Effort",       icon: "clock",        group: "tracking", defaultVisible: false },
+  { id: "task_kind",      label: "Type",         icon: "tag",          group: "meta",     defaultVisible: false },
+  { id: "story_points",   label: "Story Points", icon: "bolt",         group: "planning", defaultVisible: false },
+  { id: "eisenhower",     label: "Eisenhower",   icon: "layout-grid",  group: "planning", defaultVisible: false },
+  { id: "score",          label: "Score",        icon: "target",       group: "planning", defaultVisible: false },
+  { id: "area",           label: "Area",         icon: "folder",       group: "planning", defaultVisible: false },
 ]
 
 // ── Panel Options ──────────────────────────────────────────────────────────
@@ -77,15 +70,17 @@ function storageKey(viewId: string): string {
 }
 
 export function loadVisibleFields(viewId: string, fields: FieldDef[]): Set<string> {
+  const validIds = new Set(fields.map(f => f.id))
   try {
     const raw = localStorage.getItem(storageKey(viewId))
     if (raw) {
       const parsed = JSON.parse(raw) as string[]
-      if (Array.isArray(parsed)) return new Set(parsed)
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.filter(id => validIds.has(id)))
+      }
     }
   } catch { /* ignore */ }
 
-  // Default: fields marked defaultVisible + alwaysVisible
   return new Set(
     fields
       .filter(f => f.defaultVisible || f.alwaysVisible)
@@ -103,16 +98,36 @@ function saveVisibleFields(viewId: string, ids: Set<string>): void {
 
 export class FieldPickerPanel {
   private readonly opts: FieldPickerOptions
+  private triggerEl: HTMLElement
   private panelEl: HTMLElement | null = null
   private visibleIds: Set<string>
   private searchQuery = ""
+  private outsideClickAC: AbortController | null = null
+  private lockedPos: { top: number; left: number } | null = null
 
   constructor(opts: FieldPickerOptions) {
     this.opts = opts
+    this.triggerEl = opts.triggerEl
     this.visibleIds = loadVisibleFields(opts.viewId, opts.fields)
 
-    // Cleanup on abort
-    opts.signal?.addEventListener("abort", () => this.close())
+    opts.signal?.addEventListener("abort", () => this.close(), { once: true })
+  }
+
+  /**
+   * Re-anchor trigger element after parent re-renders without closing OR jumping the open panel.
+   * Keeping the open popover locked at its initial coordinates respects Fitts's Law and prevents
+   * the panel from leaping across the screen while the user toggles multiple fields in a row.
+   */
+  updateTrigger(nextTriggerEl: HTMLElement): void {
+    this.triggerEl = nextTriggerEl
+    if (this.panelEl) {
+      this.triggerEl.setAttribute("aria-expanded", "true")
+    }
+  }
+
+  /** Whether the panel is currently open */
+  isOpen(): boolean {
+    return this.panelEl !== null && document.body.contains(this.panelEl)
   }
 
   /** Get current visible field IDs */
@@ -140,60 +155,107 @@ export class FieldPickerPanel {
       this.panelEl.remove()
       this.panelEl = null
     }
+    this.lockedPos = null
     this.outsideClickAC?.abort()
     this.outsideClickAC = null
+    this.triggerEl.setAttribute("aria-expanded", "false")
   }
 
-  private outsideClickAC: AbortController | null = null
+  private positionPanel(panel: HTMLElement, { clampLocked = false }: { clampLocked?: boolean } = {}): void {
+    const panelWidth = 288
+    const estimatedHeight = 420
+    const margin = 12
+
+    if (clampLocked && this.lockedPos) {
+      const clampedLeft = Math.max(margin, Math.min(this.lockedPos.left, window.innerWidth - panelWidth - margin))
+      const clampedTop = Math.max(margin, Math.min(this.lockedPos.top, window.innerHeight - 160))
+      this.lockedPos = { top: Math.round(clampedTop), left: Math.round(clampedLeft) }
+      panel.style.position = "fixed"
+      panel.style.top = `${this.lockedPos.top}px`
+      panel.style.left = `${this.lockedPos.left}px`
+      panel.style.right = "auto"
+      panel.style.zIndex = "260"
+      return
+    }
+
+    const rect = this.triggerEl.getBoundingClientRect()
+    // Guard against detached or hidden triggers returning an all-zero rect (0,0,0,0)
+    if (rect.width === 0 && rect.height === 0) {
+      if (this.lockedPos) {
+        this.positionPanel(panel, { clampLocked: true })
+      }
+      return
+    }
+
+    const preferredLeft = rect.right - panelWidth
+    const clampedLeft = Math.max(margin, Math.min(preferredLeft, window.innerWidth - panelWidth - margin))
+    const spaceBelow = window.innerHeight - rect.bottom - margin
+    const top = spaceBelow >= 220
+      ? rect.bottom + 6
+      : Math.max(margin, rect.top - Math.min(estimatedHeight, window.innerHeight - margin * 2) - 6)
+
+    this.lockedPos = { top: Math.round(top), left: Math.round(clampedLeft) }
+    panel.style.position = "fixed"
+    panel.style.top = `${this.lockedPos.top}px`
+    panel.style.left = `${this.lockedPos.left}px`
+    panel.style.right = "auto"
+    panel.style.zIndex = "260"
+  }
 
   /** Open the panel anchored to triggerEl */
   private open(): void {
-    // Remove any existing panel globally
     document.querySelector(".field-picker-panel")?.remove()
+    this.searchQuery = ""
 
     const panel = document.createElement("div")
     panel.className = "field-picker-panel"
     panel.setAttribute("role", "dialog")
     panel.setAttribute("aria-label", "Manage visible fields")
-
-    // Position relative to trigger
-    const rect = this.opts.triggerEl.getBoundingClientRect()
-    panel.style.position = "fixed"
-    panel.style.top = `${rect.bottom + 4}px`
-    panel.style.right = `${window.innerWidth - rect.right}px`
-    panel.style.zIndex = "10000"
+    this.positionPanel(panel)
 
     // Header
     const header = document.createElement("div")
     header.className = "field-picker-panel__header"
 
-    const title = document.createElement("span")
-    title.className = "field-picker-panel__title"
-    title.textContent = "Fields"
-    header.appendChild(title)
+    const titleWrap = document.createElement("span")
+    titleWrap.className = "field-picker-panel__title"
+    titleWrap.append(
+      createSpriteIconElement("adjustments-horizontal", { size: 15, className: "field-picker-panel__title-icon" }),
+      document.createTextNode("Fields"),
+    )
+    header.appendChild(titleWrap)
 
     const closeBtn = document.createElement("button")
     closeBtn.type = "button"
     closeBtn.className = "field-picker-panel__close"
     closeBtn.setAttribute("aria-label", "Close fields panel")
-    closeBtn.textContent = "✕"
-    closeBtn.addEventListener("click", () => this.close())
+    closeBtn.appendChild(createSpriteIconElement("x", { size: 15 }))
+    closeBtn.addEventListener("click", () => {
+      this.close()
+      this.triggerEl.focus()
+    })
     header.appendChild(closeBtn)
 
     panel.appendChild(header)
 
-    // Search input
+    // Search input with Tabler search adornment
     const searchWrap = document.createElement("div")
     searchWrap.className = "field-picker-panel__search-wrap"
 
+    const searchIcon = document.createElement("span")
+    searchIcon.className = "field-picker-panel__search-icon"
+    searchIcon.setAttribute("aria-hidden", "true")
+    searchIcon.appendChild(createSpriteIconElement("search", { size: 14 }))
+    searchWrap.appendChild(searchIcon)
+
     const searchInput = document.createElement("input")
-    searchInput.type = "text"
+    searchInput.type = "search"
     searchInput.className = "field-picker-panel__search"
-    searchInput.placeholder = "Search for new or existing fields"
+    searchInput.placeholder = "Search fields..."
     searchInput.setAttribute("aria-label", "Search fields")
     searchInput.addEventListener("input", () => {
-      this.searchQuery = searchInput.value.toLowerCase()
-      this.renderFieldList(panel)
+      this.searchQuery = searchInput.value.trim().toLowerCase()
+      if (this.panelEl) this.renderFieldList(this.panelEl)
     })
     searchWrap.appendChild(searchInput)
     panel.appendChild(searchWrap)
@@ -205,21 +267,26 @@ export class FieldPickerPanel {
 
     this.panelEl = panel
     document.body.appendChild(panel)
+    this.triggerEl.setAttribute("aria-expanded", "true")
 
-    // Render field toggles
     this.renderFieldList(panel)
-
-    // Focus search
     searchInput.focus()
 
-    // Outside click to close
+    // Outside click + resize repositioning
     this.outsideClickAC = new AbortController()
+    const outSignal = this.outsideClickAC.signal
     setTimeout(() => {
+      if (outSignal.aborted) return
       document.addEventListener("click", (e) => {
-        if (!panel.contains(e.target as Node) && !this.opts.triggerEl.contains(e.target as Node)) {
+        const target = e.target as Node | null
+        if (!target || !this.panelEl) return
+        if (!this.panelEl.contains(target) && !this.triggerEl.contains(target)) {
           this.close()
         }
-      }, { signal: this.outsideClickAC!.signal })
+      }, { signal: outSignal })
+      window.addEventListener("resize", () => {
+        if (this.panelEl) this.positionPanel(this.panelEl, { clampLocked: true })
+      }, { signal: outSignal })
     }, 0)
 
     // Escape key to close
@@ -227,40 +294,39 @@ export class FieldPickerPanel {
       if (e.key === "Escape") {
         e.stopPropagation()
         this.close()
-        this.opts.triggerEl.focus()
+        this.triggerEl.focus()
       }
-    })
+    }, { signal: outSignal })
   }
 
   /** Render the shown/hidden field list inside the panel */
-  private renderFieldList(panel: HTMLElement): void {
+  private renderFieldList(panel: HTMLElement | null): void {
+    if (!panel) return
     const container = panel.querySelector(".field-picker-panel__list")
     if (!container) return
 
-    // Clear existing
     container.replaceChildren()
 
     const toggleable = this.opts.fields.filter(f => !f.alwaysVisible)
     const filtered = this.searchQuery
-      ? toggleable.filter(f => f.label.toLowerCase().includes(this.searchQuery))
+      ? toggleable.filter(f =>
+          f.label.toLowerCase().includes(this.searchQuery) ||
+          f.group.toLowerCase().includes(this.searchQuery) ||
+          f.id.toLowerCase().includes(this.searchQuery),
+        )
       : toggleable
 
     const shown = filtered.filter(f => this.visibleIds.has(f.id))
     const hidden = filtered.filter(f => !this.visibleIds.has(f.id))
 
-    // Shown section
     if (shown.length > 0) {
-      const shownSection = this.createSection("Shown", shown, true)
-      container.appendChild(shownSection)
+      container.appendChild(this.createSection("Shown", shown, true))
     }
 
-    // Hidden section
     if (hidden.length > 0) {
-      const hiddenSection = this.createSection("Hidden", hidden, false)
-      container.appendChild(hiddenSection)
+      container.appendChild(this.createSection("Hidden", hidden, false))
     }
 
-    // No results
     if (filtered.length === 0 && this.searchQuery) {
       const noResults = document.createElement("div")
       noResults.className = "field-picker-panel__empty"
@@ -279,7 +345,10 @@ export class FieldPickerPanel {
 
     const sectionLabel = document.createElement("span")
     sectionLabel.className = "field-picker-panel__section-label"
-    sectionLabel.textContent = `${label} ▾`
+    sectionLabel.append(
+      document.createTextNode(`${label} `),
+      createSpriteIconElement("chevron-down", { size: 12, className: "field-picker-panel__section-chevron" }),
+    )
     sectionHeader.appendChild(sectionLabel)
 
     if (isShown) {
@@ -287,10 +356,11 @@ export class FieldPickerPanel {
       hideAllBtn.type = "button"
       hideAllBtn.className = "field-picker-panel__hide-all"
       hideAllBtn.textContent = "Hide all"
-      hideAllBtn.addEventListener("click", () => {
+      hideAllBtn.addEventListener("click", (e) => {
+        e.stopPropagation()
         fields.forEach(f => this.visibleIds.delete(f.id))
         this.emitChange()
-        this.renderFieldList(this.panelEl!)
+        if (this.panelEl) this.renderFieldList(this.panelEl)
       })
       sectionHeader.appendChild(hideAllBtn)
     }
@@ -304,25 +374,23 @@ export class FieldPickerPanel {
     return section
   }
 
-  /** Create a single field row with icon, label, and toggle switch */
+  /** Create a single field row with Tabler icon, label, and toggle switch */
   private createFieldRow(field: FieldDef): HTMLElement {
     const row = document.createElement("div")
     row.className = "field-picker-panel__row"
+    row.dataset.fieldId = field.id
 
-    // Icon
     const icon = document.createElement("span")
     icon.className = "field-picker-panel__icon"
-    icon.textContent = field.icon
     icon.setAttribute("aria-hidden", "true")
+    icon.appendChild(createSpriteIconElement(field.icon, { size: 15 }))
     row.appendChild(icon)
 
-    // Label
     const label = document.createElement("span")
     label.className = "field-picker-panel__label"
     label.textContent = field.label
     row.appendChild(label)
 
-    // Toggle switch
     const toggle = document.createElement("button")
     toggle.type = "button"
     toggle.className = "field-picker-panel__toggle"
@@ -332,24 +400,29 @@ export class FieldPickerPanel {
     toggle.setAttribute("aria-checked", String(isOn))
     toggle.setAttribute("aria-label", `${isOn ? "Hide" : "Show"} ${field.label}`)
 
-    // Toggle track
     const track = document.createElement("span")
     track.className = "field-picker-panel__toggle-track"
     toggle.appendChild(track)
 
-    // Toggle knob
     const knob = document.createElement("span")
     knob.className = "field-picker-panel__toggle-knob"
     toggle.appendChild(knob)
 
-    toggle.addEventListener("click", () => {
+    const handleToggle = (e: Event) => {
+      e.stopPropagation()
       if (this.visibleIds.has(field.id)) {
         this.visibleIds.delete(field.id)
       } else {
         this.visibleIds.add(field.id)
       }
       this.emitChange()
-      this.renderFieldList(this.panelEl!)
+      if (this.panelEl) this.renderFieldList(this.panelEl)
+    }
+
+    toggle.addEventListener("click", handleToggle)
+    row.addEventListener("click", (e) => {
+      if (e.target === toggle || toggle.contains(e.target as Node)) return
+      handleToggle(e)
     })
 
     row.appendChild(toggle)

@@ -124,7 +124,7 @@ export type PluginOperationalState =
 export interface PluginComplianceCheck {
   id: string
   label: string
-  category: "elephant" | "goldfish"
+  category: "configuration" | "execution"
   status: "pass" | "warn" | "fail"
   detail: string
 }

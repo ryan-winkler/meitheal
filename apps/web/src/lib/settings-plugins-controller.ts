@@ -1,22 +1,20 @@
 /**
  * Settings -> Plugins Controller
  *
- * Drives Plugin Health (EGM compliance), External Connectors, Installed Custom
+ * Drives Plugin Health, External Connectors, Installed Custom
  * Plugins, 2-step "Build one with AI" modal, and Reference/Get Listed dialogs.
  */
+import { createSpriteIconElement } from "../generated/icon-registry"
 import { copyToClipboard } from "@lib/clipboard"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { safeFetch } from "@lib/safe-fetch"
 import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
-import { setAttr } from "@lib/dom-helpers"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
 
 interface HealthCheck {
   id: string
   label: string
-  category: "elephant" | "goldfish"
   status: "pass" | "warn" | "fail"
   detail: string
 }
@@ -74,15 +72,8 @@ const SVG_ATTRS = new Set([
 ])
 const JSON_HDR = { "Content-Type": "application/json" }
 
-const PLUGIN_API_PATH_RE = /^\/api\/plugins(?:\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9](?:\/(?:secrets|connector))?(?:\?key=[A-Za-z0-9._%-]+)?)?$/
-const apiReq = (url: string, method: string, body?: unknown) => {
-  if (!PLUGIN_API_PATH_RE.test(url)) return Promise.reject(new Error("Invalid plugin API path"))
-  return safeFetch(url, {
-    timeoutMs: 30_000,
-    method,
-    ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}),
-  })
-}
+const apiReq = (url: string, method: string, body?: unknown) =>
+  window.fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
 
 async function copyText(text: string, okMsg: string): Promise<void> {
   const ok = await copyToClipboard(text)
@@ -93,7 +84,7 @@ function makeBadge(tone: Tone, label: string): HTMLElement {
   const b = el("span", "plg-badge")
   b.dataset.tone = tone
   const d = el("span", "plg-dot")
-  setAttr(d, "aria-hidden", "true")
+  d.setAttribute("aria-hidden", "true")
   b.append(d, el("span", "", label))
   return b
 }
@@ -129,7 +120,7 @@ function parseAiBundle(raw: string): { ok: true; bundle: Record<string, unknown>
 
 function renderSvg(svgText: string | null): HTMLElement {
   const wrap = el("span", "plg-card__icon")
-  setAttr(wrap, "aria-hidden", "true")
+  wrap.setAttribute("aria-hidden", "true")
   if (svgText?.trim().startsWith("<svg")) {
     const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement
     if (svg.tagName.toLowerCase() === "svg" && !svg.querySelector("parsererror")) {
@@ -153,7 +144,6 @@ export function initPluginsSettings(): void {
   root.dataset.pluginsBound = "true"
 
   const safeModeInput = byId<HTMLInputElement>("plugins-safe-mode")
-  const activeBadge = byId("plugins-active-badge")
   const healthShowAll = byId<HTMLInputElement>("plugins-health-show-all")
   const healthSummaryEl = byId("plugins-health-summary")
   const healthListEl = byId("plugins-health-list")
@@ -175,6 +165,7 @@ export function initPluginsSettings(): void {
   const aiInstallBtn = byId<HTMLButtonElement>("plugins-ai-install-btn")
 
   let plugins: PluginView[] = []
+  let catalogLoaded = false
   let safeMode = false
   let aiBundle: Record<string, unknown> | null = null
   const openDetails = new Set<string>()
@@ -188,80 +179,63 @@ export function initPluginsSettings(): void {
   }
 
   function renderHealth(): void {
-    if (!healthSummaryEl || !healthListEl) return
+    if (!catalogLoaded || !healthSummaryEl || !healthListEl) return
     const errs = getRuntimeErrors()
     const list = plugins.map((p) => ({ p, h: effectiveHealth(p, errs[p.id]) }))
-    let active = 0, healthy = 0, warn = 0, crit = 0
-    for (const { h } of list) {
-      if (h.operationalState === "disabled" && h.overall !== "critical") continue
-      if (h.operationalState !== "disabled" && h.operationalState !== "blocked_reconsent") active++
-      if (h.overall === "critical") crit++
-      else if (h.overall === "warning") warn++
-      else if (h.overall === "healthy") healthy++
+    const enabled = plugins.filter(p => p.enabled).length
+    const attention = list.filter(({ p, h }) => h.overall === "critical" ||
+      (p.enabled && h.overall === "warning" && h.operationalState !== "paused_safe_mode")).length
+    const text = enabled === 0 ? "No plugins are enabled." : safeMode ? `Safe Mode is on. ${enabled} paused.` : `${enabled} enabled.`
+    const overview = attention ? `${text} ${attention} need attention.` : text
+    if (healthSummaryEl.textContent !== overview) healthSummaryEl.textContent = overview
+    if (healthShowAll) healthShowAll.disabled = !list.some(({ h }) => h.operationalState === "disabled")
+
+    const focused = healthListEl.contains(document.activeElement)
+      ? document.activeElement?.closest<HTMLElement>("[data-plugin-health-id]")?.dataset.pluginHealthId
+      : undefined
+    for (const article of healthListEl.querySelectorAll<HTMLElement>("[data-plugin-health-id]")) {
+      const id = article.dataset.pluginHealthId!
+      if (article.querySelector("details")?.open) openAudits.add(id)
+      else openAudits.delete(id)
     }
+    healthListEl.replaceChildren()
 
-    healthSummaryEl.textContent = ""
-    const metrics: Array<[string, number, string]> = [
-      ["Active", active, active ? "#22c55e" : "var(--text-secondary)"],
-      ["Healthy", healthy, healthy ? "#22c55e" : "var(--text-secondary)"],
-      ["Attention", warn, warn ? "#f59e0b" : "var(--text-secondary)"],
-      ["Critical", crit, crit ? "#ef4444" : "var(--text-secondary)"],
-    ]
-    for (const [label, val, color] of metrics) {
-      const box = el("div", "plg-metric")
-      const lbl = el("span", "plg-metric__lbl")
-      const dot = el("span", "plg-dot")
-      dot.style.color = color
-      setAttr(dot, "aria-hidden", "true")
-      lbl.append(dot, document.createTextNode(label))
-      box.append(lbl, el("strong", "plg-metric__val", String(val)))
-      healthSummaryEl.append(box)
-    }
+    for (const { p, h } of list) {
+      if (!healthShowAll?.checked && h.operationalState === "disabled" && h.overall !== "critical") continue
+      const row = el("article", "plg-health-row")
+      row.dataset.pluginHealthId = p.id
+      const name = el("div", "plg-health-row__name")
+      name.append(el("h4", "plg-card__title", p.manifest.name), el("span", "plg-card__sub", `v${p.manifest.version} · ${p.source === "builtin" ? "Built-in" : "Uploaded"}`))
+      const top = el("div", "plg-health-row__top")
+      top.append(name, makeBadge(h.operationalState === "operational" || h.operationalState === "disabled" ? "inactive" : h.overall, h.operationalLabel))
+      row.append(top)
+      if (h.remediation) row.append(el("p", "plg-health-row__rem", h.remediation))
 
-    const rows = healthShowAll?.checked ? list : list.filter(({ h }) => h.operationalState !== "disabled" || h.overall === "critical")
-    healthListEl.textContent = ""
-    if (!rows.length) {
-      healthListEl.append(el("p", "plg-empty", safeMode
-        ? "Safe Mode is active and no plugins are enabled. Enable a plugin below to inspect live health."
-        : "No active plugins running. Enable an external connector or install a custom plugin below to monitor operational health and EGM security compliance."))
-    } else {
-      for (const { p, h } of rows) {
-        const row = el("article", "plg-health-row")
-        row.dataset.tone = h.overall
-        row.dataset.pluginHealthId = p.id
-        const top = el("div", "plg-health-row__top")
-        const name = el("div", "plg-health-row__name")
-        name.append(el("strong", "", p.manifest.name), el("span", "plg-card__sub", `v${p.manifest.version} · ${p.source === "builtin" ? "Built-in" : "Uploaded"}`))
-        const opTone: Tone = h.operationalState === "operational" ? "healthy" : h.operationalState === "disabled" ? "inactive" : h.operationalState === "error" || h.operationalState === "blocked_reconsent" ? "critical" : "warning"
-        const badges = el("div", "plg-health-row__badges")
-        badges.append(makeBadge(opTone, h.operationalLabel), makeBadge(h.securityTone, h.securityLabel))
-        top.append(name, badges)
-        row.append(top)
-        if (h.remediation) row.append(el("p", "plg-health-row__rem", h.remediation))
-
-        const det = el("details")
-        if (openAudits.has(p.id)) det.open = true
-        det.addEventListener("toggle", () => (det.open ? openAudits.add(p.id) : openAudits.delete(p.id)))
-        det.append(el("summary", "plg-audit-toggle", `EGM Security Audit (${h.passedChecks}/${h.totalChecks} checks passed)`))
-        const checks = el("div", "plg-checks")
-        for (const c of h.checks) {
-          const item = el("div", "plg-check")
-          const copy = el("div")
-          const title = el("div")
-          title.append(el("span", "plg-check__title", c.label), el("span", "plg-check__cat", c.category === "goldfish" ? "Goldfish" : "Elephant"))
-          copy.append(title, el("div", "plg-check__detail", c.detail))
-          item.append(makeBadge(c.status === "pass" ? "healthy" : c.status === "warn" ? "warning" : "critical", c.status === "pass" ? "Pass" : c.status === "warn" ? "Warn" : "Fail"), copy)
-          checks.append(item)
-        }
-        det.append(checks)
-        row.append(det)
-        healthListEl.append(row)
+      const det = el("details", "plg-audit")
+      det.open = openAudits.has(p.id)
+      const summary = el("summary", "plg-audit-toggle")
+      const label = el("span", "", "Security checks")
+      const count = el("span", "plg-card__sub", `${h.passedChecks} of ${h.totalChecks} passed`)
+      const icon = createSpriteIconElement("chevron-down", { size: 16 })
+      icon.setAttribute("aria-hidden", "true")
+      summary.append(label, count, icon)
+      const checks = el("ul", "plg-checks")
+      checks.setAttribute("role", "list")
+      for (const check of h.checks) {
+        const item = el("li", "plg-check")
+        item.dataset.checkStatus = check.status
+        const outcome = check.status === "pass" ? "Passed" : check.status === "warn" ? "Review" : "Failed"
+        const mark = createSpriteIconElement(check.status === "pass" ? "check" : check.status === "warn" ? "alert-triangle" : "x", { size: 17 })
+        mark.setAttribute("aria-hidden", "true")
+        const copy = el("div")
+        copy.append(el("strong", "plg-check__title", check.label), el("span", check.status === "pass" ? "sr-only" : "plg-check__outcome", outcome), el("p", "plg-check__detail", check.detail))
+        item.append(mark, copy)
+        checks.append(item)
       }
-    }
-
-    if (activeBadge) {
-      activeBadge.textContent = safeMode ? "Safe Mode active (all paused)" : crit ? `${active} active · ${crit} critical` : warn ? `${active} active · ${warn} attention` : `${active} active`
-      activeBadge.dataset.state = safeMode || warn ? "warn" : crit ? "crit" : active ? "ok" : "idle"
+      det.append(summary, checks)
+      row.append(det)
+      healthListEl.append(row)
+      if (focused === p.id) summary.focus({ preventScroll: true })
     }
   }
 
@@ -282,9 +256,9 @@ export function initPluginsSettings(): void {
     tog.type = "checkbox"
     tog.checked = p.enabled
     tog.disabled = p.needsReconsent
-    setAttr(tog, "aria-label", `Enable ${p.manifest.name}`)
+    tog.setAttribute("aria-label", `Enable ${p.manifest.name}`)
     const sl = el("span", "toggle-slider")
-    setAttr(sl, "aria-hidden", "true")
+    sl.setAttribute("aria-hidden", "true")
     sw.append(tog, sl)
     tog.addEventListener("change", async () => {
       tog.disabled = true
@@ -456,37 +430,29 @@ export function initPluginsSettings(): void {
       const res = await fetch("/api/plugins")
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { detail?: string; title?: string }
-        const msg = err.detail || err.title || `Could not load plugins (HTTP ${res.status}).`
-        if (activeBadge) {
-          activeBadge.textContent = res.status === 403 ? "Admin required" : "Unavailable"
-          activeBadge.dataset.state = "warn"
-        }
-        if (healthListEl) {
-          healthListEl.textContent = ""
-          healthListEl.append(el("p", "plg-empty", msg))
-        }
-        if (connectorsGrid) {
-          connectorsGrid.textContent = ""
-          connectorsGrid.append(el("p", "plg-empty", msg))
-        }
-        setFeedback(msg, true)
-        return
+        throw new Error(res.status === 403 ? "Only administrators can view plugin status." : err.detail || err.title || "Could not load plugin status. Try Refresh.")
       }
       const data = (await res.json()) as { safeMode?: boolean; plugins?: PluginView[] }
       safeMode = Boolean(data.safeMode)
       plugins = Array.isArray(data.plugins) ? data.plugins : []
+      catalogLoaded = true
       render()
       if (syncRuntime) {
         const hasActive = !safeMode && plugins.some((p) => p.enabled && !p.needsReconsent)
         document.documentElement.dataset.pluginsActive = hasActive ? "1" : "0"
         window.dispatchEvent(new CustomEvent("meitheal:plugins-changed"))
       }
-    } catch {
-      if (activeBadge) {
-        activeBadge.textContent = "Offline"
-        activeBadge.dataset.state = "warn"
-      }
-      setFeedback("Could not load plugin catalog.", true)
+    } catch (error) {
+      catalogLoaded = false
+      plugins = []
+      const message = error instanceof Error ? error.message : "Could not load plugin status. Try Refresh."
+      if (healthSummaryEl) healthSummaryEl.textContent = message
+      if (healthShowAll) healthShowAll.disabled = true
+      healthListEl?.replaceChildren()
+      connectorsGrid?.replaceChildren()
+      uploadedGrid?.replaceChildren()
+      if (removeAllBtn) removeAllBtn.disabled = true
+      setFeedback(message, true)
     }
   }
 
@@ -543,7 +509,7 @@ export function initPluginsSettings(): void {
       const form = new FormData()
       form.append("file", file)
       try {
-        const res = await safeFetch("/api/plugins", { timeoutMs: 30_000, method: "POST", body: form })
+        const res = await fetch("/api/plugins", { method: "POST", body: form })
         const d = (await res.json().catch(() => ({}))) as { plugin?: PluginView; detail?: string }
         if (!res.ok) { setFeedback(d.detail || "Plugin upload failed.", true); showToast(d.detail || "Plugin upload rejected.", "error") }
         else { setFeedback(`Installed ${d.plugin?.manifest.name ?? "plugin"}. Review permissions and toggle to enable.`); showToast(`Installed ${d.plugin?.manifest.name ?? "plugin"}.`, "success"); await loadCatalog(false) }

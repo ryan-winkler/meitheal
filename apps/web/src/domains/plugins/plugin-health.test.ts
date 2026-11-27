@@ -46,7 +46,7 @@ function makeRecord(overrides: Partial<PluginRecord> = {}): PluginRecord {
   }
 }
 
-test("evaluatePluginHealth reports green Operational & 5/5 Compliant for healthy local extension", () => {
+test("evaluatePluginHealth reports static checks and enablement without claiming runtime verification", () => {
   const report = evaluatePluginHealth({
     record: makeRecord(),
     secrets: [],
@@ -54,10 +54,14 @@ test("evaluatePluginHealth reports green Operational & 5/5 Compliant for healthy
   })
   assert.equal(report.overall, "healthy")
   assert.equal(report.operationalState, "operational")
+  assert.equal(report.operationalLabel, "Enabled")
   assert.equal(report.securityTone, "healthy")
+  assert.equal(report.securityLabel, "Checks passed (5/5)")
   assert.equal(report.passedChecks, 5)
   assert.equal(report.totalChecks, 5)
   assert.equal(report.remediation, undefined)
+  assert.match(report.checks.find(check => check.id === "provenance_integrity")?.detail ?? "", /original archive/)
+  assert.match(report.checks.find(check => check.id === "permission_consent")?.detail ?? "", /no pending upgrade approval/)
 })
 
 test("evaluatePluginHealth reports amber Paused (Safe Mode) when Safe Mode is enabled", () => {
@@ -116,6 +120,18 @@ test("evaluatePluginHealth reports amber Needs Configuration when connector conf
   assert.equal(unconfigured.securityTone, "warning")
   assert.match(unconfigured.remediation ?? "", /Gitea Server URL/)
 
+  const disabled = evaluatePluginHealth({
+    record: { ...connector, enabled: false },
+    secrets: [],
+    safeMode: false,
+    runtimeError: "Previously failed",
+  })
+  assert.equal(disabled.operationalState, "disabled")
+  assert.equal(disabled.overall, "inactive")
+  assert.equal(disabled.passedChecks, 3)
+  assert.equal(disabled.checks.find(check => check.id === "network_ssrf")?.status, "warn")
+  assert.equal(disabled.checks.find(check => check.id === "secret_hygiene")?.status, "warn")
+
   const configured = evaluatePluginHealth({
     record: {
       ...connector,
@@ -152,12 +168,33 @@ test("evaluatePluginHealth reports red Blocked (Re-Consent) and Runtime Error st
   assert.match(errored.remediation ?? "", /ReferenceError/)
 })
 
-test("evaluatePluginHealth flags uploaded outbound plugins for provenance review and invalid SHA-256 as critical", () => {
+test("connector readiness checks required URL, number, and boolean field values", () => {
+  const record = makeRecord()
+  record.manifest.type = "connector"
+  record.manifest.connector = {
+    supportsWriteBack: false,
+    defaultPollMinutes: 15,
+    configFields: [
+      { key: "server", label: "Server URL", type: "url", required: true },
+      { key: "pageSize", label: "Page size", type: "number", required: true },
+      { key: "includeDone", label: "Include done", type: "boolean", required: true },
+    ],
+  }
+  record.config = { server: "https://example.com", pageSize: 0, includeDone: false }
+  assert.equal(evaluatePluginHealth({ record, secrets: [], safeMode: false }).operationalState, "operational")
+
+  record.config = { server: "file:///example", pageSize: "Infinity", includeDone: "unset" }
+  const invalid = evaluatePluginHealth({ record, secrets: [], safeMode: false })
+  assert.equal(invalid.operationalState, "needs_config")
+  assert.match(invalid.remediation ?? "", /Server URL, Page size, Include done/)
+})
+
+test("evaluatePluginHealth reviews uploads with outbound destinations and rejects malformed digest records", () => {
   const outboundUploaded = evaluatePluginHealth({
     record: makeRecord({
       manifest: {
         ...makeRecord().manifest,
-        permissions: ["tasks:read", "http:outbound"],
+        permissions: ["tasks:read", "ui:side-panel", "http:outbound"],
         allowedHosts: ["api.example.com"],
         dataSharing: {
           outbound: true,
@@ -184,19 +221,27 @@ test("evaluatePluginHealth flags uploaded outbound plugins for provenance review
   })
   assert.equal(badHash.securityTone, "critical")
   assert.equal(badHash.overall, "critical")
+})
 
-  const externalScript = evaluatePluginHealth({
+test("the execution check checks declared files and permissions without treating HTML text as sandbox evidence", () => {
+  const comments = evaluatePluginHealth({
     record: makeRecord({
       files: {
         entryJs: "MeithealPlugin.onInit(() => {})",
-        iframeHtml: '<script src="https://evil.example/x.js"></script>',
+        iframeHtml: "<p>The phrase allow-same-origin appears in plugin documentation.</p>",
       },
     }),
     secrets: [],
     safeMode: false,
   })
-  assert.equal(externalScript.securityTone, "warning")
-  assert.equal(externalScript.checks.find((c) => c.id === "sandbox_isolation")?.status, "warn")
+  assert.equal(comments.checks.find(check => check.id === "sandbox_isolation")?.status, "pass")
+
+  const missingPanel = evaluatePluginHealth({
+    record: makeRecord({ files: { entryJs: "MeithealPlugin.onInit(() => {})" } }),
+    secrets: [],
+    safeMode: false,
+  })
+  assert.equal(missingPanel.checks.find(check => check.id === "sandbox_isolation")?.status, "fail")
 })
 
 test("summarizeFleetHealth aggregates active, healthy, warning, critical, and inactive counts accurately", () => {

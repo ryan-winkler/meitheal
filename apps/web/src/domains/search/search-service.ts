@@ -256,13 +256,14 @@ export async function searchMeithealCatalog(
     if (isOrganizationFeatureAvailable("routines") && scopePermits(scope, { resource: "routine", action: "read" })) {
       const routines = await new TemplateRepository(client, scope).findRoutines()
       const routineLabel = organization?.("routine", false, "Routine") ?? "Routine"
+      const { describeRule } = await import("@domains/tasks/recurrence")
       const routineItems = filterByQuery(
         routines.map((routine) => ({
           id: `routine-${routine.id}`,
           kind: "routine" as const,
           title: routine.name,
-          subtitle: `${routine.cadence === "weekly" ? "Weekly" : "Daily"} ${routineLabel}`,
-          href: `/habits?board_id=${encodeURIComponent(scope.boardId)}`,
+          subtitle: `${describeRule(routine.cadence) || "Daily"} · ${routineLabel}`,
+          href: `/progress?board_id=${encodeURIComponent(scope.boardId)}#routines`,
           icon: routine.icon || "repeat",
         })),
         options.query

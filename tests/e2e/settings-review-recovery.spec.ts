@@ -135,7 +135,9 @@ test("Saturday week starts apply immediately after a regional Settings save", as
   try {
     expect((await request.put("/api/settings", { data: { key: "week_start", value: "saturday" } })).status()).toBe(200)
     await page.goto("/tasks?view=calendar#calendar")
-    await expect(page.locator("#tasks-view-calendar .cal-header").first()).toHaveText("Sat")
+    const firstDay = page.locator("#tasks-view-calendar .cal-header").first()
+    await expect(firstDay.locator(".cal-header__full")).toHaveText("Sat")
+    await expect(firstDay.locator(".cal-header__short")).toHaveText("S")
   } finally {
     expect((await request.put("/api/settings", { data: { key: "week_start", value: previous } })).status()).toBe(200)
   }

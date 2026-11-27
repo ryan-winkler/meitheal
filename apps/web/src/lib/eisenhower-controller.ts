@@ -27,6 +27,8 @@ import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
 import { promptDialog } from "@lib/prompt-dialog"
 import { showToast } from "@lib/toast"
+import { createScoringPageRefresh } from "@lib/controllers/scoring-page-refresh"
+import { createSpriteIconElement } from "../generated/icon-registry"
 import { showTaskBatchResult } from "./task-batch-feedback"
 import {
   startTriage,
@@ -67,18 +69,20 @@ const Q1_WIP_LIMIT = 5
 // Main init
 // =============================================================================
 
-export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
+export function initEisenhowerPage({ signal, refresh = false }: { signal: AbortSignal; refresh?: boolean }) {
   const page = document.getElementById("eisenhower-shell")
   if (!page || signal.aborted) return
 
   const host = window as Window & {
-    __meithealEisenhowerController?: { page: HTMLElement; signal: AbortSignal; controller: AbortController }
+    __meithealEisenhowerController?: { page: HTMLElement; signal: AbortSignal; controller: AbortController; matrix: MatrixRefresh }
   }
   const previous = host.__meithealEisenhowerController
-  if (previous?.page === page && previous.signal === signal && !previous.controller.signal.aborted) return
+  const samePage = previous?.page === page && previous.signal === signal
+  if (samePage && !refresh && !previous.controller.signal.aborted) return
   previous?.controller.abort()
   const controller = new AbortController()
-  const owner = { page, signal, controller }
+  const matrix = samePage ? previous.matrix : createMatrixRefresh(page, signal)
+  const owner = { page, signal, controller, matrix }
   host.__meithealEisenhowerController = owner
   signal.addEventListener("abort", () => controller.abort(), { once: true, signal: controller.signal })
   controller.signal.addEventListener("abort", () => {
@@ -87,7 +91,7 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
   const lifecycle = controller.signal
   void hydrateTaskAssignees(page, lifecycle)
 
-  initPageShellNavigation({
+  if (!samePage) initPageShellNavigation({
     barId: "eisenhower-bar",
     shellId: "eisenhower-shell",
     sectionSelector: "[data-eisenhower-section]",
@@ -95,11 +99,10 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
     defaultSectionId: "eisenhower-overview",
   })
 
-  const pendingTasks = new Set<string>()
-  setupDragAndDrop(page, lifecycle, pendingTasks)
+  setupDragAndDrop(page, lifecycle, matrix)
   setupClickToOpen(page, lifecycle)
-  setupActionButtons(page, lifecycle, pendingTasks)
-  setupQuickCapture(page, lifecycle)
+  setupActionButtons(page, lifecycle, matrix)
+  setupQuickCapture(page, lifecycle, matrix)
   setupFocusMode(page, lifecycle)
   setupMobileTabs(page, lifecycle)
   checkWipLimits(page)
@@ -107,11 +110,96 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
   setupReviewListeners(lifecycle)
 }
 
+function createMatrixRefresh(page: HTMLElement, signal: AbortSignal) {
+  const pendingTasks = new Set<string>()
+  let writes = 0
+  let mutationVersion = 0
+  let refreshVersion = 0
+  let refreshQueued = false
+  let matrixCurrent = true
+  let refreshing = false
+  let reviewRequested = false
+  const read = createScoringPageRefresh(page, signal, html => {
+    if (writes > 0 || mutationVersion !== refreshVersion) {
+      refresh()
+      return
+    }
+    const grid = page.querySelector<HTMLElement>(".eisenhower__grid")
+    const freshGrid = html.querySelector<HTMLElement>("#eisenhower-shell .eisenhower__grid")
+    const modal = page.querySelector("#scoring-triage-modal")
+    if (!grid || !freshGrid || !modal) throw new Error("Scoring matrix unavailable")
+    const focused = document.activeElement as HTMLElement | null
+    for (const input of grid.querySelectorAll<HTMLInputElement>(".quick-capture__input")) {
+      const quadrant = input.closest<HTMLElement>("[data-quadrant]")?.id
+      if (!quadrant) continue
+      const freshInput = freshGrid.querySelector(`#${CSS.escape(quadrant)} .quick-capture__input`)
+      freshInput?.replaceWith(input)
+    }
+    const expandedQuadrant = grid.querySelector<HTMLElement>(".quadrant--focused")?.id
+    if (expandedQuadrant) {
+      freshGrid.classList.add("grid--focused")
+      freshGrid.querySelector(`#${CSS.escape(expandedQuadrant)}`)?.classList.add("quadrant--focused")
+    }
+    grid.replaceWith(freshGrid)
+    const banner = page.querySelector(".eisenhower__triage-banner")
+    const freshBanner = html.querySelector("#eisenhower-shell .eisenhower__triage-banner")
+    if (freshBanner) {
+      if (banner) banner.replaceWith(freshBanner)
+      else modal.before(freshBanner)
+    } else banner?.remove()
+    initEisenhowerPage({ signal, refresh: true })
+    updateCounts(page)
+    matrixCurrent = true
+    refreshing = false
+    if (focused && document.activeElement === document.body) {
+      if (focused.isConnected) focused.focus({ preventScroll: true })
+      else if (banner?.contains(focused)) page.querySelector<HTMLElement>(".eisenhower__context-bar [data-action=start-triage]")?.focus({ preventScroll: true })
+    }
+    if (reviewRequested) {
+      reviewRequested = false
+      void startReview()
+    }
+  }, () => {
+    refreshing = false
+    reviewRequested = false
+  })
+  function refresh() {
+    matrixCurrent = false
+    refreshQueued = writes > 0
+    if (refreshQueued) return
+    refreshVersion = mutationVersion
+    refreshing = true
+    read()
+  }
+  return {
+    pendingTasks,
+    openTriage() {
+      reviewRequested = false
+      return startTriage(signal, refresh)
+    },
+    openReview() {
+      if (matrixCurrent) { void startReview(); return }
+      if (reviewRequested) return
+      reviewRequested = true
+      showToast("Updating the matrix before Weekly Review.", "info")
+      if (!refreshing && !refreshQueued) refresh()
+    },
+    beginWrite() { writes++; mutationVersion++ },
+    finishWrite() {
+      writes--
+      if (writes === 0 && refreshQueued) refresh()
+    },
+  }
+}
+
+type MatrixRefresh = ReturnType<typeof createMatrixRefresh>
+
 // =============================================================================
 // Drag and drop
 // =============================================================================
 
-function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: Set<string>) {
+function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, matrix: MatrixRefresh) {
+  const { pendingTasks } = matrix
   // Make task items draggable
   const taskItems = page.querySelectorAll<HTMLElement>(".tli")
   for (const item of taskItems) {
@@ -181,8 +269,8 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: 
       if (metaEl && !metaEl.querySelector(".tli__pin")) {
         const pinEl = document.createElement("span")
         pinEl.className = "tli__pin"
-        pinEl.textContent = "📌"
         pinEl.setAttribute("title", "Manually placed")
+        pinEl.appendChild(createSpriteIconElement("pin", { size: 12 }))
         metaEl.appendChild(pinEl)
       }
 
@@ -195,6 +283,7 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: 
 
       // Persist — updates urgency/importance, NOT priority/due_date
       pendingTasks.add(taskId)
+      matrix.beginWrite()
       try {
         await taskApi.updateTask(taskId, { ...update })
         if (!signal.aborted) showToast("common.task_updated")
@@ -202,6 +291,7 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: 
         if (!signal.aborted) showToast("common.failed_update", "error")
       } finally {
         pendingTasks.delete(taskId)
+        matrix.finishWrite()
       }
     }, { signal })
   }
@@ -264,10 +354,17 @@ function checkWipLimits(page: HTMLElement) {
   const count = q1Section.querySelectorAll(".tli").length
   const existing = q1Section.querySelector(".quadrant__wip-warning")
 
+  const renderWipContent = (el: Element) => {
+    el.textContent = ""
+    el.appendChild(createSpriteIconElement("alert-triangle", { size: 14 }))
+    el.appendChild(document.createTextNode(` ${count} items — consider moving some to Schedule or Delegate`))
+  }
+
   if (count > Q1_WIP_LIMIT && !existing) {
     const warning = document.createElement("div")
     warning.className = "quadrant__wip-warning"
-    warning.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    warning.setAttribute("role", "alert")
+    renderWipContent(warning)
     const actionBar = q1Section.querySelector(".quadrant__action-bar")
     const header = q1Section.querySelector(".quadrant__header")
     const insertAfter = actionBar ?? header
@@ -275,7 +372,7 @@ function checkWipLimits(page: HTMLElement) {
   } else if (count <= Q1_WIP_LIMIT && existing) {
     existing.remove()
   } else if (existing) {
-    existing.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    renderWipContent(existing)
   }
 }
 
@@ -283,7 +380,7 @@ function checkWipLimits(page: HTMLElement) {
 // Action buttons (Q1 Commit, Q4 Defer/Complete)
 // =============================================================================
 
-function setupActionButtons(page: HTMLElement, signal: AbortSignal, pendingTasks: Set<string>) {
+function setupActionButtons(page: HTMLElement, signal: AbortSignal, matrix: MatrixRefresh) {
   const onAction = async (e: Event) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
     if (!btn) return
@@ -293,7 +390,7 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal, pendingTasks
 
     const quadrantBar = btn.closest<HTMLElement>(".quadrant__action-bar")
     if (quadrantBar) {
-      await updateQuadrant(page, quadrantBar, action, signal, pendingTasks)
+      await updateQuadrant(page, quadrantBar, action, signal, matrix)
       return
     }
 
@@ -304,7 +401,7 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal, pendingTasks
     try {
       switch (action) {
         case "start-triage":
-          await startTriage()
+          await matrix.openTriage()
           return // Skip the disable/re-enable flow
         case "close-triage":
           closeTriage()
@@ -316,7 +413,7 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal, pendingTasks
           await triageSave()
           return
         case "start-review":
-          await startReview()
+          matrix.openReview()
           return
         case "close-review":
           closeReview()
@@ -377,7 +474,8 @@ async function quadrantPatch(action: string, signal: AbortSignal): Promise<TaskP
   }
 }
 
-async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: string, signal: AbortSignal, pendingTasks: Set<string>) {
+async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: string, signal: AbortSignal, matrix: MatrixRefresh) {
+  const { pendingTasks } = matrix
   if (bar.hasAttribute("aria-busy")) return
   const tasks = new Map<string, HTMLElement>()
   for (const task of bar.closest("[data-quadrant]")?.querySelectorAll<HTMLElement>("[data-drop-zone] .tli") ?? []) {
@@ -392,6 +490,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
   bar.setAttribute("aria-busy", "true")
   for (const button of buttons) button.setAttribute("aria-disabled", "true")
   for (const [id] of available) pendingTasks.add(id)
+  matrix.beginWrite()
   try {
     const patch = await quadrantPatch(action, signal)
     if (!patch) return
@@ -427,6 +526,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
     for (const [id] of available) pendingTasks.delete(id)
     for (const button of buttons) button.removeAttribute("aria-disabled")
     bar.removeAttribute("aria-busy")
+    matrix.finishWrite()
   }
 }
 
@@ -434,7 +534,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
 // Quick-capture inputs
 // =============================================================================
 
-function setupQuickCapture(page: HTMLElement, signal: AbortSignal) {
+function setupQuickCapture(page: HTMLElement, signal: AbortSignal, matrix: MatrixRefresh) {
   const inputs = page.querySelectorAll<HTMLInputElement>("[data-quadrant-capture]")
 
   for (const input of inputs) {
@@ -451,6 +551,7 @@ function setupQuickCapture(page: HTMLElement, signal: AbortSignal) {
       // Disable input while creating
       input.disabled = true
       input.style.opacity = "0.5"
+      matrix.beginWrite()
 
       try {
         const result = await taskApi.createTask({
@@ -471,6 +572,7 @@ function setupQuickCapture(page: HTMLElement, signal: AbortSignal) {
         input.disabled = false
         input.style.opacity = ""
         input.focus()
+        matrix.finishWrite()
       }
     }, { signal })
   }

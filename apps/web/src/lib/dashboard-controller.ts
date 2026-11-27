@@ -2,14 +2,17 @@ import type { DashboardSectionId } from "@lib/dashboard-registry"
 import { DASHBOARD_LAYOUT_PREFIX, workspaceStorageKey } from "@lib/workspace-preferences"
 import { initPageShellSectionTracking } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { quickAddPayload } from "@lib/quick-add"
+import { fetchQuickAddUsers, quickAddPayload } from "@lib/quick-add"
 import { getStatusLabel, isActiveStatus, isClosedStatus, isDoneStatus } from "@lib/status-config"
-import { currentTaskApiContext } from "@lib/task-api"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { boardContextHref, readBoardNavigationContext } from "@lib/board-workspace"
 import { taskApi } from "@lib/task-api-client"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { taskBackgroundUrl } from "@lib/task-page-url"
 import { showToast } from "@lib/toast"
+import { bindCardPreferencesSync } from "@lib/card-view-sync"
 import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
@@ -157,7 +160,8 @@ function initQuickAddForm(): void {
 
     const text = input.value.trim()
     if (!text || submitBtn?.disabled) return
-    const { payload } = quickAddPayload(text)
+    const users = await fetchQuickAddUsers(pageLifecycle.signal)
+    const { payload } = quickAddPayload(text, null, { users })
     const captureContext = currentTaskApiContext()
     const placement = taskCapturePlacement()
     if (!captureContext) { showToast("Choose a Board before adding a task.", "error"); return }
@@ -337,6 +341,16 @@ function initOpenTaskFilter(): (() => void) | undefined {
         const replacement = html.querySelector('#my-open-list[data-available="true"]')
         if (!replacement) throw new Error("Open queue unavailable")
         list.replaceChildren(...replacement.childNodes)
+        const taskList = document.getElementById("task-list")
+        const refreshedTasks = html.querySelector('#task-list[data-available="true"]')
+        if (taskList && refreshedTasks) {
+          const active = document.activeElement
+          const previousControl = active && taskList.contains(active) ? active : null
+          taskList.replaceChildren(...refreshedTasks.childNodes)
+          if (previousControl) findKanbanDetailFocus(taskList, previousControl)?.focus({ preventScroll: true })
+          void hydrateTaskAssignees(taskList, signal)
+          taskList.dispatchEvent(new Event("meitheal:dashboard-cards-updated"))
+        }
         countsAvailable = true
         loadFailed = false
         applyOpenFilter()
@@ -349,22 +363,151 @@ function initOpenTaskFilter(): (() => void) | undefined {
   }
 }
 
-function initTaskDetailLaunchers(): void {
-  pageLifecycle.on(document, "click", (event) => {
-    const target = event.target as HTMLElement
+function initTaskDetailLaunchers(onTasksChanged?: () => void): void {
+  const signal = pageLifecycle.signal
+  const taskList = document.getElementById("task-list")
+  const buildTaskApiUrl = (taskId: string | number | null, suffix = "") =>
+    taskId === null ? "/api/tasks" : `/api/tasks/${encodeURIComponent(String(taskId))}${suffix}`
+  const refreshDashboardCards = async () => { onTasksChanged?.() }
 
-    const editButton = target.closest<HTMLElement>(".card-edit-btn")
-    if (editButton) {
+  if (taskList) {
+    void hydrateTaskAssignees(taskList, signal)
+    void Promise.all([
+      import("@lib/controllers/kanban-quick-actions"),
+      import("@lib/controllers/kanban-context-menu"),
+      import("@lib/controllers/kanban-reaction-counts"),
+    ]).then(([quickMod, menuMod, reactionMod]) => {
+      if (signal.aborted) return
+      let actions = new AbortController()
+      const bindCardActions = () => {
+        actions.abort()
+        actions = new AbortController()
+        const cardSignal = AbortSignal.any([signal, actions.signal])
+        quickMod.initQuickActions(buildTaskApiUrl, cardSignal, refreshDashboardCards, taskList)
+        reactionMod.initKanbanReactionCounts(taskList, cardSignal)
+      }
+      taskList.addEventListener("meitheal:dashboard-cards-updated", bindCardActions, { signal })
+      bindCardActions()
+      menuMod.initContextMenu(taskList, buildTaskApiUrl, async () => {}, refreshDashboardCards, signal)
+    }).catch(() => {})
+  }
+
+  pageLifecycle.on(document, "click", async (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (!target) return
+
+    const promoteButton = target.closest<HTMLButtonElement>(".kanban-promote-star, .bento-promote-btn")
+    if (promoteButton) {
       event.stopPropagation()
-      const taskId = editButton.dataset.id
+      const taskId = promoteButton.dataset.id
+      if (!taskId || promoteButton.disabled) return
+      const card = promoteButton.closest<HTMLElement>(".kanban-card, .bento-card")
+      const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true"
+      const nextPromoted = !wasPromoted
+      const applyPromotedState = (promoted: boolean) => {
+        promoteButton.setAttribute("aria-pressed", String(promoted))
+        const label = promoted ? "Remove promotion" : "Promote to top"
+        promoteButton.title = label
+        promoteButton.setAttribute("aria-label", label)
+        if (card) card.dataset.promoted = String(promoted)
+      }
+      applyPromotedState(nextPromoted)
+      promoteButton.disabled = true
+      try {
+        await taskApi.updateTask(taskId, { is_promoted: nextPromoted })
+        showToast(nextPromoted ? "common.promoted" : "common.demoted")
+        onTasksChanged?.()
+      } catch {
+        applyPromotedState(wasPromoted)
+        showToast("common.failed", "error")
+      } finally {
+        promoteButton.disabled = false
+      }
+      return
+    }
+
+    const aiBtn = target.closest<HTMLButtonElement>(".card-ai-btn")
+    if (aiBtn) {
+      event.stopPropagation()
+      const id = aiBtn.dataset.id ?? aiBtn.closest<HTMLElement>(".kanban-card, .bento-card")?.dataset.id
+      if (!id || aiBtn.getAttribute("aria-busy") === "true" || signal.aborted) return
+      aiBtn.setAttribute("aria-busy", "true")
+      aiBtn.disabled = true
+      try {
+        const [{ askAIForTask }, { confirmDialog }] = await Promise.all([
+          import("@domains/ai/ai-context-service"),
+          import("@lib/confirm-dialog"),
+        ])
+        const result = await askAIForTask(id, signal)
+        if (signal.aborted) return
+        if (result.source === "ha-assist") {
+          await confirmDialog({
+            title: "AI Assistant",
+            message: result.response,
+            confirmText: "Done",
+            cancelText: "Close",
+            copyPrompt: {
+              text: result.response,
+              label: "Copy response",
+              success: "Copied",
+              failure: "Copy failed",
+            },
+            signal,
+          })
+        }
+      } catch {
+        if (!signal.aborted) showToast("settings.ai_handoff_context_failed", "error")
+      } finally {
+        aiBtn.removeAttribute("aria-busy")
+        aiBtn.disabled = false
+      }
+      return
+    }
+
+    const dupBtn = target.closest<HTMLButtonElement>(".card-dup-btn")
+    if (dupBtn) {
+      event.stopPropagation()
+      const id = dupBtn.dataset.id
+      if (!id || dupBtn.disabled || signal.aborted) return
+      dupBtn.disabled = true
+      dupBtn.classList.add("btn-loading")
+      try {
+        const ctx = currentTaskApiContext()
+        const dupRes = await fetch(`/api/tasks/${encodeURIComponent(id)}/duplicate`, {
+          method: "POST",
+          ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+          signal,
+        })
+        if (signal.aborted) return
+        if (!dupRes.ok) {
+          showToast("Failed to duplicate", "error")
+          return
+        }
+        const dupData = await dupRes.json().catch(() => null) as { id?: string; title?: string } | null
+        showToast(dupData?.title ? `Duplicated → ${dupData.title}` : "Task duplicated", "success")
+        onTasksChanged?.()
+      } catch {
+        if (!signal.aborted) showToast("Failed to duplicate", "error")
+      } finally {
+        dupBtn.disabled = false
+        dupBtn.classList.remove("btn-loading")
+      }
+      return
+    }
+
+    const openOrEdit = target.closest<HTMLElement>(".card-open-btn, .card-edit-btn")
+    if (openOrEdit) {
+      if (event.defaultPrevented || openOrEdit instanceof HTMLAnchorElement) return
+      event.stopPropagation()
+      const taskId = openOrEdit.dataset.id
       if (taskId && typeof window.openTaskDetail === "function") {
         window.openTaskDetail(taskId)
       }
       return
     }
 
-    const taskCard = target.closest<HTMLElement>(".task-item[data-id], .bento-card[data-id]")
-    if (!taskCard || target.closest("input, button, a")) return
+    const taskCard = target.closest<HTMLElement>(".task-item[data-id], .bento-card[data-id], .kanban-card[data-id]")
+    if (!taskCard || target.closest(".kanban-card-actions, input, button, a")) return
 
     const taskId = taskCard.dataset.id
     if (taskId && typeof window.openTaskDetail === "function") {
@@ -424,24 +567,32 @@ function bootDashboardPage(): void {
   if (!shell || shell.dataset.dashboardBooted === "true") return
 
   shell.dataset.dashboardBooted = "true"
+  bindCardPreferencesSync(shell, pageLifecycle.signal)
 
   let syncShell: (revealAnchor?: boolean) => void
   const reveal = initDashboardCustomization(shell, revealAnchor => syncShell(revealAnchor))
   syncShell = initDashboardShell(shell, reveal)
   initQuickAddForm()
   const updateOpenQueue = initOpenTaskFilter()
-  initTaskDetailLaunchers()
+  initTaskDetailLaunchers(updateOpenQueue)
+  pageLifecycle.on(document, "meitheal:tasks-changed", () => {
+    updateOpenQueue?.()
+  })
   pageLifecycle.on(document, "meitheal:task-status-saved", event => {
     const { id, status, deferred } = (event as CustomEvent<{ id: string; status: string; deferred?: boolean }>).detail
     if (typeof status !== "string") return
     const done = isDoneStatus(status)
-    for (const card of shell.querySelectorAll<HTMLElement>(`:is(.task-item, .bento-card)[data-id="${CSS.escape(id)}"]`)) {
+    for (const card of shell.querySelectorAll<HTMLElement>(`:is(.task-item, .bento-card, .kanban-card)[data-id="${CSS.escape(id)}"]`)) {
       card.toggleAttribute("data-work-active", isActiveStatus(status))
       card.dataset.status = status
-      card.querySelector(".bento-card-title")?.classList.toggle("done", done)
-      const badge = card.querySelector(".task-badge")
+      card.querySelector(".kanban-card-title, .bento-card-title")?.classList.toggle("done", done)
+      const badge = card.querySelector(".kanban-work-status .status-badge, .task-badge")
       if (!badge) continue
-      badge.className = "task-badge badge-" + (done ? "complete" : status)
+      if (badge.classList.contains("task-badge")) {
+        badge.className = "task-badge badge-" + (done ? "complete" : status)
+      } else {
+        badge.className = "status-badge badge-" + (done ? "complete" : status)
+      }
       badge.textContent = getStatusLabel(status) + (deferred && card.classList.contains("bento-card")
         ? " · " + (window.mI18n?.get("deferral.title") ?? "Deferred") : "")
     }

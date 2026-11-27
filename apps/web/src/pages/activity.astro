@@ -14,6 +14,7 @@ import { formatVerifiedAgentAuthor, resolveVerifiedProvenanceLink } from "@lib/r
 import { taskDetailPath } from "@lib/task-page-url"
 import { formatTicketKey } from "@lib/ticket-key"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import Icon from "../components/ui/Icon.astro"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
@@ -25,8 +26,7 @@ if (!workScopeResult.ok) {
 }
 
 
-const headers = { "cache-control": "private, no-store" }
-Astro.response.headers.set("cache-control", headers["cache-control"])
+Astro.response.headers.set("cache-control", "private, no-store")
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const user = verifiedIngressUser(Astro.locals)
 const roster = workScope && user ? await getCurrentHAUserRoster(user.id, Astro.request.signal) : undefined
@@ -72,9 +72,12 @@ if (!invalid && workScope && roster) {
 if (!denied && invalid) Astro.response.status = 400
 if (!denied && unavailable) Astro.response.status = 503
 
+const boardParams = new URLSearchParams(workScope ? { board_id: workScope.boardId } : {})
+const clearHref = boardParams.size ? `/activity?${boardParams}` : "/activity"
+
 function pageHref(cursor?: NonNullable<typeof page.next>): string {
   if (!workScope) return Astro.url.pathname + Astro.url.search
-  const params = new URLSearchParams({ board_id: workScope.boardId })
+  const params = new URLSearchParams(boardParams)
   if (areaId) params.set("area", areaId)
   if (personKey) params.set("person", personKey)
   if (cursor) params.set("before", `${cursor.at}.${cursor.id}`)
@@ -83,49 +86,69 @@ function pageHref(cursor?: NonNullable<typeof page.next>): string {
 
 const timeZone = Astro.locals.timezone ?? "Europe/Dublin"
 const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { dateStyle: "medium", timeStyle: "short", timeZone })
+const actionIcons = { added: "plus", edited: "pencil", closed: "check", reopened: "rotate" } as const
 ---
 
 <Layout title={t("recent_activity.title", locale)} suppressTaskUrlOpen privatePageShell={denied} hideSearchHub={denied}>
   <section class="recent-activity" data-recent-activity aria-labelledby="recent-activity-heading">
-    <header>
-      <h1 id="recent-activity-heading">{t("recent_activity.title", locale)}</h1>
-      <p>{t("recent_activity.description", locale)}</p>
+    <header class="activity-header">
+      <div>
+        <h1 id="recent-activity-heading"><Icon name="bolt" size={23} sprite />{t("recent_activity.title", locale)}</h1>
+        <p>{t("recent_activity.description", locale)}</p>
+      </div>
+      {!denied && !invalid && !unavailable && !before && (
+        <a href={pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+          <Icon name="refresh" size={16} sprite />
+          {t("recent_activity.refresh", locale)}
+        </a>
+      )}
     </header>
 
     {denied ? (
-      <div role="alert">
+      <div class="card activity-status" role="alert">
+        <Icon name="warning" size={24} sprite />
         <p>{t(Astro.response.status === 403 ? "recent_activity.denied" : "recent_activity.unavailable", locale)}</p>
-        <a href={Astro.url.pathname + Astro.url.search} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.refresh", locale)}</a>
+        <a href={Astro.url.pathname + Astro.url.search} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+          <Icon name="refresh" size={16} sprite />
+          {t("recent_activity.refresh", locale)}
+        </a>
       </div>
     ) : invalid || unavailable ? (
-      <div role="status">
+      <div class="card activity-status" role="status">
+        <Icon name="warning" size={24} sprite />
         <p>{t(invalid ? "recent_activity.invalid" : "recent_activity.unavailable", locale)}</p>
-        <a href={invalid ? "/activity" : pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+        <a href={invalid ? clearHref : pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+          <Icon name={invalid ? "x" : "refresh"} size={16} sprite />
           {t(invalid ? "recent_activity.clear" : "recent_activity.refresh", locale)}
         </a>
       </div>
     ) : (
       <>
-        <form method="get" action="/activity" class="activity-filters" aria-label={t("recent_activity.filters", locale)} data-astro-reload>
+        <form method="get" action="/activity" class="card activity-filters" aria-label={t("recent_activity.filters", locale)} data-astro-reload>
+          {workScope && <input type="hidden" name="board_id" value={workScope.boardId} />}
           <label>
-            {t("recent_activity.area", locale)}
-            <select class="form-input" name="area">
+            <span class="form-label">{t("recent_activity.area", locale)}</span>
+            <select class="form-select" name="area">
               <option value="">{t("recent_activity.all_areas", locale)}</option>
               {areas.map(area => <option value={area.id} selected={area.id === areaId}>{area.name}</option>)}
             </select>
           </label>
           <label>
-            {t("recent_activity.person", locale)}
-            <select class="form-input" name="person">
+            <span class="form-label">{t("recent_activity.person", locale)}</span>
+            <select class="form-select" name="person">
               <option value="">{t("recent_activity.everyone", locale)}</option>
               {[...people].map(([key, name]) => <option value={key} selected={key === personKey}>{name}</option>)}
             </select>
           </label>
-          <button type="submit" class="btn btn-primary">{t("recent_activity.apply", locale)}</button>
-          {(areaId || personKey) && <a href="/activity" class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.clear", locale)}</a>}
+          <div class="activity-filter-actions">
+            <button type="submit" class="btn btn-primary">{t("recent_activity.apply", locale)}</button>
+            {(areaId || personKey) && (
+              <a href={clearHref} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.clear", locale)}</a>
+            )}
+          </div>
         </form>
         {page.items.length ? (
-          <ol class="activity-list" aria-label={t("recent_activity.title", locale)}>
+          <ol class="card list-group list-group-flush activity-list" aria-label={t("recent_activity.title", locale)}>
             {page.items.map(item => {
               const author = item.personKey
                 ? people.get(item.personKey) ?? t("recent_activity.member", locale)
@@ -136,40 +159,53 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
                 ? resolveVerifiedProvenanceLink(item.provenance, haBaseUrl, locale)
                 : null
               return (
-                <li class="activity-entry" data-activity-event={item.id}>
-                  <div>
-                    <p class="activity-action">{t(`recent_activity.${item.action}`, locale, { author })}</p>
-                    <a href={taskDetailPath({ id: item.taskId, ticket_key: item.ticketKey })} data-astro-prefetch="false">
-                      {item.ticketNumber && <span>{item.ticketKey ?? formatTicketKey(item.ticketNumber)} </span>}{item.title}
+                <li class="list-group-item activity-entry" data-activity-event={item.id}>
+                  <span class="activity-event-icon"><Icon name={actionIcons[item.action]} size={18} sprite /></span>
+                  <div class="activity-content">
+                    <a href={taskDetailPath({ id: item.taskId, ticket_key: item.ticketKey })} class="activity-task" data-astro-prefetch="false">
+                      {item.ticketNumber && <span class="activity-ticket">{item.ticketKey ?? formatTicketKey(item.ticketNumber)}</span>} {item.title}
                     </a>
+                    <p class="activity-action">{t(`recent_activity.${item.action}`, locale, { author })}</p>
                     {provenanceLink && (
-                      <p class="activity-provenance">
-                        <a
-                          href={provenanceLink.href}
-                          class="activity-provenance-link"
-                          data-astro-prefetch={provenanceLink.isInternal ? "false" : undefined}
-                          data-ha-target={provenanceLink.haTarget}
-                          target={provenanceLink.isExternalHa ? "_top" : undefined}
-                          rel={provenanceLink.isExternalHa ? "noopener noreferrer" : undefined}
-                        >
-                          {provenanceLink.label}
-                        </a>
-                      </p>
+                      <a
+                        href={provenanceLink.href}
+                        class="activity-provenance-link"
+                        data-astro-prefetch={provenanceLink.isInternal ? "false" : undefined}
+                        data-ha-target={provenanceLink.haTarget}
+                        target={provenanceLink.isExternalHa ? "_top" : undefined}
+                        rel={provenanceLink.isExternalHa ? "noopener noreferrer" : undefined}
+                      >
+                        <Icon name={provenanceLink.isExternalHa ? "external-link" : "chevron-right"} size={14} sprite />
+                        {provenanceLink.label}
+                      </a>
                     )}
                   </div>
                   <div class="activity-meta">
-                    <span>{item.areaName ?? t("recent_activity.no_area", locale)}</span>
                     <time datetime={new Date(item.at).toISOString()}>{date.format(item.at)}</time>
+                    <span>{item.areaName ?? t("recent_activity.no_area", locale)}</span>
                   </div>
                 </li>
               )
             })}
           </ol>
-        ) : <p role="status">{t("recent_activity.empty", locale)}</p>}
-        <nav class="activity-pages" aria-label={t("recent_activity.pages", locale)}>
-          <a href={pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t(before ? "recent_activity.latest" : "recent_activity.refresh", locale)}</a>
-          {page.next && <a href={pageHref(page.next)} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.older", locale)}</a>}
-        </nav>
+        ) : (
+          <div class="card activity-status" role="status">
+            <Icon name="empty" size={24} sprite />
+            <p>{t("recent_activity.empty", locale)}</p>
+          </div>
+        )}
+        {(before || page.next) && (
+          <nav class="activity-pages" aria-label={t("recent_activity.pages", locale)}>
+            {before && <a href={pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+              <Icon name="arrow-up" size={16} sprite />
+              {t("recent_activity.latest", locale)}
+            </a>}
+            {page.next && <a href={pageHref(page.next)} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
+              <Icon name="arrow-down" size={16} sprite />
+              {t("recent_activity.older", locale)}
+            </a>}
+          </nav>
+        )}
       </>
     )}
   </section>
@@ -204,30 +240,44 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
 
 <style>
   .recent-activity {
+    display: grid;
+    gap: 1rem;
     max-width: 62rem;
     margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2rem);
+    padding: clamp(.875rem, 3vw, 1.75rem);
   }
 
-  .recent-activity header { margin-block-end: 1.25rem; }
-  .recent-activity header p, .activity-meta { color: var(--text-secondary); }
+  .recent-activity .card {
+    animation: none;
+    border-color: var(--border);
+    box-shadow: none;
+    transform: none;
+    transition: none;
+  }
 
-  .activity-filters, .activity-pages {
+  .activity-header, .activity-filters, .activity-filter-actions, .activity-pages {
     display: flex;
-    align-items: end;
     flex-wrap: wrap;
     gap: .75rem;
   }
 
+  .activity-header { align-items: center; justify-content: space-between; }
+  .activity-header h1 { display: flex; align-items: center; gap: .5rem; font-size: 1.5rem; font-weight: 650; }
+  .activity-header p { margin-block-start: .25rem; }
+
+  .activity-filters {
+    align-items: end;
+    padding: clamp(.75rem, 2vw, 1rem);
+  }
+
   .activity-filters label {
     display: grid;
-    gap: .25rem;
-    flex: 1 1 12rem;
+    flex: 1 1 10rem;
     min-width: 0;
   }
 
   .activity-filters select { width: 100%; min-width: 0; }
-  .activity-filters .btn, .activity-filters select, .activity-pages .btn { min-height: 2.75rem; }
+  .recent-activity .btn, .activity-filters select { min-block-size: 2.75rem; }
 
   .activity-filters .btn-primary {
     background: var(--accent-text);
@@ -236,34 +286,65 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
 
   .activity-filters .btn-primary:hover { background: var(--text-primary); }
 
-  .activity-list {
-    display: grid;
-    gap: .5rem;
-    margin-block: 1rem;
-    padding: 0;
-    list-style: none;
-  }
+  .activity-list { margin: 0; padding: 0; list-style: none; }
 
   .activity-entry {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-    gap: .5rem 1rem;
-    padding: .75rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 13rem);
+    align-items: start;
+    gap: .25rem .75rem;
+    padding: .625rem clamp(.75rem, 2vw, 1rem);
     overflow-wrap: anywhere;
   }
 
-  .activity-entry a { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  .activity-entry a:hover { text-decoration-thickness: 2px; }
-  .activity-action { margin-block: 0 .25rem; }
-  .activity-provenance { margin-block: .25rem 0; font-size: .875rem; }
-  .activity-provenance-link { font-weight: 500; }
-  .activity-meta { display: grid; gap: .25rem; font-size: .875rem; text-align: end; }
+  .activity-entry + .activity-entry { border-block-start: 1px solid var(--border); }
+  .activity-event-icon {
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    margin-block-start: .375rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--accent-text);
+  }
 
-  @media (max-width: 520px) {
-    .activity-entry { grid-template-columns: minmax(0, 1fr); }
-    .activity-meta { text-align: start; }
+  .activity-task, .activity-provenance-link {
+    display: inline-block;
+    align-content: center;
+    min-block-size: 2.75rem;
+    color: var(--accent-text);
+    text-decoration: underline;
+    text-underline-offset: .15em;
+  }
+
+  .activity-task { font-weight: 600; }
+  .activity-provenance-link { font-size: .875rem; }
+  .activity-provenance-link :global(svg) { display: inline; vertical-align: -.15em; }
+  .activity-ticket { font-size: .8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .activity-entry a:hover { text-decoration-thickness: 2px; }
+  .activity-header p, .activity-action, .activity-meta { color: var(--text-secondary); }
+  .activity-action { margin: 0; font-size: .875rem; }
+  .activity-meta { display: grid; gap: .125rem; padding-block-start: .5rem; font-size: .8125rem; text-align: end; }
+  .activity-meta time { font-variant-numeric: tabular-nums; }
+  .activity-pages { justify-content: flex-end; }
+  .activity-status { display: grid; gap: .625rem; justify-items: center; text-align: center; overflow-wrap: anywhere; }
+  .activity-status p { margin: 0; }
+
+  @media (max-width: 40rem) {
+    .activity-entry { grid-template-columns: auto minmax(0, 1fr); }
+    .activity-meta {
+      display: flex;
+      flex-wrap: wrap;
+      grid-column: 2;
+      gap: .125rem .625rem;
+      padding-block-start: 0;
+      text-align: start;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .activity-filters label { flex-basis: 7rem; }
+    .activity-filter-actions { flex-basis: 100%; }
   }
 </style>

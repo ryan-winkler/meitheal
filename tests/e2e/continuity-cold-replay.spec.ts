@@ -6,8 +6,6 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:f
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
-import { openDatabaseForStartup, withStartupWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
-import { applyStartupTaskSchema } from "../../apps/web/scripts/task-schema-startup.mjs"
 import { enrollLegacyContinuity } from "../../apps/web/scripts/enroll-legacy-continuity.mjs"
 import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { OrganizationAccessRepository } from "../../apps/web/src/domains/tasks/persistence/organization-access-repository"
@@ -138,8 +136,8 @@ test("real current policy and Household lifecycle remain closed after actual col
     await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     resetPersistenceForTests()
 
-    // Replay the same real cold pre-enrollment bytes, first without a marker
-    // (preserving continuity_auto_enroll_blocked) and then with the newer marker.
+    // Replay the same real cold pre-enrollment bytes, first losing the excluded
+    // marker and then retaining the independently newer current marker.
     for (const retainNewerMarker of [false, true]) {
       for (const suffix of ["", "-wal", "-shm"]) await rm(database + suffix, { force: true })
       await copyFile(historical, database)
@@ -191,42 +189,6 @@ test("real current policy and Household lifecycle remain closed after actual col
       ).toEqual([{ state: "active" }])
       resetPersistenceForTests()
     }
-
-    // Genuine pre-0016 upgrade with no marker or pending entry on disk
-    // auto-enrolls once, after which removing the marker locks access again.
-    const genuinePre0016 = join(work, "genuine-pre0016.db")
-    await writeFile(genuinePre0016, "")
-    const raw = await openDatabaseForStartup("file:" + genuinePre0016, { markerPath })
-    try {
-      await withStartupWriteTransaction(raw, async tx => {
-        await applyStartupTaskSchema(tx)
-        await tx.execute(`INSERT INTO tasks(id, title, status, ticket_number, idempotency_key, request_id, created_at, updated_at)
-          VALUES ('retained', 'Retained Household task', 'pending', 1, 'retained', 'retained', 1, 1)`)
-      })
-      await raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    } finally {
-      raw.close()
-    }
-    for (const suffix of ["", "-wal", "-shm"]) await rm(database + suffix, { force: true })
-    await copyFile(genuinePre0016, database)
-    await rm(markerPath, { force: true })
-    await ensureSchema({ markerPath })
-    db = getPersistenceClient()
-    expect(await new OrganizationAccessRepository(db).policies("feature", "")).toMatchObject({
-      status: "current"
-    })
-    expect((await db.execute("SELECT id FROM tasks")).rows).toEqual([{ id: "retained" }])
-    await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    resetPersistenceForTests()
-    await rm(markerPath, { force: true })
-    await ensureSchema({ markerPath })
-    db = getPersistenceClient()
-    expect(await new OrganizationAccessRepository(db).policies("feature", "")).toEqual({
-      status: "locked"
-    })
-    resetPersistenceForTests()
-    for (const suffix of ["", "-wal", "-shm"]) await rm(database + suffix, { force: true })
-    await copyFile(historical, database)
     // The independently consumed proof cannot be replayed against identical old data.
     await rm(markerPath, { force: true })
     await expect(

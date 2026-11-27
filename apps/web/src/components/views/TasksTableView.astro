@@ -1,5 +1,8 @@
 ---
 
+import { findAllRules } from "@domains/strategy/rule-repository"
+import { resolveTaskEpics } from "@domains/tasks"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { taskRecordVersion } from "../../lib/task-api-client"
 import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 import SignalBar from "../layout/SignalBar.astro";
@@ -22,6 +25,17 @@ import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
 import { formatCardCustomFieldValue } from "../../lib/custom-field-defs";
 import { readTableFilterParams, tableNeedsWorkflowColumns } from "../../lib/filter-state"
 import { getTablePage, getTableWorkflowColumns, type TableWorkflowColumn } from "../../lib/table-page"
+import { getTriageFrameworkDef } from "../../lib/scoring-triage"
+import {
+  formatEffortMinutes,
+  formatEisenhowerShort,
+  formatTaskFrameworkScore,
+  readTaskStoryPoints,
+  resolveActiveScoringFrameworks,
+  resolvePrimaryScoringFramework,
+} from "../../lib/active-scoring"
+import { getDefaultVisibleTableColumns, TABLE_COLUMNS } from "../../lib/table-registry"
+import tableCss from "../../styles/_table.css?raw"
 
 interface Props {
   tasks: TaskViewItem[]
@@ -63,9 +77,43 @@ const workflowLabels = new Map(displayedWorkflowColumns.map(column => [column.id
 const hasTaskCriteria = Boolean(filters.search || filters.area || filters.user || filters.status ||
   filters.priority || filters.rice || filters.task_type || filters.types?.length || filters.labels?.length ||
   filters.laneIds?.length || filters.advancedFilter?.conditions.length || filters.createdFrom || filters.createdThrough)
+let activeScoringFramework: ReturnType<typeof resolvePrimaryScoringFramework> = "rice"
+try {
+  const rules = await findAllRules()
+  activeScoringFramework = resolvePrimaryScoringFramework(resolveActiveScoringFrameworks(rules))
+} catch {
+  activeScoringFramework = "rice"
+}
+const activeFrameworkLabel = activeScoringFramework ? getTriageFrameworkDef(activeScoringFramework).shortLabel : ""
+
+// Safely resolve Area & Project display names for Planning columns
+const areaNames = new Map<string, string>()
+const projectNames = new Map<string, string>()
+try {
+  const db = getPersistenceClient()
+  const [areaRes, projectRes] = await Promise.all([
+    db.execute("SELECT id, name FROM areas"),
+    db.execute("SELECT id, name FROM projects"),
+  ])
+  for (const r of areaRes.rows) {
+    if (typeof r.id === "string" && typeof r.name === "string") areaNames.set(r.id, r.name)
+  }
+  for (const r of projectRes.rows) {
+    if (typeof r.id === "string" && typeof r.name === "string") projectNames.set(r.id, r.name)
+  }
+} catch { /* fallback to IDs if tables unavailable */ }
+
+const epicsByTask = resolveTaskEpics(resultsUnavailable ? [] : tasks)
 const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
-  resultsUnavailable ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
+  resultsUnavailable ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone, activeScoringFramework,
 )
+const initialVisibleCols = new Set(filters.columns ?? getDefaultVisibleTableColumns())
+const initialTableClasses = [
+  "data-table",
+  ...TABLE_COLUMNS
+    .filter(col => (col.id === "rice" && !activeScoringFramework) || !initialVisibleCols.has(col.id))
+    .map(col => `hide-col-${col.id}`),
+].join(" ")
 
 function tableLink(next: number, open?: string) {
   const query = new URLSearchParams(params)
@@ -86,6 +134,7 @@ const priorityClasses: Record<number, string> = {
 
 ---
 
+<style is:inline set:html={tableCss} />
 <div id="tasks-view-table" class="tasks-view-container" data-task-view="table">
   <div id="table-shell" class="page-shell" data-table-filters={JSON.stringify(filters)}>
     <!-- Signal bar -->
@@ -135,17 +184,23 @@ const priorityClasses: Record<number, string> = {
     </div>
 
     <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0" hidden={resultsUnavailable || tasks.length === 0}>
-          <table class="data-table" id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}
+          <table class={initialTableClasses} id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}
+            data-active-framework={activeScoringFramework ?? "none"}
+            data-active-framework-label={activeFrameworkLabel}
             data-can-create={String(canCreate)} data-can-edit={String(canEdit)} data-can-complete={String(canComplete)} data-can-delete={String(canDelete)}>
             <thead>
               <tr>
                 <th scope="col" class="col-checkbox">
-                  <input
-                    type="checkbox"
-                    id="select-all"
-                    aria-label="Select all visible tasks on this page"
-                    disabled={!canEdit && !canDelete}
-                  />
+                  <div class="table-check-cell">
+                    {canEdit && <span class="table-drag-spacer" aria-hidden="true"></span>}
+                    <input
+                      type="checkbox"
+                      id="select-all"
+                      class="row-check"
+                      aria-label="Select all visible tasks on this page"
+                      disabled={!canEdit && !canDelete}
+                    />
+                  </div>
                 </th>
                 <th scope="col" class="sortable col-key" data-col="key">
                   <button type="button" class="table-sort-control">
@@ -199,7 +254,7 @@ const priorityClasses: Record<number, string> = {
                   data-numeric="true"
                 >
                   <button type="button" class="table-sort-control">
-                    {t("table.col_rice", locale)}
+                    {activeFrameworkLabel || t("table.col_rice", locale)}
                     <span class="sort-indicator" />
                   </button>
                 </th>
@@ -221,6 +276,45 @@ const priorityClasses: Record<number, string> = {
                 <th scope="col" class="col-labels">
                   {t("table.col_labels", locale)}
                 </th>
+                <th scope="col" class="sortable col-start-date" data-col="start_date">
+                  <button type="button" class="table-sort-control">
+                    Start Date
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
+                <th scope="col" class="sortable col-effort" data-col="effort" data-numeric="true">
+                  <button type="button" class="table-sort-control">
+                    Effort
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
+                <th scope="col" class="sortable col-story-points" data-col="story_points" data-numeric="true">
+                  <button type="button" class="table-sort-control">
+                    Points
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
+                <th scope="col" class="sortable col-eisenhower" data-col="eisenhower">
+                  <button type="button" class="table-sort-control">
+                    Eisenhower
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
+                <th scope="col" class="sortable col-progress" data-col="progress" data-numeric="true">
+                  <button type="button" class="table-sort-control">
+                    Progress
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
+                <th scope="col" class="col-area">Area</th>
+                <th scope="col" class="col-project">Project</th>
+                <th scope="col" class="col-epic">Epic</th>
+                <th scope="col" class="sortable col-created" data-col="created">
+                  <button type="button" class="table-sort-control">
+                    Created
+                    <span class="sort-indicator" />
+                  </button>
+                </th>
                 <th scope="col" class="col-actions">
                   {t("table.col_actions", locale)}
                 </th>
@@ -234,6 +328,15 @@ const priorityClasses: Record<number, string> = {
                   .filter((entry): entry is readonly [string, string] => entry[1] !== null);
                 const ticketKey = task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0) ?? `#${task.id.slice(0, 8)}`
                 const description = taskDescriptionPreview(task.description)
+                const scoreInfo = activeScoringFramework ? formatTaskFrameworkScore(task, activeScoringFramework) : null
+                const storyPoints = readTaskStoryPoints(task)
+                const eisenhowerInfo = formatEisenhowerShort(task)
+                const effortLabel = formatEffortMinutes(task.effort_minutes)
+                const areaLabel = task.area_id ? (areaNames.get(task.area_id) ?? (task.area_id === "default" ? "Default" : task.area_id)) : ""
+                const projectLabel = task.project_id ? (projectNames.get(task.project_id) ?? task.project_id) : ""
+                const epicTask = epicsByTask.get(task.id)
+                const epicLabel = epicTask ? `${epicTask.ticket_key ?? ""} ${epicTask.title}`.trim() : ""
+                const progressPct = Math.max(0, Math.min(100, Math.round(task.progress ?? 0)))
                 return (
                   <tr
                     data-id={task.id}
@@ -260,15 +363,15 @@ const priorityClasses: Record<number, string> = {
                     style={depth > 0 ? `--subtask-depth: ${depth}` : undefined}
                   >
                     <td class="col-checkbox">
-                      <div class="inline-flex items-center gap-1">
+                      <div class="table-check-cell">
                         {canEdit && (
                           <button
                             type="button"
                             class="table-row-drag-handle btn-icon"
                             data-id={task.id}
                             aria-label={`Reorder row: ${task.title}`}
-                            title="Drag or press Alt+Up/Down to reorder"
-                          >⋮⋮</button>
+                            title="Drag to reorder or move between groups (Alt+Up/Down)"
+                          ><Icon name="grip-vertical" size={14} sprite /></button>
                         )}
                         <input
                           type="checkbox"
@@ -413,8 +516,14 @@ const priorityClasses: Record<number, string> = {
                       )}
                     </td>
                     <td class="col-rice cell-center">
-                      {task.rice !== null ? (
-                        <FrameworkBadge score={task.rice} framework="RICE" />
+                      {scoreInfo && scoreInfo.scored ? (
+                        (activeScoringFramework === "rice" || activeScoringFramework === "drice" || activeScoringFramework === "ice" || activeScoringFramework === "wsjf") && scoreInfo.numeric !== null ? (
+                          <FrameworkBadge score={scoreInfo.numeric} framework={scoreInfo.frameworkLabel} />
+                        ) : (
+                          <span class={`table-plan-badge table-plan-badge--${scoreInfo.tone}`} title={`${scoreInfo.frameworkLabel}: ${scoreInfo.display}`}>
+                            {scoreInfo.display}
+                          </span>
+                        )
                       ) : (
                         <span class="text-muted">—</span>
                       )}
@@ -451,6 +560,58 @@ const priorityClasses: Record<number, string> = {
                     <td class="col-labels">
                       <LabelBadges labels={task.labels as unknown as string} compact max={3} />
                     </td>
+                    <td class="col-start-date text-sm">
+                      {task.start_date
+                        ? formatRegionalDate(task.start_date, { format: dateFormat, timezone })
+                        : <span class="text-muted">—</span>}
+                    </td>
+                    <td class="col-effort cell-center text-sm">
+                      {effortLabel !== "—" ? (
+                        <span class="table-plan-mono">{effortLabel}</span>
+                      ) : (
+                        <span class="text-muted">—</span>
+                      )}
+                    </td>
+                    <td class="col-story-points cell-center">
+                      {storyPoints !== null ? (
+                        <span class="table-plan-badge table-plan-badge--info" title={`${storyPoints} story points`}>
+                          {storyPoints} pts
+                        </span>
+                      ) : (
+                        <span class="text-muted">—</span>
+                      )}
+                    </td>
+                    <td class="col-eisenhower cell-center">
+                      {eisenhowerInfo.rank > 0 ? (
+                        <span class={`table-plan-badge table-plan-badge--${eisenhowerInfo.tone}`}>
+                          {eisenhowerInfo.label}
+                        </span>
+                      ) : (
+                        <span class="text-muted">—</span>
+                      )}
+                    </td>
+                    <td class="col-progress">
+                      <div class="table-progress-cell" title={`${progressPct}% complete`}>
+                        <div class="table-progress-track" aria-hidden="true">
+                          <div class="table-progress-fill" style={`width: ${progressPct}%`} />
+                        </div>
+                        <span class="table-plan-mono">{progressPct}%</span>
+                      </div>
+                    </td>
+                    <td class="col-area text-sm">
+                      {areaLabel ? <span class="table-plan-truncate" title={areaLabel}>{areaLabel}</span> : <span class="text-muted">—</span>}
+                    </td>
+                    <td class="col-project text-sm">
+                      {projectLabel ? <span class="table-plan-truncate" title={projectLabel}>{projectLabel}</span> : <span class="text-muted">—</span>}
+                    </td>
+                    <td class="col-epic text-sm">
+                      {epicLabel ? <span class="table-plan-truncate" title={epicLabel}>{epicLabel}</span> : <span class="text-muted">—</span>}
+                    </td>
+                    <td class="col-created text-sm">
+                      {task.created_at
+                        ? formatRegionalDate(task.created_at, { format: dateFormat, timezone })
+                        : <span class="text-muted">—</span>}
+                    </td>
                     <td class="col-actions cell-center">
                       {canDelete && (
                         <button
@@ -468,7 +629,7 @@ const priorityClasses: Record<number, string> = {
                 );
               })}
               <tr class="no-results-row" hidden={rows.length !== 0}>
-                <td colspan="13" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
+                <td colspan="22" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
                   <div class="inline-flex flex-wrap items-center justify-center gap-2">
                     <span>{t("table.no_filter_matches", locale)}</span>
                     {hasTaskCriteria && <button type="button" class="btn btn-outline btn-sm" data-empty-action="meitheal:table-clear-filters">
@@ -491,9 +652,9 @@ const priorityClasses: Record<number, string> = {
   </div>
 
   <div class="bulk-bar" id="bulk-bar" hidden={!canEdit && !canDelete}>
-    <span id="selected-count">0 selected</span>
-    <span class="bulk-divider">|</span>
-    <select class="form-select bulk-select" id="bulk-status" disabled={!canEdit}>
+    <span id="selected-count" class="bulk-count">0 selected</span>
+    <span class="bulk-divider" aria-hidden="true"></span>
+    <select class="form-select bulk-select" id="bulk-status" aria-label={t("table.change_status", locale)} disabled={!canEdit}>
       <option value="">{t("table.change_status", locale)}</option>
       {STATUS_CONFIG.map((s) => (
         <option
@@ -502,7 +663,7 @@ const priorityClasses: Record<number, string> = {
         >{t(s.i18nKey as any, locale)}</option>
       ))}
     </select>
-    <select class="form-select bulk-select" id="bulk-priority" disabled={!canEdit}>
+    <select class="form-select bulk-select" id="bulk-priority" aria-label="Change priority" disabled={!canEdit}>
       <option value="">Priority</option>
       <option value="1">{t("priority.critical", locale)}</option>
       <option value="2">{t("priority.high", locale)}</option>
@@ -510,7 +671,7 @@ const priorityClasses: Record<number, string> = {
       <option value="4">{t("priority.low", locale)}</option>
       <option value="5">{t("priority.minimal", locale)}</option>
     </select>
-    <select class="form-select bulk-select" id="bulk-area" disabled={!canEdit}>
+    <select class="form-select bulk-select" id="bulk-area" aria-label="Change area" disabled={!canEdit}>
       <option value="">Area</option>
     </select>
     <button
@@ -518,9 +679,9 @@ const priorityClasses: Record<number, string> = {
       class="btn bulk-delete-btn"
       id="bulk-delete"
       hidden={!canDelete}
-      disabled={!canDelete}><Icon name="trash" size={16} /> {t("table.delete_selected", locale)}</button>
+      disabled={!canDelete}><Icon name="trash" size={15} sprite /><span>{t("table.delete_selected", locale)}</span></button>
     <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">
-      <Icon name="x" size={16} />
+      <Icon name="x" size={15} sprite />
     </button>
   </div>
 
@@ -530,7 +691,7 @@ const priorityClasses: Record<number, string> = {
 
 </div>
 
-<style>
+<style is:inline>
   .table-pagination, .table-pagination__links, .table-refresh-status {
     display: flex;
     align-items: center;
@@ -569,15 +730,20 @@ const priorityClasses: Record<number, string> = {
   }
   /* Signal bar CSS now in SignalBar.astro */
   .table-filter-bar {
+    position: relative;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 8px 10px;
     margin-bottom: 12px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 8px 12px;
+    padding: 10px 12px;
+  }
+  .table-filter-bar > .filter-toolbar.filter-toolbar--table {
+    display: contents;
   }
   #task-table.hide-col-key .col-key,
   #task-table.hide-col-type .col-type,
@@ -588,15 +754,119 @@ const priorityClasses: Record<number, string> = {
   #task-table.hide-col-calendar .col-calendar,
   #task-table.hide-col-custom-fields .col-custom-fields,
   #task-table.hide-col-assigned .col-assigned,
-  #task-table.hide-col-labels .col-labels {
+  #task-table.hide-col-labels .col-labels,
+  #task-table.hide-col-start-date .col-start-date,
+  #task-table.hide-col-effort .col-effort,
+  #task-table.hide-col-story-points .col-story-points,
+  #task-table.hide-col-eisenhower .col-eisenhower,
+  #task-table.hide-col-progress .col-progress,
+  #task-table.hide-col-area .col-area,
+  #task-table.hide-col-project .col-project,
+  #task-table.hide-col-epic .col-epic,
+  #task-table.hide-col-created .col-created {
     display: none;
   }
+
+  .table-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 7px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: nowrap;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+  .table-plan-badge--danger {
+    background: color-mix(in srgb, var(--danger, #ef4444) 15%, transparent);
+    color: var(--danger-text, #ef4444);
+    border-color: color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+  }
+  .table-plan-badge--warning {
+    background: color-mix(in srgb, var(--warning, #f59e0b) 15%, transparent);
+    color: var(--warning-text, color-mix(in srgb, var(--warning) 60%, var(--text-primary)));
+    border-color: color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent);
+  }
+  .table-plan-badge--info {
+    background: color-mix(in srgb, var(--info, #3b82f6) 15%, transparent);
+    color: var(--info-text, #60a5fa);
+    border-color: color-mix(in srgb, var(--info, #3b82f6) 30%, transparent);
+  }
+  .table-plan-badge--success {
+    background: color-mix(in srgb, var(--success, #22c55e) 15%, transparent);
+    color: var(--success-text, #22c55e);
+    border-color: color-mix(in srgb, var(--success, #22c55e) 30%, transparent);
+  }
+  .table-plan-badge--muted {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+  .table-plan-mono {
+    font-family: var(--font-mono, "JetBrains Mono", monospace);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .table-plan-truncate {
+    display: inline-block;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--text-secondary);
+  }
+  .table-progress-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 82px;
+  }
+  .table-progress-track {
+    flex: 1 1 46px;
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 80%, transparent);
+    overflow: hidden;
+  }
+  .table-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--accent);
+    transition: width 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .col-start-date, .col-created { width: 112px; white-space: nowrap; }
+  .col-effort, .col-story-points { width: 84px; text-align: center; }
+  .col-eisenhower { width: 104px; text-align: center; }
+  .col-progress { width: 106px; }
+  .col-area, .col-project, .col-epic { width: 130px; }
 
   .table-filter-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2, 8px);
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .table-check-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
+  }
+
+  .table-drag-spacer {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
   }
 
 
@@ -662,19 +932,29 @@ const priorityClasses: Record<number, string> = {
   }
   .table-row-drag-handle {
     cursor: grab;
-    min-width: 24px;
+    width: 22px;
+    height: 24px;
+    min-width: 22px;
     min-height: 24px;
-    padding: 0 2px;
-    font-size: 12px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--text-muted);
     background: transparent;
     border: 0;
+    border-radius: var(--radius-xs, 4px);
     touch-action: none;
     user-select: none;
+    transition: color 140ms var(--ease-out, ease), background-color 140ms var(--ease-out, ease);
   }
   .table-row-drag-handle:hover,
   .table-row-drag-handle:focus-visible {
     color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+  .table-row-drag-handle:active {
+    cursor: grabbing;
   }
   .table-row.dragging {
     opacity: 0.55;
@@ -736,7 +1016,9 @@ const priorityClasses: Record<number, string> = {
     color: var(--warning);
   }
   .col-checkbox {
-    width: 40px;
+    width: 68px;
+    min-width: 68px;
+    white-space: nowrap;
   }
   .col-key {
     width: 90px;
@@ -774,31 +1056,67 @@ const priorityClasses: Record<number, string> = {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--bg-secondary);
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 12px 20px;
+    padding: 10px 14px;
     display: none;
-    gap: 12px;
+    gap: 10px;
     align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     box-shadow: var(--shadow-lg);
-    z-index: 50;
+    z-index: 60;
+  }
+  .bulk-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
   .bulk-select {
-    max-width: 140px;
+    width: auto;
+    min-width: 108px;
+    max-width: 148px;
+    height: 32px;
+    padding-block: 4px;
+    font-size: 12.5px;
+    flex-shrink: 0;
   }
   .bulk-delete-btn {
-    padding: 4px 10px;
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
     background: transparent;
     color: var(--danger);
-    border: 1px solid var(--danger);
-    opacity: 0.75;
-    transition: opacity 0.15s, background 0.15s;
+    border: 1px solid color-mix(in srgb, var(--danger) 65%, transparent);
+    border-radius: var(--radius-sm, 6px);
+    transition: background-color 150ms var(--ease-out, ease), border-color 150ms var(--ease-out, ease), transform 120ms var(--ease-out, ease);
   }
   .bulk-delete-btn:hover {
-    opacity: 1;
-    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--danger);
+    background: rgb(var(--danger-rgb, 239 68 68) / 0.12);
+  }
+  .bulk-delete-btn:active {
+    transform: scale(0.97);
+  }
+  @media (max-width: 640px) {
+    .bulk-bar {
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 10px 12px;
+      gap: 8px;
+    }
   }
   .ticket-key-badge {
     display: inline-block;

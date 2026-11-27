@@ -6,6 +6,10 @@ description: "How Routines generate Board Tasks, handle cadence windows, and upd
 
 # Routine check-ins and recurring Tasks
 
+If Routines cannot load, both New Routine buttons are disabled. Refresh the
+page to retry. Once Routines load, users with creation access can use either
+button.
+
 A Routine is a saved template that generates ordinary Tasks on its Board. It can stand alone, belong to an Area, or reference a Project. Disabling the Project or Organizer catalogue does not disable otherwise permitted standalone Routines. The Routine list checks only its referenced Project's current lifecycle when offering check-in; it does not require loading the Project catalogue. Completed or archived Projects do not advertise a new check-in. An already completed occurrence can still acknowledge its own retry.
 
 Checking in requires current Routine visibility and Task creation and completion permissions. Editing the Routine configuration is a separate action. A child who cannot complete Tasks cannot create a completed occurrence by checking in. Deleting a Routine acknowledges the committed removal after access is refreshed; repeating the deletion reports that the Routine is unavailable.

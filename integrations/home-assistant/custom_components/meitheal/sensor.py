@@ -68,17 +68,12 @@ class MeithealActiveTasksSensor(
         """Expose active task details for AI agents and automations."""
         if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
-        active = [t for t in self.coordinator.data.tasks if t.status != "done"]
-        # Priority breakdown for automations
-        priorities: dict[str, int] = {}
-        for t in active:
-            key = f"p{t.priority}"
-            priorities[key] = priorities.get(key, 0) + 1
+        data = self.coordinator.data
         return {
-            "task_titles": [t.title for t in active[:10]],
-            "priority_breakdown": priorities,
-            "has_urgent": any(t.priority <= 2 for t in active),
-            "with_due_date": sum(1 for t in active if t.due_date),
+            "task_titles": [t.title for t in data.active_tasks[:10]],
+            "priority_breakdown": data.active_priority_breakdown,
+            "has_urgent": data.active_has_urgent,
+            "with_due_date": data.active_with_due_date,
         }
 
 
@@ -111,11 +106,12 @@ class MeithealOverdueTasksSensor(
         """Expose overdue task details for AI agents and automations."""
         if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
-        overdue = [t for t in self.coordinator.data.tasks if t.is_overdue]
+        data = self.coordinator.data
+        overdue = data.overdue_tasks
         return {
             "task_titles": [t.title for t in overdue[:10]],
             "due_dates": [t.due_date for t in overdue[:10] if t.due_date],
-            "oldest_due": min((t.due_date for t in overdue if t.due_date), default=None),
+            "oldest_due": data.oldest_overdue_due,
         }
 
 
@@ -149,16 +145,11 @@ class MeithealTotalTasksSensor(
         """Expose task summary for AI agents and automations."""
         if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
-        tasks = self.coordinator.data.tasks
-        statuses: dict[str, int] = {}
-        all_labels: dict[str, int] = {}
-        for t in tasks:
-            statuses[t.status] = statuses.get(t.status, 0) + 1
-            for label in t.labels:
-                all_labels[label] = all_labels.get(label, 0) + 1
+        data = self.coordinator.data
+        statuses = data.status_breakdown
         return {
             "status_breakdown": statuses,
-            "label_summary": dict(sorted(all_labels.items(), key=lambda x: -x[1])[:10]),
+            "label_summary": data.label_summary,
             "done_count": statuses.get("done", 0),
             "in_progress_count": statuses.get("in_progress", 0),
         }

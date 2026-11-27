@@ -327,7 +327,8 @@ async function inspector(page: Page, id?: string) {
   const elements = [...raw.matchAll(/<([\w-]+)\b[^>]*\bid="(td-[^"]+)"/g)].map(match => [match[1]!, match[2]!] as const)
   await page.evaluate(elements => {
     document.body.insertAdjacentHTML("beforeend", `<div id="task-detail-overlay"><section id="task-detail-panel"><div id="td-loaded-content"><textarea id="td-title"></textarea><textarea id="td-description"></textarea><select id="td-status"></select><div id="td-sections"></div><div id="td-labels"></div><div id="td-cf-list"></div><button id="td-delete">Delete task</button></div><p id="td-load-error" role="alert" data-unavailable="This task is unavailable."></p></section></div>`)
-    for (const [tag, id] of elements) if (!document.getElementById(id)) {
+    // Feature templates require their inner markup. Keep these out of the synthetic Inspector.
+    for (const [tag, id] of elements) if (tag !== "template" && !document.getElementById(id)) {
       const node = document.createElement(tag); node.id = id; document.getElementById("td-sections")!.append(node)
     }
     document.getElementById("td-close")!.textContent = "Close detail"

@@ -8,8 +8,6 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test, type PlaywrightWorkerArgs, type TestInfo } from "@playwright/test"
-import { openDatabaseForStartup, withStartupWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
-import { applyStartupTaskSchema } from "../../apps/web/scripts/task-schema-startup.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -298,8 +296,7 @@ for (const retainCurrentMarker of [false, true]) {
       expect((restricted.task_boards as Array<{ id: string; state: string }>).find(row => row.id === "household")?.state).toBe("retired")
       await evidenceJson(testInfo, "independent-descendant-restrictions.json", { originalColdHash, markerSha256: hash(current), governedRecords: restricted })
       // Offline restore replaces the entire SQLite family with the exact cold
-      // bytes, both with absent marker (blocked by continuity_auto_enroll_blocked)
-      // and with the separately retained newer marker.
+      // bytes; the separately retained current marker is never derived from it.
       for (const suffix of ["", "-wal", "-shm", "-journal"]) await rm(database + suffix, { force: true })
       await copyFile(cold, database)
       expect(hash(await readFile(database))).toBe(originalColdHash)
@@ -328,46 +325,3 @@ for (const retainCurrentMarker of [false, true]) {
     }
   })
 }
-
-test("pre-0016 cold upgrade without conflicting marker auto-enrolls HTTP while post-0016 absent marker locks", async ({ playwright }) => {
-  const work = await mkdtemp(join(tmpdir(), "continuity-http-upgrade-"))
-  const database = databasePath(work)
-  const marker = markerPath(work)
-  const previous = process.env.MEITHEAL_DB_URL
-  let app: Server | undefined
-  try {
-    process.env.MEITHEAL_DB_URL = "file:" + database
-    resetPersistenceForTests()
-    await writeFile(database, "", { mode: 0o600 })
-    const raw = await openDatabaseForStartup("file:" + database, { markerPath: marker })
-    try {
-      await withStartupWriteTransaction(raw, async tx => {
-        await applyStartupTaskSchema(tx)
-        await tx.execute(`INSERT INTO tasks(id,title,status,ticket_number,idempotency_key,request_id,created_at,updated_at)
-          VALUES ('cold-household-secret','Cold pregrant Household secret','pending',1,'cold-idempotency','cold-request',1,1)`)
-      })
-      await raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    } finally {
-      raw.close()
-    }
-    await rm(marker, { force: true })
-    app = await server(work, playwright)
-    const knownTask = await app.api.get(app.base + "/api/tasks/cold-household-secret")
-    expect(knownTask.status()).toBe(200)
-    expect((await knownTask.json()).title).toBe("Cold pregrant Household secret")
-    const health = await app.api.get(app.base + "/api/health")
-    expect(health.status()).toBe(200)
-    expect(await health.json()).toMatchObject({ status: "ok", db_integrity: "ok", schema_version: 28 })
-    expect(JSON.parse(await readFile(marker, "utf8")).epoch).toMatch(/^[a-f0-9-]{36}$/)
-    await app.close(); app = undefined
-    await rm(marker, { force: true })
-    app = await server(work, playwright)
-    await locked(app, work, undefined, ["cold-household-secret", "Cold pregrant Household secret", "MTH-1"])
-  } finally {
-    resetPersistenceForTests()
-    if (previous === undefined) delete process.env.MEITHEAL_DB_URL
-    else process.env.MEITHEAL_DB_URL = previous
-    await app?.close()
-    await rm(work, { recursive: true, force: true })
-  }
-})

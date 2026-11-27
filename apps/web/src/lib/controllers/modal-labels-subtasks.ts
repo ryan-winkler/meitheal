@@ -9,8 +9,10 @@
 
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
+import { CUSTOM_RECURRENCE_SENTINEL, enhanceRecurrenceSelect } from "@lib/recurrence-picker"
+import { describeRule } from "@domains/tasks/recurrence"
+import { shouldShowManualCalendarPush } from "@lib/calendar-push-policy"
 import { showToast } from "@lib/toast"
-import { byId, domEl } from "@lib/dom-helpers"
 
 export interface LabelsSubtasksDeps {
   saveTD: (field: string, value: unknown) => Promise<unknown>
@@ -31,15 +33,16 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
   const opts = signal ? { signal } : {}
 
   function addLabelChip(label: string) {
-    const labelsDiv = byId("td-labels") as HTMLElement
-    const chip = domEl("span")
+    const labelsDiv = document.getElementById("td-labels") as HTMLElement
+    const chip = document.createElement("span")
     chip.className = "label-chip"
     chip.style.cssText =
       "cursor:pointer;display:inline-flex;align-items:center;gap:4px;"
     // Use textContent to prevent XSS from user-provided label values
     const labelText = document.createTextNode(label)
     chip.appendChild(labelText)
-    const removeBtn = domEl("span", "td-label-remove")
+    const removeBtn = document.createElement("span")
+    removeBtn.className = "td-label-remove"
     removeBtn.style.cssText = "font-size:14px;line-height:1;opacity:0.6;"
     removeBtn.textContent = "×"
     removeBtn.addEventListener("click", () => {
@@ -51,7 +54,8 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
     labelsDiv.appendChild(chip)
   }
 
-  byId("td-label-input")
+  document
+    .getElementById("td-label-input")
     ?.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return
       e.preventDefault()
@@ -67,23 +71,85 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       saveTD("labels", JSON.stringify(currentLabels))
     }, opts)
 
-  // Phase 1 (REC-04): Recurrence select → save on change
-  byId("td-recurrence")
-    ?.addEventListener("change", (e) => {
+  // Google Calendar recurrence picker + save on change
+  const tdRecurrenceSelect = document.getElementById("td-recurrence") as HTMLSelectElement | null
+  if (tdRecurrenceSelect) {
+    enhanceRecurrenceSelect(tdRecurrenceSelect, {
+      allowNone: true,
+      noneLabel: "Does not repeat",
+      getAnchorDate: () =>
+        (document.getElementById("td-due-date") as HTMLInputElement | null)?.value ||
+        (document.getElementById("td-start-date") as HTMLInputElement | null)?.value ||
+        new Date(),
+      signal,
+    })
+    tdRecurrenceSelect.addEventListener("change", (e) => {
       const val = (e.target as HTMLSelectElement).value || null
+      if (val === CUSTOM_RECURRENCE_SENTINEL) return
       saveTD("recurrence_rule", val)
-      const descEl = byId("td-recurrence-desc")
+      const descEl = document.getElementById("td-recurrence-desc")
       if (descEl) {
-        descEl.textContent = val ? `🔁 ${(e.target as HTMLSelectElement).selectedOptions[0]?.textContent ?? ""}` : ""
+        descEl.textContent = val ? describeRule(val) : ""
       }
     }, opts)
+  }
+
+  // Manual "Push to Calendar" action + smart policy visibility
+  const pushCalendarBtn = document.getElementById("td-push-calendar-btn") as HTMLButtonElement | null
+  const pushCalendarRow = pushCalendarBtn?.closest<HTMLElement>('[data-layout-item="calendar-push"]') ?? null
+  const syncTdPushVisibility = () => {
+    const visible = shouldShowManualCalendarPush(window.mSettings)
+    if (pushCalendarRow) pushCalendarRow.hidden = !visible
+  }
+  syncTdPushVisibility()
+  window.addEventListener("meitheal:calendar-push-policy-changed", syncTdPushVisibility, opts)
+  if (pushCalendarBtn) {
+    pushCalendarBtn.addEventListener("click", async () => {
+      const currentTaskId = getCurrentTaskId()
+      if (!currentTaskId) return
+      pushCalendarBtn.disabled = true
+      const labelEl = pushCalendarBtn.querySelector("span")
+      const prevLabel = labelEl?.textContent ?? "Push to Calendar"
+      if (labelEl) labelEl.textContent = "Pushing…"
+      try {
+        const ctx = currentTaskApiContext()
+        const res = await fetch("/api/integrations/calendar/push", {
+          method: "POST",
+          headers: ctx
+            ? taskApiHeaders(ctx, { "content-type": "application/json" })
+            : { "content-type": "application/json" },
+          signal,
+          body: JSON.stringify({ task_id: currentTaskId }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) {
+          const count = Number(data.pushed ?? 1)
+          showToast(
+            count > 1 ? `Pushed to ${count} calendars` : "Pushed to calendar",
+            "success",
+          )
+        } else {
+          showToast(String(data.error || "Could not push task to calendar"), "error")
+        }
+      } catch {
+        if (!signal?.aborted) {
+          showToast("Network error pushing task to calendar", "error")
+        }
+      } finally {
+        if (!signal?.aborted) {
+          pushCalendarBtn.disabled = false
+          if (labelEl) labelEl.textContent = prevLabel
+        }
+      }
+    }, opts)
+  }
 
   // Phase 1 (SUB-02): Add subtask inline form
-  const addSubBtn = byId("td-add-subtask-btn")
-  const addSubForm = byId("td-add-subtask-form")
-  const addSubInput = byId<HTMLInputElement>("td-add-subtask-input")
-  const addSubSubmit = byId("td-add-subtask-submit")
-  const addSubCancel = byId("td-add-subtask-cancel")
+  const addSubBtn = document.getElementById("td-add-subtask-btn")
+  const addSubForm = document.getElementById("td-add-subtask-form")
+  const addSubInput = document.getElementById("td-add-subtask-input") as HTMLInputElement | null
+  const addSubSubmit = document.getElementById("td-add-subtask-submit")
+  const addSubCancel = document.getElementById("td-add-subtask-cancel")
 
   if (addSubBtn && addSubForm && addSubInput && addSubSubmit && addSubCancel) {
     addSubBtn.addEventListener("click", () => {
@@ -105,9 +171,9 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       if (!currentTaskId) return
       addSubInput.disabled = true
       try {
-        const parentAreaEl = byId<HTMLSelectElement>("td-area")
-        const parentProjectEl = byId<HTMLSelectElement>("td-project")
-        const parentTypeEl = byId<HTMLSelectElement>("td-task-type")
+        const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
+        const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
+        const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
         const childType = defaultChildTaskType(parentTypeEl?.value)
         const ctx = currentTaskApiContext()
         const areaId = parentAreaEl?.value || null
@@ -144,14 +210,14 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       }
     }
     addSubSubmit.addEventListener("click", submitSubtask, opts)
-    byId("td-add-subtask-full-btn")?.addEventListener("click", () => {
+    document.getElementById("td-add-subtask-full-btn")?.addEventListener("click", () => {
       const currentTaskId = getCurrentTaskId()
       if (!currentTaskId || !window.openNewTaskModal) return
-      const titleInput = byId<HTMLTextAreaElement>("td-title")
-      const idEl = byId("td-id")
-      const parentTypeEl = byId<HTMLSelectElement>("td-task-type")
-      const parentAreaEl = byId<HTMLSelectElement>("td-area")
-      const parentProjectEl = byId<HTMLSelectElement>("td-project")
+      const titleInput = document.getElementById("td-title") as HTMLTextAreaElement | null
+      const idEl = document.getElementById("td-id")
+      const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
+      const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
+      const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
       const ticketText = idEl?.textContent?.trim() ?? ""
       window.openNewTaskModal("standard_action", {
         parent: {

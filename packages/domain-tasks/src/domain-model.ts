@@ -378,12 +378,20 @@ export type ShoppingCategory = (typeof SHOPPING_CATEGORIES)[number]
 export interface ShoppingListItem {
   name: string
   qty?: number | string
-  category?: ShoppingCategory
+  unit?: string
+  category?: string
   checked?: boolean
 }
 
 export function isValidShoppingCategory(value: unknown): value is ShoppingCategory {
   return typeof value === "string" && (SHOPPING_CATEGORIES as readonly string[]).includes(value)
+}
+
+function normalizeShoppingTextToken(raw: unknown, maxLen: number, lowercase = false): string | undefined {
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.replace(/\s+/g, " ").trim().slice(0, maxLen)
+  if (!trimmed) return undefined
+  return lowercase ? trimmed.toLowerCase() : trimmed
 }
 
 /** Normalize raw shopping item payloads from checklists, custom_fields.items, or API inputs. */
@@ -415,14 +423,15 @@ export function normalizeShoppingItems(raw: unknown): ShoppingListItem[] {
       : typeof rawQtyVal === "string" && rawQtyVal.trim()
         ? rawQtyVal.trim()
         : undefined
-    const rawCat = typeof rec.category === "string" ? rec.category.trim().toLowerCase()
-      : typeof rec.aisle === "string" ? rec.aisle.trim().toLowerCase() : ""
+    const unit = normalizeShoppingTextToken(rec.unit ?? rec.uom, 32)
+    const category = normalizeShoppingTextToken(rec.category ?? rec.aisle, 48, true)
     const checked = typeof rec.checked === "boolean" ? rec.checked
       : typeof rec.done === "boolean" ? rec.done : undefined
     items.push({
       name,
       ...(qty !== undefined ? { qty } : {}),
-      ...(isValidShoppingCategory(rawCat) ? { category: rawCat } : {}),
+      ...(unit !== undefined ? { unit } : {}),
+      ...(category !== undefined ? { category } : {}),
       ...(checked !== undefined ? { checked } : {}),
     })
   }

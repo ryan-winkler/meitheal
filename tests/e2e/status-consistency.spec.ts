@@ -50,9 +50,7 @@ const ALLOWED_FILES = [
 
 // Support feedback has its own review states, including "in_progress".
 const SUPPORT_STATUS_FILES = new Set([
-  "components/settings/SettingsFeedback.astro",
   "domains/support/feedback-queue.ts",
-  "lib/settings-feedback-controller.ts",
   "pages/api/feedback/index.ts",
   "pages/api/feedback/[id].ts",
 ])

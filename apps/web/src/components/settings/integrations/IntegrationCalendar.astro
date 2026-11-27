@@ -168,6 +168,17 @@ const locale = Astro.props.locale || "en"
         <small class="form-hint">{t("settings.cal_sync_interval_hint", locale)}</small>
       </div>
 
+      <!-- Manual Push to Calendar toggle -->
+      <div class="form-group form-group--spaced" id="cal-manual-push-group">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="cal-manual-push" checked />
+          <span>Show "Push to Calendar" option on tasks</span>
+        </label>
+        <small class="form-hint" id="cal-manual-push-hint">
+          Automatically hidden when scheduled bidirectional sync with write-back is active; shown when syncing manually or when calendar export is off.
+        </small>
+      </div>
+
       <div class="integration-card__actions">
         <button type="button" class="btn btn-primary" id="save-cal">{t("settings.save_calendar_settings", locale)}</button>
         <button type="button" class="btn btn-ghost" id="test-cal">{t("settings.sync_now_btn", locale)}</button>

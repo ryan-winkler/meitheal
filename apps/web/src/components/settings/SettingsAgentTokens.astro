@@ -58,7 +58,13 @@ const scopeGroups = [
     <div id="agent-token-form" class="agent-tokens__form" hidden>
       <div class="agent-tokens__form-header">
         <strong>Create New Token</strong>
-        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-form-cancel">Cancel</button>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" id="agent-token-ha-preset" title="Pre-fill scopes and no-expiry settings for the Home Assistant integration">
+            <Icon name="home" size={14} />
+            <span>Home Assistant preset</span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="agent-token-form-cancel">Cancel</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -67,7 +73,7 @@ const scopeGroups = [
           type="text"
           class="form-input"
           id="agent-token-name"
-          placeholder="e.g., n8n-prod, nodered-home, claude-agent"
+          placeholder="e.g., home-assistant, n8n-prod, claude-agent"
           maxlength="100"
           autocomplete="off"
           data-lpignore="true"

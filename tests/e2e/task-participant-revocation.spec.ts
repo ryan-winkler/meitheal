@@ -391,6 +391,7 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     const editor = row.getByRole("textbox", { name: "Edit comment" })
     await editor.fill("Keep my comment edit")
     const composer = detail.locator("#td-comment-input")
+    const sendComment = detail.getByRole("button", { name: "Send", exact: true })
     await composer.fill("Keep my new comment")
     const panel = detail.locator('[data-reaction-panel="task"]')
     await panel.locator("summary").press("Enter")
@@ -402,9 +403,26 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     child.send({ type: "fixture-core", user: "member", active: false })
     expect((await changed)[0]).toEqual({ coreChanged: true })
     const message = /Could not (?:post your comment|save your comment|delete the comment|add the reaction|remove the reaction)/
-    const deniedComment = page.waitForResponse(response => response.url() === taskApi + "/comments" && response.request().method() === "POST")
-    await detail.getByRole("button", { name: "Post Comment" }).press("Enter")
-    expect((await deniedComment).status()).toBe(403)
+
+    // Outside actions close the reaction popover. Exercise its already-open controls before leaving it.
+    await reactionInput.focus()
+    await expect(reactionInput).toBeFocused()
+    await reactionInput.press("Enter")
+    await expect(panel.getByRole("alert")).toHaveText(message)
+    await expect(reactionInput).toHaveValue("Keep my reaction")
+    await expect(reactionInput).toBeFocused()
+    const removeReaction = panel.getByRole("button", { name: "Remove reaction: ✓" })
+    await removeReaction.press("Enter")
+    await expect(panel.getByRole("alert")).toHaveText(message)
+    await expect(removeReaction).toBeFocused()
+    await expect(panel.getByRole("listitem")).toContainText("✓")
+    await expect(panel.getByRole("status")).toBeEmpty()
+
+    const [deniedComment] = await Promise.all([
+      page.waitForResponse(response => response.url() === taskApi + "/comments" && response.request().method() === "POST"),
+      sendComment.press("Enter"),
+    ])
+    expect(deniedComment.status()).toBe(403)
     await expect(detail.locator("#td-comment-error")).toHaveText("Could not post your comment. Your text is still here. Try again.")
     await expect(composer).toHaveValue("Keep my new comment")
     await expect(detail).toBeVisible()
@@ -422,18 +440,6 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     await expect(row.getByText("Existing shared comment")).toBeVisible()
     await expect(removeComment).toBeFocused()
 
-    await reactionInput.focus()
-    await expect(reactionInput).toBeFocused()
-    await reactionInput.press("Enter")
-    await expect(panel.getByRole("alert")).toHaveText(message)
-    await expect(reactionInput).toHaveValue("Keep my reaction")
-    await expect(reactionInput).toBeFocused()
-    const removeReaction = panel.getByRole("button", { name: "Remove reaction: ✓" })
-    await removeReaction.press("Enter")
-    await expect(panel.getByRole("alert")).toHaveText(message)
-    await expect(removeReaction).toBeFocused()
-    await expect(panel.getByRole("listitem")).toContainText("✓")
-    await expect(panel.getByRole("status")).toBeEmpty()
     await expect(detail).toBeVisible()
     await expect(page).toHaveURL(detailUrl)
     await page.route(taskApi + "/comments", route => route.request().method() === "POST"
@@ -441,7 +447,7 @@ test("an open task preserves input and focus when Core revokes its member", asyn
       : route.continue())
     const navigations: string[] = []
     page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations.push(frame.url()) })
-    await detail.getByRole("button", { name: "Post Comment" }).press("Enter")
+    await sendComment.press("Enter")
     await expect(detail.locator("#td-comment-error")).toHaveText(/Home Assistant could not verify your active account/)
     await expect(composer).toHaveValue("Keep my new comment")
     await expect(composer).toBeFocused()

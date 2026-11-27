@@ -233,11 +233,11 @@ const bodyId = `${slugBase}-card-body`
   }
 
   @media (max-width: 720px) {
-    .settings-panel-card__header {
+    .settings-panel-card__header:has(.settings-panel-card__actions) {
       flex-wrap: wrap;
     }
 
-    .settings-panel-card__header-end {
+    .settings-panel-card__header:has(.settings-panel-card__actions) .settings-panel-card__header-end {
       margin-inline-start: auto;
     }
   }

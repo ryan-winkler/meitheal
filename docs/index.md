@@ -9,6 +9,7 @@ okf_version: "0.2"
 - [Offline and PWA guide](kcs/pwa-offline-guide.md) - Install the web app and understand offline behavior.
 - [Troubleshooting](kcs/troubleshooting.md) - Diagnose common connection, search, and sync problems.
 - [Settings troubleshooting](kcs/settings-troubleshooting.md) - Find settings and diagnose navigation problems.
+- [Custom themes](kcs/custom-themes.md) - Build custom CSS themes and verify WCAG AA contrast tokens.
 
 # Tasks and planning
 

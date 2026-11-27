@@ -8,11 +8,15 @@ description: "Understand the task table and its controls."
 
 Table refreshes its rows, totals, pagination and Area catalog in place. Its refresh sends `tableRefresh` and `X-Meitheal-Task-Fragment: 1` on the regular scoped page. The response skips the shared page shell, and direct navigation still receives the full page. Use the refresh retry control if a request fails.
 
+Moving a row to a different group saves the group before saving row order. If
+the order fails, Table keeps the saved group, displays a warning, and reloads
+rows and counts. Use **Retry** if that reload fails.
+
 ## Open the Table view
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
 
-Scroll sideways within the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view, and Presets and Columns stay above the scroll area. Long titles wrap and can still be edited in full.
+Scroll sideways within the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view, and Presets and Columns stay above the scroll area. Long titles wrap and can still be edited in full. Custom Fields shows a shortened preview. Open the task to see the full value.
 
 ## Common Jobs
 
@@ -42,7 +46,7 @@ Group or sub-group by **Area** to see the names, icons, and colors of the Board'
 ### Edit a title or select a row
 
 1. Focus the row's **Title** field and edit the text. Press **Tab** or **Enter** to leave the field and save, or **Escape** to restore the last saved title.
-2. Select the row's checkbox. The bulk action bar shows how many rows are selected.
+2. Select individual row checkboxes, or use the checkbox in the column header to select all visible rows on the current page. The bulk action bar shows how many rows are selected.
 
 The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
 
@@ -58,7 +62,7 @@ Choose **Group by → Workflow column** to see Household tasks in the order of t
 
 Share the Table URL or save a preset to keep the grouping. If the catalog fails during an in-place refresh, **Retry** applies the requested grouping when the catalog returns. Previous results stay visible while you retry. Opening or reloading a workflow-grouped URL during an outage shows **Retry** until columns are available.
 
-Open **Created date** and enter either or both dates, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
+Open **Created date** and enter either or both dates using your browser's date controls, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. If the end date is earlier than the start date, focus moves to the end date with the error. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
 
 Table remembers primary or secondary Epic grouping on this browser when you return to Table without explicit filters. That presentation stays separate from the shared task filters used by other views. An explicit Table link or saved preset takes priority; choosing another grouping or clearing the filters replaces the remembered Epic presentation.
 
@@ -82,7 +86,7 @@ After changing a title, type or parent in Details, close Details to refresh the 
 
 ### Saved filters are unavailable
 
-If Presets offers **Activate update**, activate the compatible worker and retry. The list needs a fresh network response and stays unavailable offline. When a legacy preset cannot be read, use **Back to presets** and save a new view from the current Table. An unavailable Area leaves the Table empty until you choose a different Area or clear the filters.
+The list needs a fresh network response and stays unavailable offline. On reconnect, Presets waits for current Board access and for the active Home Assistant worker to confirm support. Use **Retry** if the list stays unavailable. If Presets offers **Activate update**, activate the compatible worker and retry. When a legacy preset cannot be read, use **Back to presets** and save a new view from the current Table. An unavailable Area leaves the Table empty until you choose a different Area or clear the filters.
 
 The browser and API clients use the canonical `/api/saved-filters` path. Home Assistant requests retain their ingress prefix. Responses are private and no-store. Encoded or trailing path aliases return 404.
 

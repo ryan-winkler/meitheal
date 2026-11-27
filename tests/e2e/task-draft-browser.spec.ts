@@ -95,6 +95,7 @@ test("save, resume, edit and publish a private capture with keyboard and a narro
     const label = "unpublished-draft-label"
     await page.locator('[data-kind="checklist"]').click()
     await title.fill(sentinel)
+    await page.getByRole("tab", { name: "Markdown", exact: true }).click()
     await page.locator("#new-task-desc-input").fill("<b>Supplies</b> and a long note")
     await page.locator("#nt-checklist-builder-input").fill("Pack raincoat\nFill flask")
     await page.locator("#nt-options > summary").click()
@@ -222,9 +223,19 @@ test("shopping, custom fields and files respect the saved snapshot boundary", as
     await category.selectOption("pantry")
     await queued.fill("Apple")
     await queued.press("Enter")
-    await page.getByRole("button", { name: /Remove Apple.*Pantry/ }).click()
+    const appleRows = page.locator(".nt-shop-row").filter({ has: page.getByRole("button", { name: "Remove Apple", exact: true }) })
+    await appleRows.filter({ has: page.locator('option[value="pantry"]:checked') })
+      .getByRole("button", { name: "Remove Apple", exact: true }).click()
     await category.selectOption("dairy")
     await queued.fill("Milk")
+
+    await page.locator("#nt-toggle-layout").click()
+    const layout = page.locator("#nt-layout-panel")
+    await layout.getByRole("tab", { name: "Shopping", exact: true }).click()
+    const metadata = layout.locator('[data-layout-item="metadata"]')
+    await metadata.locator("summary").click()
+    await metadata.locator('[data-layout-item="custom-fields"] [data-layout-toggle-vis]').click()
+    await page.locator("#nt-toggle-layout").click()
 
     async function addField(type: string) {
       await page.locator("#nt-add-custom-field-btn").click()
@@ -261,8 +272,8 @@ test("shopping, custom fields and files respect the saved snapshot boundary", as
     await draftAction(page, "Draft").click()
     await draftAction(page, "Resume draft").click()
     await expect(title).toHaveValue("Shopping draft")
-    await expect(page.getByRole("button", { name: /Remove Apple.*Produce/ })).toBeVisible()
-    await expect(page.getByRole("button", { name: /Remove Apple.*Pantry/ })).toHaveCount(0)
+    await expect(appleRows).toHaveCount(1)
+    await expect(appleRows.getByRole("combobox", { name: "Category for Apple" })).toHaveValue("produce")
     await expect(queued).toHaveValue("Milk")
     await expect(checkbox.locator('[type="checkbox"]')).toBeChecked()
     await expect(checkbox.locator('[type="text"]')).toHaveValue("Bring bags")
@@ -298,6 +309,7 @@ test("history opens a fresh composer and verifies the account before exposing it
     await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
     await title.fill("Unsaved private edit")
     await page.locator("html").evaluate(root => { root.dataset.previousCapture = "true" })
+    const tasksUrl = page.url()
     await page.goto(origin + prefix + "/fixture")
 
     let releaseHead = () => {}
@@ -311,8 +323,19 @@ test("history opens a fresh composer and verifies the account before exposing it
       await route.continue().catch(() => {})
     })
     try {
-      await page.goBack({ waitUntil: "commit" })
-      await expect(page).toHaveURL(/\/tasks(?:#kanban)?$/)
+      const cdp = await page.context().newCDPSession(page)
+      const { currentIndex, entries } = await cdp.send("Page.getNavigationHistory")
+      const previous = entries[currentIndex - 1]
+      expect(previous?.url).toBe(tasksUrl)
+      const documentUrl = new URL(tasksUrl)
+      documentUrl.hash = ""
+      // The restored workspace can reload before the Back command commits.
+      const [restored] = await Promise.all([
+        page.waitForResponse(response => response.url() === documentUrl.href && response.request().isNavigationRequest()),
+        cdp.send("Page.navigateToHistoryEntry", { entryId: previous!.id }),
+      ])
+      expect(restored.status()).toBe(200)
+      await expect(page).toHaveURL(url => url.pathname === prefix + "/tasks")
       await expect(page.locator("html")).not.toHaveAttribute("data-previous-capture", "true")
       await expect(title).toBeHidden()
       await openCapture(page)
@@ -396,6 +419,8 @@ test("account switch during a simulated focus change clears the old draft before
     await expect(title).toHaveValue("")
     await expect(draftAction(page, "Create Task")).toBeEnabled()
     await title.fill("Independent ordinary capture")
+    await draftAction(page, "More create options").click()
+    await page.getByRole("menuitemradio", { name: "Open created task", exact: true }).click()
     await draftAction(page, "Create Task").click()
     await expect(page.locator("#new-task-overlay")).not.toHaveClass(/active/)
     const detail = page.getByRole("dialog", { name: "Task detail: Independent ordinary capture" })
@@ -464,6 +489,7 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
       await expect(page.locator("#nt-event-start")).toHaveValue("2026-12-12T03:55:31.123")
       await expect(page.locator("#nt-event-end")).toHaveValue("2026-12-12T04:55:31.987")
       const edited = { ...snapshot, description: "Edited unrelated description" }
+      await page.getByRole("tab", { name: "Markdown", exact: true }).click()
       await page.locator("#new-task-desc-input").fill(edited.description)
       await draftAction(page, "Save draft").click()
       await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")

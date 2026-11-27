@@ -137,7 +137,22 @@ export function readTaskAreaParam(params: URLSearchParams): string | null {
 
 const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
 const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const
-const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice", "manual"]
+const SORT_COLUMNS = [
+  "key",
+  "title",
+  "type",
+  "status",
+  "priority",
+  "due_date",
+  "rice",
+  "manual",
+  "start_date",
+  "effort",
+  "story_points",
+  "eisenhower",
+  "progress",
+  "created",
+]
 const LEGACY_SORTS = new Map([
   ["manual", "manual-asc"],
   ["due_asc", "due_date-asc"],
@@ -660,8 +675,10 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
     case "status":
       return el.dataset.status ?? "pending"
     case "rice": {
-      const r = Number(el.dataset.rice ?? "")
-      if (isNaN(r) || el.dataset.rice === "") return "none"
+      const score = el.dataset.rice
+      if (!score) return "none"
+      const r = Number(score)
+      if (!Number.isFinite(r)) return "none"
       if (r >= 15) return "high"
       if (r >= 8) return "medium"
       return "low"

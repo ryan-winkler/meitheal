@@ -11,13 +11,12 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 base("Board navigation preserves placement and never maps a named workspace to Household", () => {
   const context = readBoardNavigationContext(new URL("https://example.test/boards/work?project=lighting&from=study&view=groups&section=goals"))!
   const links = boardNavigationLinks(context)
-  for (const href of [links.tasks, links.planning]) {
-    const url = new URL(href, "https://example.test")
-    expect(url.pathname).toBe("/boards/work")
-    expect(url.searchParams.get("project")).toBe("lighting")
-    expect(url.searchParams.get("from")).toBe("study")
-  }
-  for (const href of [links.dashboard, links.today, links.upcoming, links.progress, links.pillars, links.routines]) {
+  const tasks = new URL(links.tasks, "https://example.test")
+  expect(tasks.pathname).toBe("/boards/work")
+  expect(tasks.searchParams.get("project")).toBe("lighting")
+  expect(tasks.searchParams.get("from")).toBe("study")
+  expect(links.planning).toBe("/planning?board_id=work&project_id=lighting&from=study#eisenhower")
+  for (const href of [links.dashboard, links.today, links.upcoming, links.planning, links.progress, links.pillars, links.routines]) {
     const url = new URL(href, "https://example.test")
     expect(url.searchParams.get("board_id")).toBe("work")
     expect(url.searchParams.get("project_id")).toBe("lighting")
@@ -199,29 +198,27 @@ test("Household is a peer Board and every scoped workspace destination retains t
   const workspace = page.getByRole("navigation", { name: "Board workspace", exact: true })
   const main = (key: string) => page.locator(`.sidebar [data-page="${key}"]`).first()
   await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
-  for (const key of ["dashboard", "today", "upcoming", "progress"]) {
+  for (const key of ["dashboard", "today", "upcoming", "planning", "progress"]) {
     await expect.poll(async () => {
       const href = (await main(key).getAttribute("href"))!
       const url = new URL(href, app)
       return [url.searchParams.get("board_id"), url.searchParams.get("project_id")]
     }).toEqual([board.id, project.id])
   }
-  for (const key of ["tasks", "planning"]) {
-    const url = new URL((await main(key).getAttribute("href"))!, app)
-    expect(url.pathname).toContain("/boards/" + board.id)
-    expect(url.searchParams.get("project")).toBe(project.id)
-  }
+  const tasksUrl = new URL((await main("tasks").getAttribute("href"))!, app)
+  expect(tasksUrl.pathname).toContain("/boards/" + board.id)
+  expect(tasksUrl.searchParams.get("project")).toBe(project.id)
   await workspace.getByRole("link", { name: "Goals", exact: true }).click()
   await expect(page.locator("#goals-tab-root")).toContainText("Better lighting")
   expect(new URL(page.url()).searchParams.get("project_id")).toBe(project.id)
   expect(new URL(page.url()).hash).toBe("#goals")
-  await workspace.getByRole("link", { name: "Routines", exact: true }).click()
+  await selectProgressRoutines(page)
   await expect(page.locator("#habits-shell")).toContainText("Check desk")
   expect(new URL(page.url()).searchParams.get("project_id")).toBe(project.id)
   await main("planning").click()
-  await expect(page.getByRole("heading", { name: "Desk light", exact: true, level: 1 })).toBeVisible()
-  expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
-  await main("tasks").click()
+  await expect(page).toHaveURL(url => url.pathname.endsWith("/planning") && url.hash === "#eisenhower" &&
+    url.searchParams.get("board_id") === board.id && url.searchParams.get("project_id") === project.id)
+  await page.locator(".planning-context-bar").getByRole("link", { name: /^Back to / }).click()
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   // View shortcuts may switch in place or reload; poll the address instead of waiting for a load event.
   const inProjectView = (view: string) => expect(page).toHaveURL(url => url.pathname.endsWith("/boards/" + board.id) &&
@@ -243,6 +240,8 @@ test("Household is a peer Board and every scoped workspace destination retains t
   const title = page.locator("#new-task-title-input")
   await expect(title).toBeVisible()
   await title.fill("Project keyboard capture")
+  await page.locator("#nt-split-toggle").click()
+  await page.locator('[data-after-create="open"]').click()
   const written = page.waitForResponse(response => response.request().method() === "POST" &&
     new URL(response.url()).pathname.endsWith("/api/tasks"))
   await page.locator("#submit-new-task-btn").click()
@@ -258,12 +257,21 @@ test("Household is a peer Board and every scoped workspace destination retains t
   await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
   await expect.poll(async () => new URL((await main("today").getAttribute("href"))!, app).searchParams.get("board_id")).toBe("household")
   await main("planning").click()
-  await expect(page).toHaveURL(app + "/boards/household?view=groups#groups")
+  await expect(page).toHaveURL(app + "/planning?board_id=household#eisenhower")
   await page.goto(app + `/boards/${board.id}?project=${project.id}#kanban`)
   await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
   await page.reload()
   await expect.poll(async () => new URL((await main("progress").getAttribute("href"))!, app).searchParams.get("board_id")).toBe(board.id)
 })
+
+async function selectProgressRoutines(page: Page) {
+  const tab = page.locator("#progress-bar-tabs").getByRole("link", { name: "Routines", exact: true })
+  if (await tab.isVisible()) await tab.click()
+  else {
+    await page.locator("#progress-bar-switcher-btn").click()
+    await page.getByRole("menuitem", { name: "Routines", exact: true }).click()
+  }
+}
 
 test("Household Goals and Routines consume the Area scope and scoped navigation stays usable on phones and navbar", async ({ boards }, info) => {
   test.setTimeout(90_000)
@@ -283,7 +291,7 @@ test("Household Goals and Routines consume the Area scope and scoped navigation 
     await expect(page.locator("#goals-tab-root")).toContainText("Study goal")
     await expect(page.locator("#goals-tab-root")).not.toContainText("Garden goal")
     expect(new URL(page.url()).searchParams.get("area_id")).toBe(area.id)
-    await workspace.getByRole("link", { name: "Routines", exact: true }).click()
+    await selectProgressRoutines(page)
     await expect(page.locator("#habits-shell")).toContainText("Study routine")
     await expect(page.locator("#habits-shell")).not.toContainText("Garden routine")
     expect(new URL(page.url()).searchParams.get("area_id")).toBe(area.id)
@@ -294,8 +302,8 @@ test("Household Goals and Routines consume the Area scope and scoped navigation 
   await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" })))
   await page.reload()
   await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
+  await page.getByRole("link", { name: /^Back to Household/ }).click()
   await expect(page.getByRole("navigation", { name: "Board workspace", exact: true })).toBeVisible()
-  await page.getByRole("navigation", { name: "Board workspace", exact: true }).getByRole("link", { name: "Tasks", exact: true }).click()
   expect(new URL(page.url()).searchParams.get("area")).toBe(area.id)
 })
 

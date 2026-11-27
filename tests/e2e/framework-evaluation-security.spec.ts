@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test"
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred } from "./_helpers"
 
@@ -10,6 +10,12 @@ async function create(request: APIRequestContext, headers: Record<string, string
   const response = await request.post("/api/tasks", { headers, data: { title: "Framework review fixture" } })
   expect(response.status()).toBe(201)
   return (await response.json()).id as string
+}
+
+async function enableRice(page: Page) {
+  await page.route("**/api/rules", route => route.fulfill({ json: {
+    ok: true, data: [{ ruleType: "strategic-lens", taskTypes: ["task"], lensIds: ["rice"] }],
+  } }))
 }
 
 test("API rejects unsupported formulas and HTML-shaped numeric bounds", async ({ request }) => {
@@ -29,6 +35,7 @@ test("API rejects unsupported formulas and HTML-shaped numeric bounds", async ({
 test("malformed Assist scores cannot replace estimates or introduce undeclared payload keys", async ({ page, request, baseURL }) => {
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const id = await create(request, headers)
+  await enableRice(page)
   let suggestion: unknown = "unexpected string"
   await page.route("**/api/ha/assist", route => route.fulfill({ json: { speech: JSON.stringify({ scores: { rice: suggestion }, justification: "Fixture response" }) } }))
   try {
@@ -61,6 +68,7 @@ test("switching tickets during Assist resets the reused action and ignores the a
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const first = await create(request, headers)
   const second = await create(request, headers)
+  await enableRice(page)
   const started = deferred<void>()
   const release = deferred<void>()
   let calls = 0

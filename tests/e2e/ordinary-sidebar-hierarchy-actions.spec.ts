@@ -130,6 +130,7 @@ async function browser(page: Page, board: string, query = "", widget = false) {
       return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() })
     }
     if (url.pathname === "/package-date") return route.fulfill({ contentType: "text/javascript", body: esbuild.buildSync({ entryPoints: [resolve(requireRuntime.resolve("date-fns-tz/package.json"), "../dist/esm/index.js")], bundle: true, write: false, platform: "browser", format: "esm" }).outputFiles[0].text })
+    if (url.pathname === "/package-sortable") return route.fulfill({ contentType: "text/javascript", body: esbuild.buildSync({ entryPoints: [requireRuntime.resolve("sortablejs/modular/sortable.esm.js")], bundle: true, write: false, platform: "browser", format: "esm" }).outputFiles[0].text })
     if (url.pathname.startsWith("/package-task/")) {
       const filename = url.pathname.slice("/package-task/".length)
       if (!/^[\w-]+$/.test(filename)) return route.fulfill({ status: 404 })
@@ -159,6 +160,7 @@ async function browser(page: Page, board: string, query = "", widget = false) {
         .replaceAll('"@meitheal/domain-tasks/status-values"', '"/package-task/status-values"')
         .replaceAll('"@meitheal/domain-tasks"', '"/package-task/browser-values"')
         .replaceAll('"date-fns-tz"', '"/package-date"')
+        .replaceAll('"sortablejs"', '"/package-sortable"')
         .replaceAll('"@tabler/core/js/src/bootstrap/modal"', '"/tabler/modal"')
         .replaceAll("import.meta.env", '{ DEV: false, PROD: true }')
       return route.fulfill({ contentType: "text/javascript", body: compiled })
@@ -317,7 +319,8 @@ async function inspector(page: Page, id?: string) {
   const elements = [...raw.matchAll(/<([\w-]+)\b[^>]*\bid="(td-[^"]+)"/g)].map(match => [match[1]!, match[2]!] as const)
   await page.evaluate(elements => {
     document.body.insertAdjacentHTML("beforeend", `<div id="task-detail-overlay"><section id="task-detail-panel"><div id="td-loaded-content"><textarea id="td-title"></textarea><textarea id="td-description"></textarea><select id="td-status"></select><div id="td-sections"></div><div id="td-labels"></div><div id="td-cf-list"></div><button id="td-delete">Delete task</button></div><p id="td-load-error" role="alert" data-unavailable="This task is unavailable."></p></section></div>`)
-    for (const [tag, id] of elements) if (!document.getElementById(id)) {
+    // Feature templates require their inner markup. Keep these out of the synthetic Inspector.
+    for (const [tag, id] of elements) if (tag !== "template" && !document.getElementById(id)) {
       const node = document.createElement(tag); node.id = id; document.getElementById("td-sections")!.append(node)
     }
     document.getElementById("td-close")!.textContent = "Close detail"

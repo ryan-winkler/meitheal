@@ -11,25 +11,25 @@
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: wrap !important;
-  gap: 6px 8px !important;
+  gap: 6px !important;
   align-items: center !important;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
 }
 
 /* ---- Search input ---- */
 .filter-toolbar__search {
-  min-width: 120px;
-  max-width: 190px;
-  flex: 0 1 150px;
+  min-width: 112px;
+  max-width: 168px;
+  flex: 0 1 138px;
 }
 
 /* ---- Type toggles ---- */
 .filter-toolbar__type-toggles {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   max-width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 6px);
@@ -40,16 +40,16 @@
 .filter-toolbar__type-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 4px 8px;
   border: none;
   border-radius: var(--radius-sm, 4px);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms cubic-bezier(0.23, 1, 0.32, 1);
   white-space: nowrap;
 }
 
@@ -69,9 +69,11 @@
   border-color: var(--text-muted);
 }
 
-/* Custom Dropdowns */
+/* Custom Tabler-styled Dropdowns (shared across Kanban, Table, and Gantt/Timeline) */
 details.filter-dropdown {
   position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 details.filter-dropdown[hidden],
 .filter-dropdown__option[hidden] {
@@ -83,6 +85,164 @@ details.filter-dropdown summary {
 }
 details.filter-dropdown summary::-webkit-details-marker {
   display: none;
+}
+
+details.filter-dropdown > summary.timeline-zoom-trigger,
+details.filter-dropdown > summary.filter-dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 100ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+details.filter-dropdown > summary.timeline-zoom-trigger:hover,
+details.filter-dropdown > summary.filter-dropdown__trigger:hover {
+  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text-primary);
+}
+
+details.filter-dropdown > summary.timeline-zoom-trigger:active,
+details.filter-dropdown > summary.filter-dropdown__trigger:active {
+  transform: scale(0.98);
+}
+
+details.filter-dropdown > summary.timeline-zoom-trigger:focus-visible,
+details.filter-dropdown > summary.filter-dropdown__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+details.filter-dropdown[open] > summary.timeline-zoom-trigger,
+details.filter-dropdown[open] > summary.filter-dropdown__trigger {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+details.filter-dropdown > summary .filter-dropdown__chevron,
+details.filter-dropdown > summary > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+details.filter-dropdown[open] > summary .filter-dropdown__chevron,
+details.filter-dropdown[open] > summary > svg {
+  transform: rotate(180deg);
+  color: var(--accent-text, var(--accent));
+}
+
+details.filter-dropdown .timeline-zoom-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 250;
+  min-width: 196px;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 6px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0, 0, 0, 0.25));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: top left;
+  animation: filterDropdownIn 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+details.filter-dropdown:not([open]) .timeline-zoom-panel {
+  display: none;
+}
+
+details.filter-dropdown .timeline-zoom-panel-title {
+  padding: 4px 8px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+details.filter-dropdown .timeline-zoom-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+details.filter-dropdown .timeline-zoom-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+details.filter-dropdown .timeline-zoom-option svg {
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--accent-text, var(--accent));
+}
+
+details.filter-dropdown .timeline-zoom-option--active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-text, var(--accent));
+  font-weight: 600;
+}
+
+details.filter-dropdown .timeline-zoom-option--active svg {
+  opacity: 1;
+}
+
+@keyframes filterDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  details.filter-dropdown > summary.timeline-zoom-trigger,
+  details.filter-dropdown > summary.filter-dropdown__trigger {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  details.filter-dropdown .timeline-zoom-panel {
+    animation: none;
+  }
 }
 
 /* ---- Filter Pills ---- */

@@ -38,6 +38,16 @@ test("older or unavailable Supervisor versions do not grant user authority", () 
   })
 })
 
+test("Supervisor display names contain only plain text", () => {
+  const headers = new Headers(adminHeaders)
+  headers.set("x-remote-user-display-name", "<b>Renée</b> <")
+  headers.set("x-remote-user-name", "Renée >")
+  expect(resolveIngressContext(headers, supervisor)).toMatchObject({
+    hassDisplayName: "Renée",
+    hassUserName: "Renée",
+  })
+})
+
 test("legacy identity, missing user and group lookalikes never grant administration", () => {
   const headers = new Headers({
     "x-ingress-path": ingressPath,

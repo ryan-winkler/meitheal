@@ -2,7 +2,6 @@ import type { CleanupLabel } from "@domains/labels"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import type { LabelChangeDetail } from "@lib/settings-labels-controller"
-import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 class CleanupError extends Error {
   constructor(readonly code: string) { super("Label cleanup request failed") }
@@ -27,15 +26,15 @@ export function initSettingsLabelCleanup() {
   const root = candidate
   root.dataset.cleanupBooted = "true"
   const copy = JSON.parse(root.dataset.copy ?? "{}") as Record<string, string>
-  const review = qs<HTMLButtonElement>(root, "[data-cleanup-review]")!
-  const previous = qs<HTMLButtonElement>(root, "[data-cleanup-previous]")!
-  const next = qs<HTMLButtonElement>(root, "[data-cleanup-next]")!
-  const remove = qs<HTMLButtonElement>(root, "[data-cleanup-remove]")!
-  const status = qs<HTMLElement>(root, "[data-cleanup-status]")!
-  const results = qs<HTMLElement>(root, "[data-cleanup-results]")!
-  const heading = qs<HTMLElement>(root, "[data-cleanup-heading]")!
-  const list = qs<HTMLElement>(root, "[data-cleanup-list]")!
-  const selection = qs<HTMLElement>(root, "[data-cleanup-selection]")!
+  const review = root.querySelector<HTMLButtonElement>("[data-cleanup-review]")!
+  const previous = root.querySelector<HTMLButtonElement>("[data-cleanup-previous]")!
+  const next = root.querySelector<HTMLButtonElement>("[data-cleanup-next]")!
+  const remove = root.querySelector<HTMLButtonElement>("[data-cleanup-remove]")!
+  const status = root.querySelector<HTMLElement>("[data-cleanup-status]")!
+  const results = root.querySelector<HTMLElement>("[data-cleanup-results]")!
+  const heading = root.querySelector<HTMLElement>("[data-cleanup-heading]")!
+  const list = root.querySelector<HTMLElement>("[data-cleanup-list]")!
+  const selection = root.querySelector<HTMLElement>("[data-cleanup-selection]")!
   const signal = pageLifecycle.signal
   let focusAway = 0
   document.addEventListener("focusin", event => {
@@ -96,10 +95,10 @@ export function initSettingsLabelCleanup() {
   function render() {
     list.replaceChildren()
     for (const label of labels) {
-      const row = domEl("li")
-      const choice = domEl("label")
+      const row = document.createElement("li")
+      const choice = document.createElement("label")
       choice.className = "label-cleanup-choice"
-      const checkbox = domEl("input")
+      const checkbox = document.createElement("input")
       checkbox.type = "checkbox"
       checkbox.value = String(label.id)
       checkbox.addEventListener("change", () => {
@@ -107,11 +106,11 @@ export function initSettingsLabelCleanup() {
         else selected.delete(label.id)
         controls()
       }, { signal })
-      const swatch = domEl("span")
+      const swatch = document.createElement("span")
       swatch.className = "label-cleanup-swatch"
-      setAttr(swatch, "aria-hidden", "true")
+      swatch.setAttribute("aria-hidden", "true")
       swatch.style.backgroundColor = label.hexColor
-      const name = domEl("span")
+      const name = document.createElement("span")
       name.className = "label-cleanup-name"
       name.textContent = label.title || text("untitled")
       choice.append(checkbox, swatch, name)
@@ -124,7 +123,7 @@ export function initSettingsLabelCleanup() {
 
   async function load(focus = true, notice = "", ownership?: FocusOwnership) {
     const inCleanup = root.contains(document.activeElement)
-    const inConfirmation = confirming && byId("meitheal-confirm-overlay")?.contains(document.activeElement)
+    const inConfirmation = confirming && document.getElementById("meitheal-confirm-overlay")?.contains(document.activeElement)
     const ownedFocus = inCleanup || inConfirmation || document.activeElement === document.body
     const restoreFocus = ownership ? ownership.owned : ownedFocus && (focus || inCleanup || inConfirmation)
     clear(text(navigator.onLine ? "loading" : "offline"))
@@ -179,7 +178,7 @@ export function initSettingsLabelCleanup() {
       return
     }
     busy = true
-    const confirmation = byId("meitheal-confirm-overlay")
+    const confirmation = document.getElementById("meitheal-confirm-overlay")
     const ownership: FocusOwnership = {
       owned: root.contains(document.activeElement) || Boolean(confirmation?.contains(document.activeElement)) || document.activeElement === document.body,
       generation: focusAway,

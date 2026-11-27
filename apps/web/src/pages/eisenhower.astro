@@ -26,6 +26,9 @@ import Layout from "../layouts/Layout.astro"
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
+import ScoringTriageModal from "../components/planning/ScoringTriageModal.astro"
+import Icon from "../components/ui/Icon.astro"
+import type { IconName } from "../generated/icon-registry"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
 import { t } from "../i18n/translations"
@@ -90,7 +93,7 @@ interface Quadrant {
   label: string
   desc: string
   colorToken: string
-  emoji: string
+  icon: IconName
   tasks: TaskViewItem[]
   effortLabel: string
 }
@@ -106,10 +109,10 @@ function computeEffortLabel(tasks: TaskViewItem[]): string {
 }
 
 const quadrants: Quadrant[] = [
-  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  colorToken: "var(--danger)", emoji: "🔥", tasks: q1, effortLabel: computeEffortLabel(q1) },
-  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  colorToken: "var(--info)", emoji: "📅", tasks: q2, effortLabel: computeEffortLabel(q2) },
-  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  colorToken: "var(--warning)", emoji: "👥", tasks: q3, effortLabel: computeEffortLabel(q3) },
-  { id: "not-now",   label: t("eisenhower.not_now", locale),    desc: t("eisenhower.not_now_desc", locale),   colorToken: "var(--text-muted)", emoji: "📦", tasks: q4, effortLabel: computeEffortLabel(q4) },
+  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  colorToken: "var(--danger)", icon: "flame", tasks: q1, effortLabel: computeEffortLabel(q1) },
+  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  colorToken: "var(--info)", icon: "calendar", tasks: q2, effortLabel: computeEffortLabel(q2) },
+  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  colorToken: "var(--warning)", icon: "users", tasks: q3, effortLabel: computeEffortLabel(q3) },
+  { id: "not-now",   label: t("eisenhower.not_now", locale),    desc: t("eisenhower.not_now_desc", locale),   colorToken: "var(--text-muted)", icon: "package", tasks: q4, effortLabel: computeEffortLabel(q4) },
 ]
 
 // Badge helpers (avoid <= in JSX which esbuild parses as HTML)
@@ -118,10 +121,9 @@ function effortClass(m: number): string {
   if (m <= 60) return "effort--medium"
   return "effort--long"
 }
-function effortEmoji(m: number): string {
-  if (m <= 15) return "⚡"
-  if (m <= 60) return "⏱️"
-  return "🏋️"
+function effortIconName(m: number): IconName {
+  if (m <= 15) return "bolt"
+  return "clock"
 }
 function effortLabelText(m: number): string {
   if (m <= 60) return `${m}m`
@@ -132,6 +134,18 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   if (typeof fp === "object" && fp !== null) return fp as Record<string, unknown>
   return {}
 }
+
+const boardContext = {
+  boardId: workScope.boardId,
+  area: pagePlacement.area?.id,
+  project: pagePlacement.project?.id,
+}
+const planningHref = boardContextHref(boardContext, "/planning#eisenhower")
+const riceHref = boardContextHref(boardContext, "/planning#rice")
+const todayHref = boardContextHref(boardContext, "/today")
+const upcomingHref = boardContextHref(boardContext, "/upcoming")
+const kanbanHref = boardContextHref(boardContext, "/tasks?view=kanban#kanban")
+const calendarHref = boardContextHref(boardContext, "/tasks?view=calendar#calendar")
 ---
 
 <Layout title="Eisenhower Matrix">
@@ -139,7 +153,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   <UnifiedBar
     title="Eisenhower"
-    titleIcon="🎯"
+    titleIcon="eisenhower"
     tabs={EISENHOWER_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
@@ -158,7 +172,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
       title={t("eisenhower.review_title", locale)}
       aria-label={t("eisenhower.review_title", locale)}
     >
-      <span class="unified-bar__new-task-label">🔍 {t("eisenhower.review_cta", locale)}</span>
+      <Icon name="search" size={14} sprite />
+      <span class="unified-bar__new-task-label">{t("eisenhower.review_cta", locale)}</span>
     </button>
   </UnifiedBar>
 
@@ -168,10 +183,31 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
       class="eisenhower__overview-section"
       data-eisenhower-section
     >
+      <div class="eisenhower__context-bar">
+        <a href={planningHref} class="eisenhower__context-link">
+          <Icon name="eisenhower" size={14} sprite />
+          <span>Back to Planning</span>
+        </a>
+        <div class="eisenhower__context-links-right">
+          <button type="button" class="eisenhower__context-link" data-action="start-triage" style="background:transparent;border:0;padding:0;cursor:pointer;font:inherit;">
+            <Icon name="target" size={14} sprite />
+            <span>Scoring Triage</span>
+          </button>
+          <a href={riceHref} class="eisenhower__context-link">
+            <Icon name="chart-bar" size={14} sprite />
+            <span>RICE Scoring</span>
+          </a>
+          <a href="/settings#scoring-settings" class="eisenhower__context-link">
+            <Icon name="sliders" size={14} sprite />
+            <span>Scoring settings</span>
+          </a>
+        </div>
+      </div>
+
       <div class="eisenhower__overview-row">
         {completedToday > 0 && (
           <div class="eisenhower__completed-today" title={t("eisenhower.completed_today", locale)}>
-            <span class="completed-today__icon">🏆</span>
+            <Icon name="trophy" size={15} sprite class="completed-today__icon" />
             <span class="completed-today__count">{completedToday}</span>
             <span class="completed-today__label">{t("eisenhower.completed_today", locale)}</span>
           </div>
@@ -183,11 +219,14 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     {/* ── Triage banner — nudge for unclassified tasks ── */}
     {unclassifiedCount > 0 && (
       <div class="eisenhower__triage-banner" role="status">
-        <span class="triage-banner__icon">📋</span>
+        <span class="triage-banner__icon" aria-hidden="true">
+          <Icon name="clipboard-list" size={18} sprite />
+        </span>
         <span class="triage-banner__text">
           <strong>{unclassifiedCount}</strong> {unclassifiedCount === 1 ? t("eisenhower.triage_single", locale) : t("eisenhower.triage_plural", locale)}
         </span>
         <button
+          type="button"
           class="triage-banner__btn"
           data-action="start-triage"
           title={t("eisenhower.start_triage_title", locale)}
@@ -197,106 +236,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
       </div>
     )}
 
-    {/* ── Triage overlay (one-at-a-time classification) ── */}
-    <div id="triage-overlay" class="triage-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Task triage">
-      <div class="triage-card">
-        <header class="triage-card__header">
-          <h2 class="triage-card__title">{t("eisenhower.triage_title", locale)}</h2>
-          <span class="triage-card__progress" id="triage-progress">1 / {unclassifiedCount}</span>
-          <button class="triage-card__close" data-action="close-triage" aria-label="Close triage">✕</button>
-        </header>
-
-        <div class="triage-card__task" id="triage-task-name">
-          {/* Populated by JS */}
-        </div>
-
-        <div class="triage-card__controls">
-          <div class="triage-control">
-            <label class="triage-control__label">⚡ {t("eisenhower.triage_urgency", locale)}</label>
-            <div class="triage-control__slider-row">
-              <input type="range" id="triage-urgency" min="0" max="5" value="0" class="triage-control__slider" />
-              <span class="triage-control__value" id="triage-urgency-val">0</span>
-            </div>
-            <div class="triage-control__labels">
-              <span>{t("eisenhower.triage_not_urgent", locale)}</span>
-              <span>{t("eisenhower.triage_critical", locale)}</span>
-            </div>
-          </div>
-
-          <div class="triage-control">
-            <label class="triage-control__label">⭐ {t("eisenhower.triage_importance", locale)}</label>
-            <div class="triage-control__slider-row">
-              <input type="range" id="triage-importance" min="0" max="5" value="0" class="triage-control__slider" />
-              <span class="triage-control__value" id="triage-importance-val">0</span>
-            </div>
-            <div class="triage-control__labels">
-              <span>{t("eisenhower.triage_not_important", locale)}</span>
-              <span>{t("eisenhower.triage_critical", locale)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="triage-card__quadrant-preview" id="triage-quadrant-preview">
-          {/* Shows which quadrant the task will land in based on slider values */}
-        </div>
-
-        {/* ── Extended details (progressive disclosure) ── */}
-        <details class="triage-card__details">
-          <summary class="triage-card__expand-btn">📊 {t("eisenhower.triage_add_details", locale)}</summary>
-          <div class="triage-card__extended">
-            <div class="triage-control">
-              <label class="triage-control__label">⏱️ {t("eisenhower.triage_effort", locale)}</label>
-              <select id="triage-effort" class="triage-control__select">
-                <option value="">{t("eisenhower.triage_effort_none", locale)}</option>
-                <option value="5">⚡ 5m</option>
-                <option value="15">⚡ 15m</option>
-                <option value="30">⏱️ 30m</option>
-                <option value="60">⏱️ 1h</option>
-                <option value="120">🏋️ 2h</option>
-                <option value="240">🏋️ 4h</option>
-              </select>
-            </div>
-            <div class="triage-control">
-              <label class="triage-control__label">🧠 {t("eisenhower.triage_effort_type", locale)}</label>
-              <div class="triage-control__radio-row">
-                <label><input type="radio" name="triage-effort-type" value="" checked /> —</label>
-                <label><input type="radio" name="triage-effort-type" value="deep" /> 🧘 {t("eisenhower.effort_deep", locale)}</label>
-                <label><input type="radio" name="triage-effort-type" value="shallow" /> 💬 {t("eisenhower.effort_shallow", locale)}</label>
-                <label><input type="radio" name="triage-effort-type" value="admin" /> 📋 {t("eisenhower.effort_admin", locale)}</label>
-              </div>
-            </div>
-            <div class="triage-control">
-              <label class="triage-control__label">⚠️ {t("eisenhower.triage_delay_impact", locale)}</label>
-              <select id="triage-delay-impact" class="triage-control__select">
-                <option value="none">{t("eisenhower.delay_none", locale)}</option>
-                <option value="inconvenient">{t("eisenhower.delay_inconvenient", locale)}</option>
-                <option value="costly">{t("eisenhower.delay_costly", locale)}</option>
-                <option value="critical">{t("eisenhower.delay_critical", locale)}</option>
-              </select>
-            </div>
-            <div class="triage-control">
-              <label class="triage-control__label">💡 {t("eisenhower.triage_interest", locale)}</label>
-              <div class="triage-control__radio-row">
-                <label><input type="radio" name="triage-interest" value="" checked /> —</label>
-                <label><input type="radio" name="triage-interest" value="engaging" /> 🤩 {t("eisenhower.interest_engaging", locale)}</label>
-                <label><input type="radio" name="triage-interest" value="neutral" /> 😐 {t("eisenhower.interest_neutral", locale)}</label>
-                <label><input type="radio" name="triage-interest" value="dreaded" /> 😬 {t("eisenhower.interest_dreaded", locale)}</label>
-                <label><input type="radio" name="triage-interest" value="quick-win" /> ⚡ {t("eisenhower.interest_quickwin", locale)}</label>
-              </div>
-            </div>
-          </div>
-        </details>
-
-        <footer class="triage-card__footer">
-          <button class="triage-card__skip" data-action="triage-skip">
-            {t("eisenhower.triage_skip", locale)} →
-          </button>
-          <button class="triage-card__save" data-action="triage-save">
-            {t("eisenhower.triage_classify", locale)} ✓
-          </button>
-        </footer>
-      </div>
-    </div>
+    {/* ── Unified Tabler Multi-Framework Scoring Triage Modal ── */}
+    <ScoringTriageModal defaultFramework="eisenhower" />
 
     {/* ── Weekly Review overlay ── */}
     <div id="review-overlay" class="review-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Weekly review">
@@ -304,7 +245,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
         <header class="triage-card__header">
           <h2 class="triage-card__title">{t("eisenhower.review_title", locale)}</h2>
           <span class="triage-card__progress" id="review-progress">1 / ?</span>
-          <button class="triage-card__close" data-action="close-review" aria-label="Close review">✕</button>
+          <button type="button" class="triage-card__close" data-action="close-review" aria-label="Close review">
+            <Icon name="x" size={14} sprite />
+          </button>
         </header>
 
         <div class="review-card__source" id="review-source">
@@ -316,17 +259,20 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
         </div>
 
         <footer class="review-card__actions">
-          <button class="review-action review-action--promote" data-action="review-promote" title={t("eisenhower.review_promote_title", locale)}>
-            ⬆️ {t("eisenhower.review_promote", locale)}
+          <button type="button" class="review-action review-action--promote" data-action="review-promote" title={t("eisenhower.review_promote_title", locale)}>
+            <Icon name="arrow-up" size={14} sprite />
+            <span>{t("eisenhower.review_promote", locale)}</span>
           </button>
-          <button class="review-action review-action--archive" data-action="review-archive" title={t("eisenhower.review_archive_title", locale)}>
-            📥 {t("eisenhower.review_archive", locale)}
+          <button type="button" class="review-action review-action--archive" data-action="review-archive" title={t("eisenhower.review_archive_title", locale)}>
+            <Icon name="inbox" size={14} sprite />
+            <span>{t("eisenhower.review_archive", locale)}</span>
           </button>
-          <button class="review-action review-action--delete" data-action="review-delete" title={t("eisenhower.review_delete_title", locale)}>
-            🗑️ {t("eisenhower.review_delete", locale)}
+          <button type="button" class="review-action review-action--delete" data-action="review-delete" title={t("eisenhower.review_delete_title", locale)}>
+            <Icon name="trash" size={14} sprite />
+            <span>{t("eisenhower.review_delete", locale)}</span>
           </button>
-          <button class="review-action review-action--skip" data-action="review-skip">
-            {t("eisenhower.review_skip", locale)} →
+          <button type="button" class="review-action review-action--skip" data-action="review-skip">
+            <span>{t("eisenhower.review_skip", locale)}</span>
           </button>
         </footer>
       </div>
@@ -345,7 +291,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           tabindex={i === 0 ? 0 : -1}
           style={`--tab-color: ${q.colorToken}`}
         >
-          <span class="mobile-tab__emoji" aria-hidden="true">{q.emoji}</span>
+          <span class="mobile-tab__emoji" aria-hidden="true">
+            <Icon name={q.icon} size={14} sprite />
+          </span>
           {q.label}
           <span class="mobile-tab__count">{q.tasks.length}</span>
         </button>
@@ -360,12 +308,17 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           style={`--q-color: ${q.colorToken}`}
         >
           <header class="quadrant__header">
-            <span class="quadrant__badge">{q.emoji}</span>
+            <span class="quadrant__badge" aria-hidden="true">
+              <Icon name={q.icon} size={18} sprite />
+            </span>
             <div class="quadrant__heading">
               <h2 class="quadrant__title">{q.label}</h2>
               <span class="quadrant__desc">{q.desc}</span>
               {q.id === "schedule" && (
-                <span class="quadrant__sublabel">🌱 {t("eisenhower.growth_zone", locale)}</span>
+                <span class="quadrant__sublabel">
+                  <Icon name="sparkles" size={11} sprite />
+                  <span>{t("eisenhower.growth_zone", locale)}</span>
+                </span>
               )}
             </div>
             <span class="quadrant__effort-total" data-effort-quadrant={q.id}>
@@ -373,12 +326,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
             </span>
             <span class="quadrant__count">{q.tasks.length}</span>
             <button
+              type="button"
               class="quadrant__focus-btn"
               data-focus-quadrant={q.id}
               title={t("eisenhower.focus_mode", locale)}
               aria-label={`Focus on ${q.label}`}
             >
-              ⛶
+              <Icon name="arrows-maximize" size={14} sprite />
             </button>
           </header>
 
@@ -386,11 +340,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           {q.id === "do-first" && q.tasks.length > 0 && (
             <div class="quadrant__action-bar">
               <button
+                type="button"
                 class="quadrant__action-btn quadrant__action-btn--primary"
                 data-action="commit-q1"
                 title={t("eisenhower.commit_q1_title", locale)}
               >
-                🎯 {t("eisenhower.commit_q1", locale)}
+                <Icon name="target" size={14} sprite />
+                <span>{t("eisenhower.commit_q1", locale)}</span>
               </button>
             </div>
           )}
@@ -398,7 +354,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           {/* ── Q1 WIP limit warning ── */}
           {q.id === "do-first" && q.tasks.length > Q1_WIP_LIMIT && (
             <div class="quadrant__wip-warning" role="alert">
-              ⚠️ {t("eisenhower.wip_warning", locale).replace("{count}", String(q.tasks.length)).replace("{limit}", String(Q1_WIP_LIMIT))}
+              <Icon name="alert-triangle" size={14} sprite />
+              <span>{t("eisenhower.wip_warning", locale).replace("{count}", String(q.tasks.length)).replace("{limit}", String(Q1_WIP_LIMIT))}</span>
             </div>
           )}
 
@@ -406,11 +363,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           {q.id === "schedule" && q.tasks.length > 0 && (
             <div class="quadrant__action-bar">
               <button
+                type="button"
                 class="quadrant__action-btn quadrant__action-btn--primary"
                 data-action="schedule-q2"
                 title={t("eisenhower.schedule_q2_title", locale)}
               >
-                📅 {t("eisenhower.schedule_q2", locale)}
+                <Icon name="calendar" size={14} sprite />
+                <span>{t("eisenhower.schedule_q2", locale)}</span>
               </button>
             </div>
           )}
@@ -419,11 +378,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           {q.id === "delegate" && q.tasks.length > 0 && (
             <div class="quadrant__action-bar">
               <button
+                type="button"
                 class="quadrant__action-btn quadrant__action-btn--muted"
                 data-action="assign-q3"
                 title={t("eisenhower.assign_q3_title", locale)}
               >
-                👤 {t("eisenhower.assign_q3", locale)}
+                <Icon name="user" size={14} sprite />
+                <span>{t("eisenhower.assign_q3", locale)}</span>
               </button>
             </div>
           )}
@@ -432,18 +393,22 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           {q.id === "not-now" && q.tasks.length > 0 && (
             <div class="quadrant__action-bar">
               <button
+                type="button"
                 class="quadrant__action-btn quadrant__action-btn--muted"
                 data-action="defer-q4"
                 title={t("eisenhower.defer_q4_title", locale)}
               >
-                📥 {t("eisenhower.defer_q4", locale)}
+                <Icon name="inbox" size={14} sprite />
+                <span>{t("eisenhower.defer_q4", locale)}</span>
               </button>
               <button
+                type="button"
                 class="quadrant__action-btn quadrant__action-btn--danger"
                 data-action="complete-q4"
                 title={t("eisenhower.complete_q4_title", locale)}
               >
-                ✅ {t("eisenhower.complete_q4", locale)}
+                <Icon name="check" size={14} sprite />
+                <span>{t("eisenhower.complete_q4", locale)}</span>
               </button>
             </div>
           )}
@@ -461,21 +426,32 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
               >
                 <TaskListItem task={task} compact={true} />
                 <div class="eisenhower__task-meta">
+                  {q.id === "do-first" && idx === 0 && (
+                    <span class="tli__top-badge" title="Top priority focus">
+                      <Icon name="star" size={11} sprite />
+                    </span>
+                  )}
                   {task.eisenhower_override && (
-                    <span class="tli__pin" title="Manually placed">📌</span>
+                    <span class="tli__pin" title="Manually placed">
+                      <Icon name="pin" size={12} sprite />
+                    </span>
                   )}
                   {task.effort_minutes != null && task.effort_minutes > 0 && (
                     <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
                       title={`Estimated effort: ${task.effort_minutes}m`}>
-                      {effortEmoji(task.effort_minutes)}
+                      <Icon name={effortIconName(task.effort_minutes)} size={11} sprite />
                       <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
                     </span>
                   )}
                   {task.blocked_by && (
-                    <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
+                    <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>
+                      <Icon name="alert-triangle" size={12} sprite />
+                    </span>
                   )}
                   {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
-                    <span class="tli__recurring" title="Recurring task">🔁</span>
+                    <span class="tli__recurring" title="Recurring task">
+                      <Icon name="repeat" size={12} sprite />
+                    </span>
                   )}
                 </div>
               </div>
@@ -504,25 +480,30 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     <section id="eisenhower-flow" class="eisenhower__flow-section" data-eisenhower-section>
       <h2 class="eisenhower__flow-heading">Flow</h2>
       <div class="eisenhower__flow-grid">
-        <a href="/today" class="eisenhower__flow-card">
-          <span class="flow-card__icon">☀️</span>
+        <a href={todayHref} class="eisenhower__flow-card">
+          <span class="flow-card__icon" aria-hidden="true"><Icon name="today" size={20} sprite /></span>
           <span class="flow-card__label">Today</span>
           <span class="flow-card__desc">Committed daily work surface</span>
         </a>
-        <a href="/upcoming" class="eisenhower__flow-card">
-          <span class="flow-card__icon">📅</span>
+        <a href={upcomingHref} class="eisenhower__flow-card">
+          <span class="flow-card__icon" aria-hidden="true"><Icon name="upcoming" size={20} sprite /></span>
           <span class="flow-card__label">Upcoming</span>
           <span class="flow-card__desc">Next 7 days at a glance</span>
         </a>
-        <a href="/kanban" class="eisenhower__flow-card">
-          <span class="flow-card__icon">📋</span>
+        <a href={kanbanHref} class="eisenhower__flow-card">
+          <span class="flow-card__icon" aria-hidden="true"><Icon name="kanban" size={20} sprite /></span>
           <span class="flow-card__label">Kanban</span>
           <span class="flow-card__desc">Workflow board by status</span>
         </a>
-        <a href="/calendar" class="eisenhower__flow-card">
-          <span class="flow-card__icon">🗓️</span>
+        <a href={calendarHref} class="eisenhower__flow-card">
+          <span class="flow-card__icon" aria-hidden="true"><Icon name="calendar" size={20} sprite /></span>
           <span class="flow-card__label">Calendar</span>
           <span class="flow-card__desc">Monthly timeline view</span>
+        </a>
+        <a href={riceHref} class="eisenhower__flow-card">
+          <span class="flow-card__icon" aria-hidden="true"><Icon name="chart-bar" size={20} sprite /></span>
+          <span class="flow-card__label">RICE Scoring</span>
+          <span class="flow-card__desc">Rank work by Reach, Impact, Confidence, Effort</span>
         </a>
       </div>
     </section>
@@ -536,12 +517,50 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   </script>
 </Layout>
 
-<style>
+<style is:inline>
   .eisenhower {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 24px 20px;
+    padding: 18px 20px 28px;
     min-height: 100vh;
+  }
+
+  :root[data-appearance-width="fluid"] .eisenhower {
+    max-width: 100%;
+  }
+
+  .eisenhower__context-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .eisenhower__context-links-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .eisenhower__context-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .eisenhower__context-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
   }
 
   /* ── Overview section ── */
@@ -567,40 +586,39 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     align-items: center;
     gap: 6px;
     padding: 6px 14px;
-    background: rgb(var(--success-rgb, 105 227 178) / 0.08);
-    border: 1px solid rgb(var(--success-rgb, 105 227 178) / 0.2);
+    background: rgb(var(--success-rgb, 105 227 178) / 0.1);
+    border: 1px solid rgb(var(--success-rgb, 105 227 178) / 0.25);
     border-radius: 20px;
     white-space: nowrap;
     flex-shrink: 0;
   }
   .completed-today__icon {
-    font-size: 1rem;
+    color: var(--success, #22c55e);
   }
   .completed-today__count {
     font-size: 0.875rem;
     font-weight: 800;
+    font-variant-numeric: tabular-nums;
     color: var(--success, #22c55e);
   }
   .completed-today__label {
     font-size: 0.6875rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   /* ── Top-task spotlight (first task in Q1) ── */
   .task-wrapper--top-task {
     position: relative;
-    border: 1px solid rgb(var(--accent-rgb) / 0.25);
+    border: 1px solid rgb(var(--accent-rgb) / 0.28);
     border-radius: var(--radius-sm, 6px);
-    background: rgb(var(--accent-rgb) / 0.04);
+    background: rgb(var(--accent-rgb) / 0.05);
     box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.08);
   }
-  .task-wrapper--top-task::before {
-    content: "👑";
-    position: absolute;
-    top: -8px;
-    left: 8px;
-    font-size: 0.75rem;
-    z-index: 1;
+  .tli__top-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-text, var(--accent));
   }
 
   /* ── 2×2 Grid ── */
@@ -757,11 +775,18 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
   }
   .quadrant__badge {
-    font-size: 1.25rem;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm, 8px);
+    background: color-mix(in srgb, var(--q-color) 14%, transparent);
+    color: var(--q-color);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
   }
   .quadrant__heading {
@@ -775,17 +800,18 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     margin: 0;
   }
   .quadrant__desc {
-    font-size: 0.6875rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
     display: block;
-    margin-top: 1px;
+    margin-top: 2px;
   }
   .quadrant__count {
     flex-shrink: 0;
-    background: rgb(var(--accent-rgb) / 0.15);
+    background: rgb(var(--accent-rgb) / 0.14);
     color: var(--accent-text);
     font-size: 0.75rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
     padding: 2px 8px;
     border-radius: 20px;
     min-width: 24px;
@@ -819,21 +845,11 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     position: relative;
   }
   .tli__pin {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    font-size: 0.6875rem;
-    opacity: 0.7;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    opacity: 0.8;
     pointer-events: none;
-  }
-
-  /* ── WIP warning ── */
-  .quadrant__wip-warning {
-    background: rgb(var(--warning-rgb, 240 184 109) / 0.1);
-    color: var(--warning);
-    font-size: 0.75rem;
-    padding: 6px 12px;
-    border-bottom: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.15);
   }
 
   /* ── Triage banner ── */
@@ -842,13 +858,15 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     align-items: center;
     gap: 10px;
     background: rgb(var(--warning-rgb, 240 184 109) / 0.08);
-    border: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.2);
+    border: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.24);
     border-radius: var(--radius-md, 10px);
     padding: 10px 16px;
     margin-bottom: 16px;
   }
   .triage-banner__icon {
-    font-size: 1.125rem;
+    display: inline-flex;
+    align-items: center;
+    color: var(--warning);
     flex-shrink: 0;
   }
   .triage-banner__text {
@@ -860,33 +878,36 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     padding: 6px 14px;
     border: 1px solid rgb(var(--accent-rgb) / 0.3);
     border-radius: var(--radius-sm, 6px);
-    background: rgb(var(--accent-rgb) / 0.08);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent-text);
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 150ms, border-color 150ms;
+    transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
     white-space: nowrap;
   }
   .triage-banner__btn:hover {
-    background: rgb(var(--accent-rgb) / 0.15);
+    background: rgb(var(--accent-rgb) / 0.18);
     border-color: var(--accent);
+  }
+  .triage-banner__btn:active {
+    transform: scale(0.97);
   }
 
   /* ── Task meta overlay (pin, badges) ── */
   .eisenhower__task-meta {
     display: flex;
-    gap: 4px;
+    gap: 5px;
     align-items: center;
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 6px;
+    right: 6px;
     pointer-events: none;
   }
 
   /* ── Unclassified task highlight ── */
   .eisenhower__task-wrapper[data-unclassified] {
-    border-left: 2px dashed rgb(var(--warning-rgb, 240 184 109) / 0.4);
+    border-left: 2px dashed rgb(var(--warning-rgb, 240 184 109) / 0.45);
     border-radius: 4px;
     padding-left: 4px;
   }
@@ -895,48 +916,51 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .quadrant__action-bar {
     display: flex;
     gap: 6px;
-    padding: 6px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
   }
   .quadrant__action-btn {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 5px;
     padding: 6px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--bg-surface);
     color: var(--text-secondary);
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 150ms, border-color 150ms, color 150ms;
+    transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms ease, color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .quadrant__action-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
+  .quadrant__action-btn:active {
+    transform: scale(0.98);
+  }
   .quadrant__action-btn--primary {
-    border-color: rgb(var(--accent-rgb) / 0.3);
-    color: var(--accent);
+    border-color: rgb(var(--accent-rgb) / 0.35);
+    color: var(--accent-text, var(--accent));
   }
   .quadrant__action-btn--primary:hover {
-    background: rgb(var(--accent-rgb) / 0.1);
+    background: rgb(var(--accent-rgb) / 0.12);
     border-color: var(--accent);
   }
   .quadrant__action-btn--muted {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .quadrant__action-btn--danger {
-    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.2);
-    color: var(--text-muted);
+    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.25);
+    color: var(--text-secondary);
   }
   .quadrant__action-btn--danger:hover {
-    background: rgb(var(--danger-rgb, 239 68 68) / 0.08);
+    background: rgb(var(--danger-rgb, 239 68 68) / 0.1);
     color: var(--danger, #ef4444);
-    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.4);
+    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.45);
   }
   .quadrant__action-btn[aria-disabled="true"] {
     opacity: 0.65;
@@ -945,47 +969,43 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   /* ── WIP limit warning (Q1 > threshold) ── */
   .quadrant__wip-warning {
-    padding: 6px 12px;
-    background: rgb(var(--warning-rgb, 240 184 109) / 0.08);
-    border-bottom: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 12px;
+    background: rgb(var(--warning-rgb, 240 184 109) / 0.1);
+    border-bottom: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.22);
     color: var(--warning, #f59e0b);
-    font-size: 0.6875rem;
+    font-size: 0.72rem;
     font-weight: 600;
     text-align: center;
-    animation: wip-pulse 3s ease-in-out infinite;
-  }
-  @keyframes wip-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
   }
 
   /* ── Quick-capture inputs ── */
   .quadrant__quick-capture {
-    padding: 6px 12px 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--border);
     margin-top: auto;
   }
   .quick-capture__input {
     width: 100%;
-    padding: 6px 10px;
+    padding: 7px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--bg-input, var(--bg-surface));
     color: var(--text-primary);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     outline: none;
-    transition: border-color 150ms, background 150ms;
+    transition: border-color 150ms ease, background 150ms ease;
   }
   .quick-capture__input::placeholder {
     color: var(--text-muted);
-    opacity: 0.6;
+    opacity: 0.75;
   }
   .quick-capture__input:focus {
     border-color: var(--q-color);
-    background: rgba(255, 255, 255, 0.05);
   }
-
-  /* Triage overlay styles are in <style is:global> below */
 
   /* ── Hint ── */
   .eisenhower__hint {
@@ -1003,51 +1023,67 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     border-top: 1px solid var(--border);
   }
   .eisenhower__flow-heading {
-    font-size: 1.125rem;
+    font-size: 1.0625rem;
     font-weight: 700;
     color: var(--text-primary);
-    margin: 0 0 16px;
+    margin: 0 0 14px;
   }
   .eisenhower__flow-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 12px;
   }
   .eisenhower__flow-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     padding: 16px;
-    background: rgb(var(--bg-card-rgb, 29 33 31) / 0.6);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 10px);
     text-decoration: none;
     color: var(--text-primary);
-    transition: border-color 150ms, background 150ms;
+    transition:
+      border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .eisenhower__flow-card:hover {
-    border-color: var(--accent);
-    background: rgb(var(--accent-rgb) / 0.05);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: var(--bg-hover);
   }
-  .flow-card__icon { font-size: 1.25rem; }
+  .eisenhower__flow-card:active {
+    transform: scale(0.98);
+  }
+  .flow-card__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm, 8px);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-text, var(--accent));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   .flow-card__label { font-size: 0.875rem; font-weight: 600; }
-  .flow-card__desc { font-size: 0.75rem; color: var(--text-muted); }
+  .flow-card__desc { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
 
   /* ── Reduced Motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .eisenhower__quadrant {
+    .eisenhower__quadrant,
+    .eisenhower__flow-card,
+    .eisenhower__flow-card:active,
+    .quadrant__action-btn,
+    .quadrant__action-btn:active,
+    .triage-banner__btn,
+    .triage-banner__btn:active {
       transition: none;
-    }
-    .eisenhower__flow-card {
-      transition: none;
-    }
-    .quadrant__wip-warning {
-      animation: none;
+      transform: none;
     }
   }
 </style>
 
-<style is:global>
+<style is:inline is:global>
   /* ── Drag feedback (global — class added by JS) ── */
   .tli--dragging {
     opacity: 0.5;
@@ -1152,7 +1188,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 6px;
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
   .triage-control__slider-row {
     display: flex;
@@ -1164,7 +1202,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     height: 6px;
     -webkit-appearance: none;
     appearance: none;
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--bg-hover);
     border-radius: 3px;
     outline: none;
     cursor: pointer;
@@ -1175,34 +1213,35 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     height: 20px;
     border-radius: 50%;
     background: var(--accent);
-    border: 2px solid var(--bg-card, #1e1e2e);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     cursor: pointer;
-    transition: transform 150ms;
+    transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .triage-control__slider::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
+    transform: scale(1.12);
   }
   .triage-control__slider::-moz-range-thumb {
     width: 20px;
     height: 20px;
     border-radius: 50%;
     background: var(--accent);
-    border: 2px solid var(--bg-card, #1e1e2e);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     cursor: pointer;
   }
   .triage-control__value {
     font-size: 1.25rem;
     font-weight: 700;
-    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-text, var(--accent));
     min-width: 24px;
     text-align: center;
   }
   .triage-control__labels {
     display: flex;
     justify-content: space-between;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     color: var(--text-muted);
     margin-top: 2px;
   }
@@ -1211,6 +1250,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     text-align: center;
     font-size: 0.8125rem;
     font-weight: 600;
+    color: var(--text-primary);
     min-height: 32px;
     display: flex;
     align-items: center;
@@ -1224,28 +1264,32 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .triage-card__skip,
   .triage-card__save {
     flex: 1;
-    padding: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 13px;
     border: none;
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 150ms, color 150ms;
+    transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms ease;
   }
   .triage-card__skip {
     background: transparent;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     border-right: 1px solid var(--border);
   }
   .triage-card__skip:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
   .triage-card__save {
-    background: rgb(var(--accent-rgb) / 0.1);
-    color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.12);
+    color: var(--accent-text, var(--accent));
   }
   .triage-card__save:hover {
-    background: rgb(var(--accent-rgb) / 0.2);
+    background: rgb(var(--accent-rgb) / 0.22);
   }
 
   /* ── Extended triage details (progressive disclosure) ── */
@@ -1254,16 +1298,19 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     margin-bottom: 8px;
   }
   .triage-card__expand-btn {
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     cursor: pointer;
     padding: 8px 0;
     user-select: none;
-    transition: color 150ms;
+    transition: color 150ms ease;
   }
   .triage-card__expand-btn:hover {
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .triage-card__extended {
     display: flex;
@@ -1273,14 +1320,14 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .triage-control__select {
     width: 100%;
-    padding: 6px 10px;
+    padding: 7px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--bg-input, var(--bg-surface));
     color: var(--text-primary);
     font-size: 0.8125rem;
     outline: none;
-    transition: border-color 150ms;
+    transition: border-color 150ms ease;
   }
   .triage-control__select:focus {
     border-color: var(--accent);
@@ -1300,10 +1347,10 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     padding: 4px 8px;
     border-radius: var(--radius-sm, 6px);
     border: 1px solid transparent;
-    transition: background 150ms, border-color 150ms;
+    transition: background 150ms ease, border-color 150ms ease;
   }
   .triage-control__radio-row label:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-hover);
     border-color: var(--border);
   }
   .triage-control__radio-row input[type="radio"] {
@@ -1315,46 +1362,54 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .tli__effort {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    font-size: 0.625rem;
+    gap: 3px;
+    font-size: 0.65rem;
     font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 6px;
+    border-radius: 6px;
     white-space: nowrap;
   }
-  .effort--quick { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-  .effort--short { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
-  .effort--medium { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
-  .effort--long { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
-  .tli__effort-label { font-size: 0.5625rem; }
+  .effort--quick { background: rgb(var(--success-rgb, 34 197 94) / 0.14); color: var(--success, #22c55e); }
+  .effort--short { background: rgb(var(--success-rgb, 34 197 94) / 0.1); color: var(--success, #22c55e); }
+  .effort--medium { background: rgb(var(--warning-rgb, 245 158 11) / 0.14); color: var(--warning, #f59e0b); }
+  .effort--long { background: rgb(var(--danger-rgb, 239 68 68) / 0.14); color: var(--danger, #ef4444); }
+  .tli__effort-label { font-size: 0.625rem; }
   .tli__blocked {
-    font-size: 0.625rem;
-    opacity: 0.75;
+    display: inline-flex;
+    align-items: center;
+    color: var(--danger);
     cursor: help;
   }
   .tli__recurring {
-    font-size: 0.625rem;
-    opacity: 0.6;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
     cursor: help;
   }
 
   /* ── Q2 Growth Zone accent ── */
   .quadrant--growth-zone {
-    border-left: 4px solid rgba(34, 197, 94, 0.4);
+    border-left: 3px solid color-mix(in srgb, var(--success) 55%, var(--border));
   }
   .quadrant__sublabel {
-    font-size: 0.5625rem;
-    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    font-size: 0.65rem;
+    color: var(--success);
     font-weight: 600;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
   }
 
   /* ── Effort total in quadrant header ── */
   .quadrant__effort-total {
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
     color: var(--text-muted);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-hover);
     padding: 2px 8px;
     border-radius: 8px;
     white-space: nowrap;
@@ -1362,105 +1417,99 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .quadrant__effort-total:empty { display: none; }
 
   /* ── Review CTA button ── */
-  .eisenhower__review-btn {
+  .eisenhower__review-btn-bar {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 14px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    color: var(--accent-text);
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .eisenhower__review-btn:hover {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    border-color: var(--accent);
   }
 
   /* ── Review overlay ── */
   .review-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 10020;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.62);
-    animation: fadeIn 0.2s ease;
+    animation: triage-fade-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .review-card {
-    background: var(--card-bg, #1e1e2e);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 24px;
-    min-width: 340px;
-    max-width: 480px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    width: min(92vw, 480px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 14px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    animation: triage-card-in 220ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .review-card__source {
-    margin: 12px 0 8px;
+    padding: 14px 20px 0;
   }
   .review-source__badge {
     display: inline-block;
     padding: 3px 10px;
-    font-size: 0.6875rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-muted);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
   }
   .review-card__actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 20px;
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--border);
   }
   .review-action {
     flex: 1 1 auto;
     min-width: 110px;
-    padding: 10px 14px;
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 9px 14px;
+    font-size: 0.78rem;
     font-weight: 600;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 8px);
     cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
+    transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
-  .review-action:hover { transform: translateY(-1px); }
+  .review-action:active { transform: scale(0.97); }
   .review-action--promote {
-    background: rgba(34, 197, 94, 0.12);
-    color: #22c55e;
-    border-color: rgba(34, 197, 94, 0.2);
+    background: rgb(var(--success-rgb, 34 197 94) / 0.12);
+    color: var(--success, #22c55e);
+    border-color: rgb(var(--success-rgb, 34 197 94) / 0.25);
   }
-  .review-action--promote:hover { background: rgba(34, 197, 94, 0.25); }
+  .review-action--promote:hover { background: rgb(var(--success-rgb, 34 197 94) / 0.22); }
   .review-action--archive {
-    background: rgba(59, 130, 246, 0.1);
-    color: #60a5fa;
-    border-color: rgba(59, 130, 246, 0.2);
+    background: rgb(var(--info-rgb, 59 130 246) / 0.12);
+    color: var(--info, #3b82f6);
+    border-color: rgb(var(--info-rgb, 59 130 246) / 0.25);
   }
-  .review-action--archive:hover { background: rgba(59, 130, 246, 0.2); }
+  .review-action--archive:hover { background: rgb(var(--info-rgb, 59 130 246) / 0.22); }
   .review-action--delete {
-    background: rgba(239, 68, 68, 0.08);
-    color: #f87171;
-    border-color: rgba(239, 68, 68, 0.15);
+    background: rgb(var(--danger-rgb, 239 68 68) / 0.1);
+    color: var(--danger, #ef4444);
+    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.22);
   }
-  .review-action--delete:hover { background: rgba(239, 68, 68, 0.2); }
+  .review-action--delete:hover { background: rgb(var(--danger-rgb, 239 68 68) / 0.2); }
   .review-action--skip {
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--text-muted);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
   }
-  .review-action--skip:hover { background: rgba(255, 255, 255, 0.08); }
+  .review-action--skip:hover { background: var(--bg-hover); color: var(--text-primary); }
 
   /* ── Accessibility: reduced motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .triage-overlay { animation: none; }
-    .triage-card { animation: none; }
-    .review-overlay { animation: none; }
-    .review-action:hover { transform: none; }
+    .triage-overlay,
+    .triage-card,
+    .review-overlay,
+    .review-card { animation: none; }
+    .review-action:active { transform: none; }
     .triage-control__slider::-webkit-slider-thumb { transition: none; }
   }
 </style>

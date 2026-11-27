@@ -27,12 +27,13 @@
  */
 
 import Icon from "../ui/Icon.astro"
+import { isIconName, type IconName } from "../../generated/icon-registry"
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 
 interface Props {
   /** Navigation target URL */
   href: string
-  /** Emoji or icon string */
+  /** Canonical Tabler icon name or legacy emoji */
   icon: string
   /** Card heading */
   title: string
@@ -46,7 +47,8 @@ interface Props {
 }
 
 const { href, icon, title, description, id, comingSoon = false, prefetch = true } = Astro.props
-const tablerIcon = mapEntityEmojiToTabler(icon)
+const directIcon: IconName | null = isIconName(icon) ? icon : null
+const mappedIcon = directIcon ?? mapEntityEmojiToTabler(icon)
 const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"].filter(Boolean).join(" ")
 ---
 
@@ -54,7 +56,7 @@ const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"
   <div class={classes} id={id}>
     <div class="parent-section-hub__header">
       <span class="parent-section-hub__icon" aria-hidden="true">
-        {tablerIcon ? <Icon name={tablerIcon} size={20} /> : icon}
+        {mappedIcon ? <Icon name={mappedIcon} size={22} sprite /> : icon}
       </span>
       <div>
         <h2 class="parent-section-hub__title">{title}</h2>
@@ -67,10 +69,10 @@ const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"
     <span class="parent-section-hub__badge">Coming Soon</span>
   </div>
 ) : (
-  <a href={href} class={classes} id={id} data-astro-prefetch={prefetch ? "viewport" : "false"}>
+  <a href={href} class={classes} id={id} data-astro-prefetch={prefetch ? "hover" : "false"}>
     <div class="parent-section-hub__header">
       <span class="parent-section-hub__icon" aria-hidden="true">
-        {tablerIcon ? <Icon name={tablerIcon} size={20} /> : icon}
+        {mappedIcon ? <Icon name={mappedIcon} size={22} sprite /> : icon}
       </span>
       <div>
         <h2 class="parent-section-hub__title">{title}</h2>

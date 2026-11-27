@@ -35,7 +35,7 @@ const groupedSections = getGroupedSettingsSections(sections)
   ))}
 </nav>
 
-<style>
+<style is:inline>
   .settings-directory {
     position: sticky;
     top: 78px;
@@ -69,7 +69,7 @@ const groupedSections = getGroupedSettingsSections(sections)
     color: var(--text-secondary);
   }
 
-  ul {
+  .settings-directory ul {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -77,7 +77,7 @@ const groupedSections = getGroupedSettingsSections(sections)
     gap: 2px;
   }
 
-  a {
+  .settings-directory a {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -91,46 +91,107 @@ const groupedSections = getGroupedSettingsSections(sections)
     text-decoration: none;
   }
 
-  a:focus-visible {
+  .settings-directory a:focus-visible {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
 
-  a:hover {
+  .settings-directory a:hover {
     background: var(--bg-hover);
   }
 
-  a[aria-current="location"] {
+  .settings-directory a[aria-current="location"] {
     background: var(--bg-secondary);
     border-inline-start-color: var(--accent);
     font-weight: 700;
   }
 
-  a[aria-current="location"] :global(.settings-directory__marker) {
+  .settings-directory a[aria-current="location"] .settings-directory__marker {
     color: var(--accent-text);
   }
 
-  :global(.settings-directory__marker) {
+  .settings-directory__marker {
     flex: none;
     color: var(--text-secondary);
   }
 
   @media (max-width: 860px) {
-    .settings-directory {
-      display: none;
-      top: 64px;
-      max-height: calc(100dvh - 140px);
-      overflow: auto;
-      margin-block-end: 12px;
-      padding: 10px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      box-shadow: var(--shadow-md);
+    .settings-directory,
+    .settings-directory[hidden] {
+      position: sticky;
+      top: 56px;
+      z-index: 25;
+      display: flex !important;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      margin: 0 -12px 12px;
+      padding: 8px 12px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border);
+      scroll-snap-type: x proximity;
     }
 
-    .settings-directory:not([hidden]) {
-      display: grid;
+    .settings-directory::-webkit-scrollbar {
+      display: none;
+    }
+
+    .settings-directory__group,
+    .settings-directory ul {
+      display: contents;
+    }
+
+    .settings-directory__group + .settings-directory__group {
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .settings-directory__group-label {
+      display: none;
+    }
+
+    .settings-directory li {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+    }
+
+    .settings-directory a {
+      min-height: 36px;
+      padding: 6px 12px;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-inline-start-width: 1px;
+      border-radius: 999px;
+      background: var(--bg-card);
+      font-size: 0.8125rem;
+      font-weight: 550;
+      white-space: nowrap;
+      transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1), border-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    .settings-directory a:active {
+      transform: scale(0.97);
+    }
+
+    .settings-directory a[aria-current="location"] {
+      background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+      border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+      color: var(--accent-text, var(--accent));
+      font-weight: 650;
+    }
+
+    .settings-directory__marker {
+      width: 15px;
+      height: 15px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-directory a {
+      transition: none;
     }
   }
 </style>

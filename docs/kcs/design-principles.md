@@ -39,6 +39,7 @@ Meitheal applies six complementary disciplines together:
 - No duplicate menus or redundant triggers appear in navigation chrome.
 - Navigation editing and task view pinning work in Sidebar (Expanded, Folded, Hover), Top Navigation (`nav-overflow`), and Mobile (`<= 768px`).
 - All visual tokens (theme, accent, avatar contrast, self-hosted fonts) render locally with zero external font calls and pass WCAG AA contrast.
+- Use the theme's text accent for the active Board tab label. Use the accent color for the underline.
 
 - `pnpm --filter @meitheal/web perf:budget` stays within `apps/web/scripts/perf-budget-baseline.json`.
 - Resizable right inspector drawer (`#td-resize-handle`, `role="separator"`, `360–840px` persisted in `localStorage["meitheal:task-sidebar-width:v1"]`) and Focus Mode reading column (`min(100%, 72.5rem)`) keep drafts intact across viewport sizes without overriding explicit theme `--border-focus` rings.

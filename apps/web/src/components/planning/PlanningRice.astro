@@ -7,6 +7,7 @@ import type { Locale } from "@lib/locale"
 import { readRiceAssessment } from "@lib/rice-lens"
 import { roundFrameworkScore } from "@meitheal/domain-strategy"
 import { t } from "../../i18n/translations"
+import Icon from "../ui/Icon.astro"
 import RiceScoreEditor from "./RiceScoreEditor.astro"
 
 interface Props {
@@ -31,6 +32,7 @@ for (const task of tasks) {
 
 ranked.sort((a, b) => b.rice! - a.rice! || a.priority - b.priority)
 
+const averageScore = ranked.length ? String(roundFrameworkScore(scoreTotal / ranked.length)) : "—"
 const selectedId = query.get("score")
 const focusId = query.get("riceFocus")
 const saved = query.get("riceSaved") === "1" && tasks.some(task => task.id === focusId)
@@ -60,8 +62,8 @@ function href(overrides: Record<string, string | null>): string {
 
 const size = 12
 const groups = [
-  { key: "ranked", rows: ranked, pageKey: "ricePage" },
-  { key: "unscored", rows: unscored, pageKey: "unscoredPage" },
+  { key: "ranked", icon: "chart-bar" as const, rows: ranked, pageKey: "ricePage" },
+  { key: "unscored", icon: "clipboard-list" as const, rows: unscored, pageKey: "unscoredPage" },
 ].map(group => {
   const requested = Number(query.get(group.pageKey))
   const lastPage = Math.max(1, Math.ceil(group.rows.length / size))
@@ -71,44 +73,108 @@ const groups = [
 ---
 
 <div class="planning-rice" aria-labelledby="planning-rice-heading">
-  <h2 id="planning-rice-heading" tabindex="-1">{t("planning_rice.title", locale)}</h2>
-  <p>{t("planning_rice.description", locale)}</p>
-  <p>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: ranked.length ? String(roundFrameworkScore(scoreTotal / ranked.length)) : "—" })}</p>
+  <header class="rice-header">
+    <div class="rice-header__title-group">
+      <span class="rice-header__icon" aria-hidden="true">
+        <Icon name="chart-bar" size={20} sprite />
+      </span>
+      <div>
+        <h2 id="planning-rice-heading" class="rice-header__title" tabindex="-1">{t("planning_rice.title", locale)}</h2>
+        <p class="rice-header__desc">{t("planning_rice.description", locale)}</p>
+      </div>
+    </div>
+    <div class="rice-header__actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto;">
+      <button type="button" class="btn btn-primary btn-sm" data-open-scoring-triage="rice" style="display:inline-flex;align-items:center;gap:6px;">
+        <Icon name="target" size={14} sprite />
+        <span>RICE Triage</span>
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" data-open-scoring-triage="story-points" style="display:inline-flex;align-items:center;gap:6px;">
+        <Icon name="calculator" size={14} sprite />
+        <span>Story Points</span>
+      </button>
+    </div>
+  </header>
 
-  {saved && <p role="status">{t("planning_rice.saved", locale)}</p>}
+  <div class="rice-kpi-grid" aria-label={t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: averageScore })}>
+    <div class="rice-kpi-card">
+      <span class="rice-kpi-label">{t("planning_rice.ranked", locale)}</span>
+      <span class="rice-kpi-value">{ranked.length}</span>
+    </div>
+    <div class="rice-kpi-card">
+      <span class="rice-kpi-label">{t("planning_rice.unscored", locale)}</span>
+      <span class="rice-kpi-value">{unscored.length}</span>
+    </div>
+    <div class="rice-kpi-card">
+      <span class="rice-kpi-label">Average RICE</span>
+      <span class="rice-kpi-value rice-kpi-value--accent">{averageScore}</span>
+    </div>
+  </div>
+  <p class="sr-only" data-rice-summary>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: averageScore })}</p>
+
+  {saved && (
+    <div class="rice-status-banner rice-status-banner--success" role="status">
+      <Icon name="check" size={16} sprite />
+      <span>{t("planning_rice.saved", locale)}</span>
+    </div>
+  )}
   {selected && <RiceScoreEditor task={selected} closeHref={href({ riceFocus: selected.id })} savedHref={href({ riceFocus: selected.id, riceSaved: "1" })} {locale} />}
-  {selectedId && !selected && <p role="status">{t("planning_rice.unavailable", locale)}</p>}
+  {selectedId && !selected && (
+    <div class="rice-status-banner rice-status-banner--warning" role="status">
+      <Icon name="alert-triangle" size={16} sprite />
+      <span>{t("planning_rice.unavailable", locale)}</span>
+    </div>
+  )}
 
-  {groups.map(({ key, rows, pageKey, page, lastPage, items }) => (
-    <section class="rice-group" aria-labelledby={`planning-rice-${key}`}>
-      <h3 id={`planning-rice-${key}`}>{t(`planning_rice.${key}`, locale)}</h3>
-      {items.length ? (
-        <ul class="rice-list" data-rice-list={key}>
-          {items.map(task => (
-            <li class="rice-row" data-rice-task={task.id}>
-              <div>
-                <span class="rice-key">{task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0)}</span>
-                <p>{task.title}</p>
-              </div>
-              {task.rice !== null ? <span data-rice-score>{task.rice}</span> : (
-                readRiceAssessment(task.framework_payload).status === "legacy_ambiguous" && (
-                  <span class="badge bg-warning-lt text-warning" data-rice-legacy-badge>Confirm % scale</span>
-                )
-              )}
-              <a href={href({ score: task.id })} class="btn btn-outline" data-astro-prefetch="false">
-                {t("planning_rice.edit", locale)}<span class="sr-only"> {task.title}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : <p>{t(`planning_rice.empty_${key}`, locale)}</p>}
-      {lastPage > 1 && (
-        <nav class="rice-pages" aria-label={t(`planning_rice.${key}`, locale)}>
-          <span>{(page - 1) * size + 1}–{Math.min(page * size, rows.length)} / {rows.length}</span>
-          {page > 1 && <a href={href({ [pageKey]: page === 2 ? null : String(page - 1) })} class="btn btn-outline" data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
-          {page < lastPage && <a href={href({ [pageKey]: String(page + 1) })} class="btn btn-outline" data-astro-prefetch="false">{t("triage.next", locale)}</a>}
-        </nav>
-      )}
+  {groups.map(({ key, icon, rows, pageKey, page, lastPage, items }) => (
+    <section class="rice-group card" aria-labelledby={`planning-rice-${key}`}>
+      <div class="card-header rice-group__header">
+        <div class="rice-group__heading">
+          <Icon name={icon} size={16} sprite class="rice-group__icon" />
+          <h3 id={`planning-rice-${key}`} class="rice-group__title">{t(`planning_rice.${key}`, locale)}</h3>
+        </div>
+        <span class="rice-group__count">{rows.length}</span>
+      </div>
+      <div class="card-body rice-group__body">
+        {items.length ? (
+          <ul class="rice-list" data-rice-list={key}>
+            {items.map((task, idx) => (
+              <li class="rice-row" data-rice-task={task.id}>
+                {key === "ranked" && (
+                  <span class="rice-rank" aria-label={`Rank ${(page - 1) * size + idx + 1}`}>#{(page - 1) * size + idx + 1}</span>
+                )}
+                <div class="rice-row__main">
+                  <span class="rice-key">{task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0)}</span>
+                  <p class="rice-row__title">{task.title}</p>
+                </div>
+                <div class="rice-row__actions">
+                  {task.rice !== null ? (
+                    <span class="rice-score-badge" data-rice-score>{task.rice}</span>
+                  ) : (
+                    readRiceAssessment(task.framework_payload).status === "legacy_ambiguous" && (
+                      <span class="badge bg-warning-lt text-warning" data-rice-legacy-badge>Confirm % scale</span>
+                    )
+                  )}
+                  <a href={href({ score: task.id })} class="btn btn-outline btn-sm rice-edit-btn" data-astro-prefetch="false">
+                    <Icon name="pencil" size={14} sprite />
+                    <span>{t("planning_rice.edit", locale)}<span class="sr-only"> {task.title}</span></span>
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p class="rice-empty">{t(`planning_rice.empty_${key}`, locale)}</p>
+        )}
+        {lastPage > 1 && (
+          <nav class="rice-pages" aria-label={t(`planning_rice.${key}`, locale)}>
+            <span class="rice-pages__range">{(page - 1) * size + 1}–{Math.min(page * size, rows.length)} / {rows.length}</span>
+            <div class="rice-pages__nav">
+              {page > 1 && <a href={href({ [pageKey]: page === 2 ? null : String(page - 1) })} class="btn btn-outline btn-sm" data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
+              {page < lastPage && <a href={href({ [pageKey]: String(page + 1) })} class="btn btn-outline btn-sm" data-astro-prefetch="false">{t("triage.next", locale)}</a>}
+            </div>
+          </nav>
+        )}
+      </div>
     </section>
   ))}
 </div>
@@ -151,63 +217,304 @@ const groups = [
   })
 </script>
 
-<style>
+<style is:inline>
   .planning-rice {
     max-width: 66rem;
     margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2.5rem);
+    padding: clamp(1rem, 2.5vw, 2rem) clamp(1rem, 3vw, 2.5rem) 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
   }
 
-  .planning-rice > p, .rice-key {
+  :root[data-appearance-width="fluid"] .planning-rice {
+    max-width: 100%;
+  }
+
+  .rice-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .rice-header__title-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+  }
+
+  .rice-header__icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md, 10px);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-text, var(--accent));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .rice-header__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .rice-header__desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
     color: var(--text-secondary);
   }
 
+  .rice-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .rice-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
+  }
+
+  @media (max-width: 640px) {
+    .rice-kpi-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .rice-kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    padding: 0.875rem 1.125rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .rice-kpi-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .rice-kpi-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .rice-kpi-value--accent {
+    color: var(--accent-text, var(--accent));
+  }
+
+  .rice-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md, 8px);
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+  }
+
+  .rice-status-banner--success {
+    background: color-mix(in srgb, var(--success) 10%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+    color: var(--success);
+  }
+
+  .rice-status-banner--warning {
+    background: color-mix(in srgb, var(--warning) 10%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+    color: var(--warning);
+  }
+
   .rice-group {
-    margin-block: 1.5rem;
+    padding: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+  }
+
+  .rice-group__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-surface) 50%, var(--bg-card));
+  }
+
+  .rice-group__heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .rice-group__icon {
+    color: var(--text-muted);
+  }
+
+  .rice-group__title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .rice-group__count {
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .rice-group__body {
+    padding: 1rem 1.25rem;
   }
 
   .rice-list {
     display: grid;
-    gap: .5rem;
+    gap: 0.5rem;
     list-style: none;
+    margin: 0;
     padding: 0;
   }
 
   .rice-row {
     display: flex;
     align-items: center;
-    gap: .5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    padding: .75rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-surface);
+    padding: 0.75rem 1rem;
     overflow-wrap: anywhere;
+    transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
-  .rice-row > div {
-    min-width: 0;
-    flex: 1 1 12rem;
+  .rice-row:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    background: var(--bg-hover);
   }
 
-  .rice-row p {
-    margin: 0;
-  }
-
-  .rice-row [data-rice-score] {
-    font-variant-numeric: tabular-nums;
+  .rice-rank {
+    font-size: 0.75rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    min-width: 1.75rem;
   }
 
-  .rice-row a, .rice-pages a {
-    min-height: 2.75rem;
+  .rice-row__main {
+    min-width: 0;
+    flex: 1 1 14rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .rice-key {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .rice-row__title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .rice-row__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-shrink: 0;
+  }
+
+  .rice-score-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    color: var(--accent-text, var(--accent));
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rice-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .rice-edit-btn:active {
+    transform: scale(0.97);
+  }
+
+  .rice-empty {
+    margin: 0;
+    padding: 1rem 0.25rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
   }
 
   .rice-pages {
     display: flex;
-    gap: .5rem;
+    justify-content: space-between;
+    gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
-    margin-block: .75rem;
+    margin-top: 1rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .rice-pages__range {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rice-pages__nav {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rice-row,
+    .rice-edit-btn,
+    .rice-edit-btn:active {
+      transition: none;
+      transform: none;
+    }
   }
 </style>

@@ -42,10 +42,12 @@ const label = await organizationLabelsFor(Astro)
       <p role="status" data-board-feedback class="board-feedback"></p>
       <button type="submit" class="btn btn-secondary btn-sm">Save Goal link</button>
     </form>}
-    <RetirePlanningForm entity="project" id={project.id} />
+    {!project.isDefault && <RetirePlanningForm entity="project" id={project.id} />}
   </div>
 </details>}
-{canManage ? <form data-board-form="planning" class="board-form board-status-form">
+{project.isDefault ? (
+  <p class="board-note" role="status">Status: Active (default {label("group").toLowerCase()} home)</p>
+) : canManage ? <form data-board-form="planning" class="board-form board-status-form">
   <input type="hidden" name="action" value="project-status" />
   <input type="hidden" name="id" value={project.id} />
   <label class="board-status-label" for={`project-status-${project.id}`}>Project status</label>

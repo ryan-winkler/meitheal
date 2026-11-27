@@ -16,111 +16,21 @@
  * @kcs Ingress token is permanent per-installation — confirmed
  * by HA Supervisor team (issue #6605).
  */
-import type { APIRoute } from "astro";
+import type { APIRoute } from "astro"
+import { buildPwaManifest } from "../lib/pwa-manifest-builder"
 
-const MANIFEST_BASE = {
-  name: "Meitheal",
-  short_name: "Meitheal",
-  description: "Keep track of the work your home needs — local-first household tasks, recurring routines, and projects inside Home Assistant.",
-  lang: "en",
-  display: "standalone" as const,
-  orientation: "any" as const,
-  background_color: "#101210",
-  theme_color: "#10231b",
-  categories: ["productivity", "utilities"],
-  prefer_related_applications: false,
-  icons: [
-    {
-      src: "/icon-192.png",
-      sizes: "192x192",
-      type: "image/png",
-      purpose: "any",
-    },
-    {
-      src: "/icon-512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "any",
-    },
-    {
-      src: "/icon-maskable-512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "maskable",
-    },
-  ],
-  screenshots: [
-    {
-      src: "/pwa/screenshots/today-desktop.png",
-      sizes: "1440x1024",
-      type: "image/png",
-      form_factor: "wide",
-      label: "Meitheal Today on desktop",
-    },
-    {
-      src: "/pwa/screenshots/today-mobile.png",
-      sizes: "430x932",
-      type: "image/png",
-      form_factor: "narrow",
-      label: "Meitheal Today on mobile",
-    },
-  ],
-};
-
-const SHORTCUTS = [
-  {
-    name: "Today",
-    short_name: "Today",
-    description: "Jump straight into today’s work",
-    url: "/today",
-  },
-  {
-    name: "Calendar",
-    short_name: "Calendar",
-    description: "Review scheduled work and due dates",
-    url: "/calendar",
-  },
-  {
-    name: "Settings",
-    short_name: "Settings",
-    description: "Open the Home Assistant-native settings shell",
-    url: "/settings#app-pwa-settings",
-  },
-];
-
-export const GET: APIRoute = ({ locals }) => {
-  const ingressPath = locals.ingressPath ?? "";
-
-  // Prefix helper: prepend ingress path to absolute URLs
-  const prefix = (path: string): string => `${ingressPath}${path}`;
-
-  const manifest = {
-    ...MANIFEST_BASE,
-    // id is intentionally NOT prefixed: a stable ID prevents the browser
-    // from treating each ingress token as a different PWA installation.
-    id: "/",
-    start_url: prefix("/"),
-    scope: prefix("/"),
-    icons: MANIFEST_BASE.icons.map((icon) => ({
-      ...icon,
-      src: prefix(icon.src),
-    })),
-    shortcuts: SHORTCUTS.map((s) => ({
-      ...s,
-      url: prefix(s.url),
-      icons: [{ src: prefix("/icon-192.png"), sizes: "192x192" }],
-    })),
-    screenshots: MANIFEST_BASE.screenshots.map((s) => ({
-      ...s,
-      src: prefix(s.src),
-    })),
-  };
+export const GET: APIRoute = ({ locals, url }) => {
+  const ingressPath = locals.ingressPath ?? ""
+  const kind = url.searchParams.get("kind")
+  const manifest = buildPwaManifest(ingressPath, kind)
 
   return new Response(JSON.stringify(manifest, null, 2), {
     status: 200,
     headers: {
-      "Content-Type": "application/manifest+json",
-      "Cache-Control": "public, max-age=86400",
+      "Content-Type": "application/manifest+json; charset=utf-8",
+      "Cache-Control": "public, max-age=3600",
+      "Vary": "X-Ingress-Path",
     },
-  });
-};
+  })
+}
+

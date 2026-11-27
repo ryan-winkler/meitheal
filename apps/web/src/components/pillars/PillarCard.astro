@@ -41,6 +41,7 @@ interface Props {
   weight: number
   principles: Principle[]
   linkedGoalCount: number
+  linkedGoals?: Array<{ id: string; title: string; status: string }>
   personal?: boolean
 }
 
@@ -54,6 +55,7 @@ const {
   weight,
   principles,
   linkedGoalCount,
+  linkedGoals = [],
   personal = false,
 } = Astro.props
 
@@ -71,7 +73,7 @@ const principlesListId = `pillar-principles-${id}`
   data-pillar-id={id}
   data-pillar-personal={personal ? "" : undefined}
   data-pillar-slug={slug}
-  data-pillar-json={JSON.stringify({ id, slug, name, manifesto, icon, colorHex, weight, principles, linkedGoalCount, personal })}
+  data-pillar-json={JSON.stringify({ id, slug, name, manifesto, icon, colorHex, weight, principles, linkedGoalCount, linkedGoals, personal })}
   style={`--pillar-accent: ${accentColor}`}
   role="article"
   aria-label={`${name} — ${manifesto || "No manifesto set"}`}
@@ -107,7 +109,7 @@ const principlesListId = `pillar-principles-${id}`
 
     <div class="pillar-card__manifesto">
       {manifesto ? (
-        <blockquote>{manifesto}</blockquote>
+        <blockquote class="prose pillar-card__manifesto-prose" data-pillar-manifesto-md={manifesto}>{manifesto}</blockquote>
       ) : (
         <button type="button" class="pillar-card__manifesto-empty" data-action="edit-pillar" disabled>
           Tap to add your manifesto — why does this matter to you?
@@ -175,15 +177,19 @@ const principlesListId = `pillar-principles-${id}`
     <div class="pillar-card__footer">
       {linkedGoalCount > 0 && (
         <span class="pillar-card__badge" title={`${linkedGoalCount} linked Goal${linkedGoalCount !== 1 ? "s" : ""}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          {linkedGoalCount}
+          <Icon name="target" size={12} sprite />
+          <span>{linkedGoalCount} goal{linkedGoalCount !== 1 ? "s" : ""}</span>
         </span>
       )}
+      <button type="button" class="pillar-card__expand-btn" data-action="open-detail" disabled aria-label={`Expand ${name} details`}>
+        <Icon name="arrows-maximize" size={13} sprite />
+        <span>Expand details</span>
+      </button>
     </div>
   </div>
 </div>
 
-<style>
+<style is:inline>
 .pillar-card {
   --pillar-accent: var(--accent);
   position: relative;
@@ -507,12 +513,47 @@ const principlesListId = `pillar-principles-${id}`
 /* ── Footer badges ──────────────────────────────────────────── */
 .pillar-card__footer {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.pillar-card__footer:empty {
-  display: none;
+.pillar-card__expand-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pillar-card__expand-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--pillar-accent);
+  background: var(--bg-hover);
+}
+
+.pillar-card__expand-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pillar-card__manifesto-prose p:first-child {
+  margin-top: 0;
+}
+
+.pillar-card__manifesto-prose p:last-child {
+  margin-bottom: 0;
 }
 
 .pillar-card__badge {

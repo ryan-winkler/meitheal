@@ -8,7 +8,7 @@ description: "Use the Routine library and check in on work from your Boards."
 
 ## Routine library
 
-Open **Progress & Growth → Routines → View Routines**, or use the existing `/habits` bookmark. The page includes:
+Open **Progress & Growth → Routines** for the embedded workspace. The standalone Routine library is at `/routines`, and the existing `/habits` bookmark also works. The standalone page includes:
 
 - a sticky `UnifiedBar`
 - a title switcher with all habits sections
@@ -25,6 +25,8 @@ The habits sections are:
 
 These anchors stay on the same route, which keeps them safe for Home Assistant ingress and companion webviews.
 
+After saving a Routine, select **View task** as soon as the generated occurrence appears on its card. The task detail opens over the Routine library in the same Home Assistant panel. Close the detail to return to the same card.
+
 ## Common Jobs
 
 ### Jump to a habits section quickly
@@ -40,6 +42,8 @@ Opening a section from the toolbar updates the URL hash, so you can reload or sh
 1. Choose **New Routine** in the shell or in the Household library section.
 2. Choose a `1.75px` Tabler sprite icon (legacy stored emoji values map automatically via `mapEntityEmojiToTabler()`), cadence (`daily` or `weekly`), priority, description, and optional checklist items.
 3. Save the habit to update the underlying routine template.
+
+To preselect an Area, open that Area's **Routines** section and choose **New Routine**.
 
 Editing an existing routine preserves description and priority. Household Routine listings and check-ins use the configured household timezone (`GET /api/habits` with optional `area_id` and `project_id` filters, App MCP `listHabits`, Core MCP `listRoutines`, LLM `meitheal_list_routines`) and support check-in mutations (`POST /api/habits` with `action: "complete"`, App MCP `createHabit`, Core MCP `completeRoutine`, LLM `meitheal_complete_routine`).
 

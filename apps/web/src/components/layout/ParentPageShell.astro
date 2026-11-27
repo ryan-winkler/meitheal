@@ -78,7 +78,30 @@ const tabs = allowedSubViews.map((sv) => {
 
   <div class="parent-page-shell__content">
     <h1 class="sr-only">{pageTitle}</h1>
+    <script is:inline data-astro-rerun>
+      document.currentScript.parentElement.dataset.parentPreparing = ""
+    </script>
     <slot />
+    <script is:inline data-astro-rerun>
+      (() => {
+        const content = document.currentScript.parentElement
+        const { sectionIds, defaultSectionId } = JSON.parse(content.parentElement.dataset.parentConfig)
+        const hash = location.hash.slice(1)
+        const anchor = document.getElementById(hash)?.closest("[data-parent-section]")
+        const section = sectionIds.includes(hash) ? hash
+          : content.contains(anchor) ? anchor.dataset.parentSection : defaultSectionId
+        for (const panel of content.querySelectorAll("[data-parent-section]")) {
+          panel.hidden = panel.dataset.parentSection !== section
+        }
+        if (section) {
+          for (const link of content.querySelectorAll("[data-board-page-choice]")) link.hash = section
+          if (!hash && !/\/(?:tickets|task)\/[^/]+/.test(location.pathname)) {
+            history.replaceState(history.state, "", "#" + section)
+          }
+        }
+        delete content.dataset.parentPreparing
+      })()
+    </script>
   </div>
 </div>
 
@@ -101,7 +124,7 @@ const tabs = allowedSubViews.map((sv) => {
   })
 </script>
 
-<style>
+<style is:inline>
   .parent-page-shell {
     display: flex;
     flex-direction: column;
@@ -113,27 +136,8 @@ const tabs = allowedSubViews.map((sv) => {
     position: relative;
   }
 
-  /* Sections are toggled by the controller — hidden by default except active */
-  .parent-page-shell__content :global([data-parent-section]) {
-    width: 100%;
-  }
-
-  .parent-page-shell__content :global([data-parent-section][hidden]) {
+  .parent-page-shell__content [data-parent-section][hidden],
+  .parent-page-shell__content[data-parent-preparing] [data-parent-section] {
     display: none !important;
-  }
-
-  .parent-page-shell__content :global([data-parent-section].is-active) {
-    animation: parent-section-fade-in 200ms ease-out;
-  }
-
-  @keyframes parent-section-fade-in {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .parent-page-shell__content :global([data-parent-section].is-active) {
-      animation: none;
-    }
   }
 </style>

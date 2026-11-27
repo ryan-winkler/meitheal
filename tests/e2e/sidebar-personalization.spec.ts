@@ -1,7 +1,14 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
+
+async function openSidebarEditorWithKeyboard(page: Page) {
+  const utility = page.locator("#sidebar #nav-utility-trigger")
+  await utility.press("Enter")
+  await page.getByRole("menuitem", { name: "Edit menu", exact: true }).press("Enter")
+  return utility
+}
 
 test("a manual collapse beats pointer movement inside the hover rail", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -42,12 +49,12 @@ test("drag and keyboard reorder keep the Boards subtree intact", async ({ page }
   await page.goto("/today")
   const sidebar = page.locator("#sidebar")
   await expect(sidebar.getByRole("link", { name: "Pinned tasks", exact: true })).toBeHidden()
-  const order = () => sidebar.locator("[data-sidebar-item-key]").evaluateAll(items =>
-    items.filter(item => !item.hasAttribute("hidden") && !item.hasAttribute("data-sidebar-item-hidden")).map(item => item.getAttribute("data-sidebar-item-key")))
-  await sidebar.locator("#nav-utility-trigger").click()
-  const editMenu = page.getByRole("menuitem", { name: "Edit menu", exact: true })
-  await editMenu.click()
-  await expect(sidebar.getByRole("button", { name: "Move Dashboard", exact: true })).toBeFocused()
+  const order = () => sidebar.locator("[data-sidebar-group]").evaluateAll(items =>
+    items.filter(item => !item.hasAttribute("hidden") && !item.hasAttribute("data-sidebar-item-hidden"))
+      .map(item => item.getAttribute("data-sidebar-group")))
+  const utility = await openSidebarEditorWithKeyboard(page)
+  await expect(sidebar.getByRole("button", { name: "Move Dashboard" })).toBeFocused()
+  const initialOrder = await order()
 
   const groupRoot = sidebar.locator('[data-sidebar-group="boards"]')
   await expect(groupRoot.locator('[data-named-board-shortcut="household"]')).toHaveCount(1)
@@ -55,19 +62,21 @@ test("drag and keyboard reorder keep the Boards subtree intact", async ({ page }
   const groups = sidebar.getByRole("button", { name: "Move Boards", exact: true })
   const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })
   await groups.dragTo(dashboard, { targetPosition: { x: 12, y: 4 } })
-  await expect.poll(order).toEqual(["boards", "dashboard", "today", "upcoming", "tasks", "view-table", "progress", "planning", "settings"])
+  const boardsFirst = ["boards", ...initialOrder.filter(item => item !== "boards")]
+  await expect.poll(order).toEqual(boardsFirst)
   const tasks = sidebar.getByRole("button", { name: "Move Tasks", exact: true })
-  for (let move = 0; move < 4; move++) await tasks.press("ArrowUp")
-  await expect.poll(order).toEqual(["tasks", "boards", "dashboard", "today", "upcoming", "view-table", "progress", "planning", "settings"])
+  for (let move = 0; move < boardsFirst.indexOf("tasks"); move++) await tasks.press("ArrowUp")
+  const tasksFirst = ["tasks", ...boardsFirst.filter(item => item !== "tasks")]
+  await expect.poll(order).toEqual(tasksFirst)
   await expect(tasks).toBeFocused()
   await page.screenshot({ path: testInfo.outputPath("reordered-desktop.png") })
   await tasks.press("Escape")
-  await expect(sidebar.locator("#nav-utility-trigger")).toBeFocused()
+  await expect(utility).toBeFocused()
   await page.reload()
-  await expect.poll(order).toEqual(["tasks", "boards", "dashboard", "today", "upcoming", "view-table", "progress", "planning", "settings"])
+  await expect.poll(order).toEqual(tasksFirst)
   await sidebar.locator('[data-page="planning"]').click()
   await expect(page).toHaveURL(/\/planning/)
-  await expect.poll(order).toEqual(["tasks", "boards", "dashboard", "today", "upcoming", "view-table", "progress", "planning", "settings"])
+  await expect.poll(order).toEqual(tasksFirst)
   await expect(sidebar.locator('[data-task-view-pinned-item="table"]')).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -80,23 +89,22 @@ test("the mobile drawer reorders via touch and keeps its close control", async (
     const sidebar = page.locator("#sidebar")
     const menu = page.locator("#menu-toggle")
     await menu.tap()
-    await sidebar.locator("#nav-utility-trigger").tap()
+    const utility = sidebar.locator("#nav-utility-trigger")
+    await utility.tap()
     await page.getByRole("menuitem", { name: "Edit menu", exact: true }).tap()
-    const handle = sidebar.getByRole("button", { name: "Move Upcoming", exact: true })
-    await handle.tap()
-    const up = sidebar.getByRole("button", { name: "Move up", exact: true })
+    const up = sidebar.getByRole("button", { name: "Move Upcoming up", exact: true })
     const target = await up.boundingBox()
     expect(target?.width).toBeGreaterThanOrEqual(44)
     expect(target?.height).toBeGreaterThanOrEqual(44)
     await up.tap()
-    await expect(sidebar.locator("[data-sidebar-item-key]").nth(1)).toHaveAttribute("data-sidebar-item-key", "upcoming")
+    await expect(sidebar.locator("[data-sidebar-group]").nth(1)).toHaveAttribute("data-sidebar-group", "upcoming")
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await page.screenshot({ path: testInfo.outputPath("reordered-mobile.png") })
     await sidebar.getByRole("button", { name: "Close sidebar" }).tap()
     await expect(menu).toHaveAttribute("aria-expanded", "false")
     await menu.tap()
-    await expect(sidebar.locator("#nav-utility-trigger")).toBeVisible()
-    await expect(sidebar.locator("[data-sidebar-item-key]").nth(1)).toHaveAttribute("data-sidebar-item-key", "upcoming")
+    await expect(utility).toBeVisible()
+    await expect(sidebar.locator("[data-sidebar-group]").nth(1)).toHaveAttribute("data-sidebar-group", "upcoming")
   } finally {
     await context.close()
   }
@@ -106,8 +114,7 @@ test("a drop keeps its destination when a descendant clears the visual marker", 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/today")
   const sidebar = page.locator("#sidebar")
-  await sidebar.locator("#nav-utility-trigger").click()
-  await page.getByRole("menuitem", { name: "Edit menu", exact: true }).click()
+  await openSidebarEditorWithKeyboard(page)
   const groups = sidebar.getByRole("button", { name: "Move Boards", exact: true })
   const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })
   const target = await dashboard.boundingBox()
@@ -120,5 +127,5 @@ test("a drop keeps its destination when a descendant clears the visual marker", 
   await dashboard.dispatchEvent("dragleave", { ...position, relatedTarget: null })
   await expect(sidebar.locator("[data-sidebar-drop]")).toHaveCount(0)
   await dashboard.dispatchEvent("drop", position)
-  await expect(sidebar.locator("[data-sidebar-item-key]").first()).toHaveAttribute("data-sidebar-item-key", "boards")
+  await expect(sidebar.locator("[data-sidebar-group]").first()).toHaveAttribute("data-sidebar-group", "boards")
 })

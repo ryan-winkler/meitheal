@@ -17,13 +17,13 @@ export interface KanbanRefreshFocus {
   afterSave?: "status" | "lane-move" | "epic" | "board-group"
 }
 
-export function findGroupFocus(board: HTMLElement, group: HTMLElement) {
+export function findGroupFocus(board: HTMLElement, group: HTMLElement, selector = ".swimlane-header") {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
   const target = lane && [...lane.querySelectorAll<HTMLElement>(".swimlane-group")]
     .find(candidate => key !== undefined && candidate.dataset.swimlaneType === key)
-  return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
+  return (target && target.querySelector<HTMLElement>(selector)) ||
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
 
@@ -47,6 +47,11 @@ function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): vo
   }
 }
 
+let kanbanMutationEpoch = 0
+export function bumpKanbanMutationEpoch(): number {
+  return ++kanbanMutationEpoch
+}
+
 export function initKanbanPage(signal: AbortSignal): void {
   const shell = document.getElementById("kanban-shell")
   const initialBoard = shell?.querySelector<HTMLElement>("#kanban-board")
@@ -54,13 +59,16 @@ export function initKanbanPage(signal: AbortSignal): void {
   const retry = shell?.querySelector<HTMLButtonElement>("[data-kanban-retry]")
   if (!shell || !initialBoard || !status || !retry || shell.dataset.kanbanBooted === "true") return
   shell.dataset.kanbanBooted = "true"
+  const verificationRoot = shell.closest<HTMLElement>("[data-board-directory][data-board-verify]")
 
   let board = initialBoard
   let boardLifetime = new AbortController()
   let pending: AbortController | undefined
+  let loadAfterVerification = false
   let desired = taskBackgroundUrl()
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
+  let lastDataOnly = false
   let requestNumber = 0
   const areaLinks = document.querySelectorAll<HTMLAnchorElement>("[data-deferred-link], [data-inactivity-link]")
   const syncAreaLinks = (area: string) => {
@@ -90,7 +98,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   let queuedBackgroundRead: { focus: KanbanRefreshFocus | undefined; dataOnly: boolean } | undefined
 
   function boardInteractionActive() {
-    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving]') ||
+    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving], .kanban-sortable-chosen, .swimlane-order-chosen, .swimlane-order[open]') ||
       document.querySelector("#kanban-card-menu:not([hidden]), .quick-action-popover:not([inert])")
   }
 
@@ -107,23 +115,31 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (!queuedBackgroundRead || !dataOnly) queuedBackgroundRead = { focus, dataOnly }
     interactionObserver.observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving"],
+      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving", "open"],
     })
     queueMicrotask(resumeBackgroundRead)
   }
 
   function queueMoveRefresh(focus?: KanbanRefreshFocus) {
     if (signal.aborted || (!focus && queuedBackgroundRead?.focus?.taskId)) return
-    queueBackgroundRead({ ...focus, afterSave: "lane-move" })
+    // Silent background reconciliation: optimistic DOM is already settled with zero jarring loading flash.
+    queueBackgroundRead({ ...focus, afterSave: "lane-move" }, true)
   }
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
     pending?.abort()
-    const request = new AbortController()
-    pending = request
     desired = url
     lastFocus = focus
     resetScroll = reset
+    lastDataOnly = dataOnly
+    if (signal.aborted || verificationRoot?.dataset.boardExpired === "true") return
+    if (!board.isConnected) {
+      loadAfterVerification = true
+      return
+    }
+    loadAfterVerification = false
+    const request = new AbortController()
+    pending = request
     const origin = location.href
     const requestedFocus = document.activeElement
     let focusMoved = false
@@ -136,8 +152,11 @@ export function initKanbanPage(signal: AbortSignal): void {
     document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
     document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
-    board.setAttribute("aria-busy", "true")
-    if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    const loadEpoch = kanbanMutationEpoch
+    if (!dataOnly) {
+      board.setAttribute("aria-busy", "true")
+      renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    }
 
     try {
       const requestUrl = new URL(url)
@@ -153,8 +172,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (!response.ok) throw new Error("Board request failed")
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
-      if (request.signal.aborted || signal.aborted) return
-      if (dataOnly && location.href !== origin) {
+      if (request.signal.aborted || signal.aborted || !board.isConnected) return
+      if (dataOnly && (location.href !== origin || loadEpoch !== kanbanMutationEpoch)) {
         renderStatus("")
         return
       }
@@ -168,8 +187,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       const nowFocused = document.activeElement
       const active = !focusMoved && (nowFocused === document.body || (nowFocused instanceof Element && nowFocused.closest("[data-board-verification]"))) ? requestedFocus : nowFocused
       const grouping = board.dataset.groupBy
-      const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
-        active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
+      const activeGroup = board.contains(active) && active?.matches(".swimlane-header, .swimlane-grip")
+        ? active.closest<HTMLElement>(".swimlane-group") : null
       const activeInBoard = active instanceof HTMLElement && board.contains(active)
       const laneMove = focus?.afterSave === "lane-move"
       const focusMovedCard = laneMove && focus.taskId &&
@@ -241,9 +260,10 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
       if (activeGroup && board.dataset.groupBy === grouping) {
-        findGroupFocus(board, activeGroup)?.focus({ preventScroll: true })
+        const selector = active?.matches(".swimlane-grip") ? ".swimlane-grip" : ".swimlane-header"
+        findGroupFocus(board, activeGroup, selector)?.focus({ preventScroll: true })
       } else if ((shouldFocus || (laneMove && retainedControl)) &&
-        (retainedControl || (!dataOnly && (focus || active === retry)))) {
+        (retainedControl || focusMovedCard || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
           `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`,
@@ -321,9 +341,24 @@ export function initKanbanPage(signal: AbortSignal): void {
   }
   scrollLeftBtn?.addEventListener("click", () => scrollStep(-1), { signal })
   scrollRightBtn?.addEventListener("click", () => scrollStep(1), { signal })
-  window.addEventListener("resize", syncHorizontalScrollState, { passive: true, signal })
-  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(syncHorizontalScrollState) : null
+  let scrollSyncRaf = 0
+  const scheduleHorizontalScrollSync = () => {
+    if (scrollSyncRaf !== 0) return
+    scrollSyncRaf = requestAnimationFrame(() => {
+      scrollSyncRaf = 0
+      if (!signal.aborted) syncHorizontalScrollState()
+    })
+  }
+  window.addEventListener("resize", scheduleHorizontalScrollSync, { passive: true, signal })
+  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleHorizontalScrollSync) : null
   if (scrollWrap) resizeObserver?.observe(scrollWrap)
+  signal.addEventListener("abort", () => {
+    if (scrollSyncRaf !== 0) {
+      cancelAnimationFrame(scrollSyncRaf)
+      scrollSyncRaf = 0
+    }
+    resizeObserver?.disconnect()
+  }, { once: true })
 
   const toolsToggle = document.getElementById("kanban-tools-toggle")
   toolsToggle?.addEventListener("click", () => {
@@ -364,6 +399,21 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   window.addEventListener("online", () => {
     if (board.dataset.inactivityEnabled === "true") void refresh()
+  }, { signal })
+  verificationRoot?.addEventListener("meitheal:board-hidden", event => {
+    if (event.target !== verificationRoot) return
+    if (pending) {
+      loadAfterVerification = true
+      pending.abort()
+    }
+    if (verificationRoot.dataset.boardExpired === "true") loadAfterVerification = false
+  }, { signal })
+  verificationRoot?.addEventListener("meitheal:board-verified", event => {
+    if (event.target !== verificationRoot || !loadAfterVerification) return
+    // Let verification reattach the Board and restore focus before capturing it.
+    queueMicrotask(() => {
+      if (loadAfterVerification && board.isConnected) void load(new URL(desired), lastFocus, resetScroll, lastDataOnly)
+    })
   }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()

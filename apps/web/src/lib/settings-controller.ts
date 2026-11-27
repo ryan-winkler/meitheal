@@ -37,24 +37,23 @@ import { initWebserverSettings } from "@lib/settings-webserver-controller"
 import { initPluginsSettings } from "@lib/settings-plugins-controller"
 import { initSettingsHelp } from "@lib/settings-help-controller"
 import { initShortcutsSettings, restoreShortcutsSettings } from "@lib/settings-shortcuts-controller"
-import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 const log = createClientLogger("settings")
 
 export function initSettingsController(): void {
   function setIntegrationCardExpanded(header: HTMLButtonElement, expanded: boolean): void {
     const bodyId = header.getAttribute("aria-controls")
-    const body = bodyId ? byId(bodyId) : null
+    const body = bodyId ? document.getElementById(bodyId) : null
     if (!body) return
 
     if (!expanded && body.contains(document.activeElement)) header.focus()
     body.inert = !expanded
-    setAttr(header, "aria-expanded", String(expanded))
+    header.setAttribute("aria-expanded", String(expanded))
   }
 
   window.expandIntegrationCard = (bodyId: string) => {
-    const card = byId(bodyId)?.closest(".integration-card")
-    const header = qs<HTMLButtonElement>(card, ".integration-card__header")
+    const card = document.getElementById(bodyId)?.closest(".integration-card")
+    const header = card?.querySelector<HTMLButtonElement>(".integration-card__header")
     if (header) setIntegrationCardExpanded(header, true)
   }
 
@@ -80,11 +79,11 @@ export function initSettingsController(): void {
   initSettingsHelp()
   initShortcutsSettings()
 
-  const status = byId("settings-load-status")
-  const loading = byId("settings-loading")
-  const error = byId("settings-load-error")
-  const retry = byId("settings-load-retry")
-  const panels = byId("settings-panels")
+  const status = document.getElementById("settings-load-status")
+  const loading = document.getElementById("settings-loading")
+  const error = document.getElementById("settings-load-error")
+  const retry = document.getElementById("settings-load-retry")
+  const panels = document.getElementById("settings-panels")
   if (!status || !loading || !error || !retry || !panels) return
 
   async function load(): Promise<void> {
@@ -113,16 +112,12 @@ async function loadSettings(): Promise<void> {
   const settings = await settingsStore.load()
 
   // Delegate restore to each controller — wrapped in try/catch per domain
-  for (const [restore, name] of [
-    [restoreThemeSettings, "Theme"],
-    [restoreSidebarSettings, "Sidebar"],
-    [restoreDataSettings, "Data"],
-    [restoreAISettings, "AI"],
-    [restoreHASettings, "HA"],
-    [restoreN8nSettings, "n8n"],
-    [restoreCalendarTodoSettings, "Calendar/Todo"],
-    [restoreShortcutsSettings, "Shortcuts"],
-  ] as const) {
-    try { restore(settings) } catch (e) { log.error(`${name} restore error`, e) }
-  }
+  try { restoreThemeSettings(settings) } catch (e) { log.error("Theme restore error", e) }
+  try { restoreSidebarSettings(settings) } catch (e) { log.error("Sidebar restore error", e) }
+  try { restoreDataSettings(settings) } catch (e) { log.error("Data restore error", e) }
+  try { restoreAISettings(settings) } catch (e) { log.error("AI restore error", e) }
+  try { restoreHASettings(settings) } catch (e) { log.error("HA restore error", e) }
+  try { restoreN8nSettings(settings) } catch (e) { log.error("n8n restore error", e) }
+  try { restoreCalendarTodoSettings(settings) } catch (e) { log.error("Calendar/Todo restore error", e) }
+  try { restoreShortcutsSettings(settings) } catch (e) { log.error("Shortcuts restore error", e) }
 }

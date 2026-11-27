@@ -95,7 +95,9 @@ test("Delete Board defaults to Cancel and restores two distinctly named Boards",
     expect((await restored).status()).toBe(200)
     await navigated
     await expect(page.locator("[data-board-directory]")).toHaveAttribute("data-bound", "true")
-    await expect(page.locator("[data-board-directory]").getByRole("link", { name, exact: true })).toBeVisible()
+    const card = page.locator("[data-board-directory] .board-card-identity")
+      .getByRole("link", { name, exact: true })
+    await expect(card).toBeVisible()
     await expect(page.getByRole("button", { name: "Restore Board " + name, exact: true })).toHaveCount(0)
     expect((await (await member.request.get(app + "/api/boards/" + ids[index])).json()).board.state).toBe("active")
   }
@@ -118,15 +120,15 @@ test("an empty Board keeps default, personalized and Irish Area labels consisten
   const workspace = app + `/boards/${boardId}?view=groups`
   await page.goto(workspace)
   await expect(page.locator(".board-empty")).toHaveText("Choose “New Area” to organize related work.")
-  await disclosure.locator(":scope > summary").click()
+  await form.locator("xpath=ancestor::details[1]").locator(":scope > summary").click()
   await expect(form.getByRole("button", { name: "Create Area", exact: true })).toBeVisible()
   const endpoint = app + "/api/organization-labels"
   const labels = await (await member.request.get(endpoint)).json()
   const renamed = await member.request.put(endpoint, { headers: { origin }, data: { ...labels, forms: { ...labels.forms, group: ["Room", "Rooms"] } } })
   expect(renamed.status(), await renamed.text()).toBe(204)
   await page.reload()
-  await expect(disclosure.locator(":scope > summary")).toHaveText("New Room")
-  await disclosure.locator(":scope > summary").click()
+  await expect(form.locator("xpath=ancestor::details[1]").locator(":scope > summary")).toHaveText("New Room")
+  await form.locator("xpath=ancestor::details[1]").locator(":scope > summary").click()
   await expect(form.getByRole("button", { name: "Create Room", exact: true })).toBeVisible()
   await expect(page.locator(".board-empty")).toHaveText("Choose “New Room” to organize related work.")
   await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
@@ -134,7 +136,7 @@ test("an empty Board keeps default, personalized and Irish Area labels consisten
   await expect(page.locator(".board-empty")).toHaveText("Choose “Réimse nua” to organize related work.")
   await member.addCookies([{ name: "meitheal-locale", value: "en", url: origin }])
   await page.reload()
-  await disclosure.locator(":scope > summary").click()
+  await form.locator("xpath=ancestor::details[1]").locator(":scope > summary").click()
   await page.screenshot({ path: testInfo.outputPath("personalized-area-submit.png"), fullPage: true })
   await form.getByRole("textbox", { name: "Name", exact: true }).fill("Reading room")
   const reloaded = page.waitForEvent("load")
@@ -154,8 +156,8 @@ test("an empty Board keeps default, personalized and Irish Area labels consisten
 
   await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
   await page.goto(workspace)
-  await expect(disclosure.locator(":scope > summary")).toHaveText("Réimse nua")
-  await disclosure.locator(":scope > summary").click()
+  await expect(form.locator("xpath=ancestor::details[1]").locator(":scope > summary")).toHaveText("Réimse nua")
+  await form.locator("xpath=ancestor::details[1]").locator(":scope > summary").click()
   await expect(form.getByRole("button", { name: "Réimse nua", exact: true })).toBeVisible()
 })
 

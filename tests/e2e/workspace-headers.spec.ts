@@ -119,9 +119,12 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     await wideDashboard.goto(app + "/")
     const tiles = wideDashboard.locator("#dashboard-overview .stat-card")
     await expect(tiles).toHaveCount(5)
-    const achievements = fixture.configuredPath + "/progress?board_id=household#achievements"
+    const achievements = fixture.configuredPath + "/progress?board_id=household#achievements-streaks"
     await expect(tiles.first()).toHaveAttribute("href", achievements)
     expect(await tiles.evaluateAll(elements => new Set(elements.map(element => element.getBoundingClientRect().top)).size)).toBe(1)
+    await tiles.first().press("Enter")
+    await expect(wideDashboard).toHaveURL(origin + achievements)
+    await expect(wideDashboard.locator("#achievements-streaks")).toBeFocused()
     await wideDashboard.close()
 
     for (const [status, excluded] of [["active", "overdue"], ["overdue", "active"]] as const) {
@@ -156,8 +159,8 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     await switcher.press("Enter")
     await expect(page.locator("#habits-bar-switcher-dropdown")).toBeVisible()
     await page.keyboard.press("Escape")
-    await page.goto(app + "/habits#habits-library")
-    const create = page.locator("#habits-library").getByRole("button", { name: "New " + alias, exact: true })
+    await page.goto(app + "/habits#habits-overview")
+    const create = page.locator("#habits-overview").getByRole("button", { name: "New " + alias, exact: true })
     await expect(create).toBeVisible()
     const box = await create.boundingBox()
     expect(box!.x + box!.width).toBeLessThanOrEqual(320)
@@ -218,6 +221,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       ["/#dashboard-overview", "Task counts couldn’t load.", ".stats-grid :is(#stat-active, #stat-overdue, #dashboard-stat-open-count, a[href$='status=complete'])"],
       ["/upcoming#upcoming-week", "Upcoming tasks couldn’t load.", ".page-summary-grid"],
       ["/habits?new=1#habits-rhythm", "Routine counts couldn’t load.", "#habits-stats"],
+      ["/routines?new=1#habits-rhythm", "Routine counts couldn’t load.", "#habits-stats"],
     ] as const) {
       const failed = await context.newPage()
       expect((await failed.goto(app + path))?.status()).toBe(200)
@@ -234,11 +238,11 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
         await expect(failed.locator("#upcoming-week").getByRole("status")).toContainText(description)
         await expect(failed.getByText("No upcoming tasks", { exact: true })).toHaveCount(0)
       }
-      if (path.startsWith("/habits")) {
+      if (path.startsWith("/habits") || path.startsWith("/routines")) {
         await failed.waitForLoadState("networkidle")
         await expect(failed.locator("#habits-library-count")).toHaveCount(0)
         await expect(failed.locator("#habits-library").getByText("Routines couldn’t load right now")).toBeVisible()
-        await expect(failed.locator("#habits-library").getByRole("button", { name: "New " + alias, exact: true })).toBeDisabled()
+        await expect(failed.locator("#habits-overview").getByRole("button", { name: "New " + alias, exact: true })).toBeDisabled()
         const toolbarCreate = failed.locator("#habits-bar-new-habit")
         await expect(toolbarCreate).toBeDisabled()
         await expect(toolbarCreate).toHaveAttribute("title", "Refresh the page to retry loading Routines")
@@ -256,6 +260,9 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       db.exec("ALTER TABLE fixture_templates_unavailable RENAME TO task_templates")
       db.exec("ALTER TABLE fixture_tasks_unavailable RENAME TO tasks")
     })
+    await page.goto(app + "/routines#habits-overview")
+    await expect(page.locator("#habits-bar-new-habit")).toBeEnabled()
+    await expect(page.locator("#habits-overview").getByRole("button", { name: "New " + alias, exact: true })).toBeEnabled()
     const savedAfterRecovery = await pinRequest(focus, fixture.configuredPath + "/api/tasks", "POST", { title: "Recovered header fixture" }, undefined, boardHeaders)
     expect(savedAfterRecovery.status).toBe(201)
     await refreshFocus()

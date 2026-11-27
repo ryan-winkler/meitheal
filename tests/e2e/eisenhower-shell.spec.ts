@@ -116,6 +116,7 @@ test.describe("Eisenhower Shell", () => {
     const taskPath = `/api/tasks/${id}`
 
     try {
+      await page.setViewportSize({ width: 1280, height: 480 })
       await page.reload()
       const source = page.locator('[data-drop-zone="not-now"]')
       const target = page.locator('[data-drop-zone="schedule"]')
@@ -125,7 +126,31 @@ test.describe("Eisenhower Shell", () => {
       await expect(target.locator(".quadrant__empty")).toBeVisible()
       await expect(target).not.toHaveAttribute("role", "list")
 
-      await card.dragTo(target)
+      await expect(card).toHaveAttribute("draggable", "true")
+      const titleLink = card.getByRole("link", { name: title })
+      const dropSurface = target.locator(".quadrant__empty")
+      // Bring both points into view before starting a native drag.
+      await titleLink.scrollIntoViewIfNeeded()
+      await dropSurface.scrollIntoViewIfNeeded()
+      await expect(titleLink).toBeInViewport()
+      await expect(dropSurface).toBeInViewport()
+      const from = (await titleLink.boundingBox())!
+      const to = (await dropSurface.boundingBox())!
+      const startX = from.x + from.width / 2
+      const startY = from.y + from.height / 2
+      const endX = to.x + to.width / 2
+      const endY = to.y + to.height / 2
+      await page.mouse.move(startX, startY)
+      await page.mouse.down()
+      try {
+        await page.mouse.move(startX + 16, startY, { steps: 4 })
+        await expect(card).toHaveClass(/tli--dragging/)
+        await page.mouse.move(endX, endY, { steps: 16 })
+        await page.mouse.move(endX + 2, endY)
+        await expect(page.locator('[data-quadrant="schedule"]')).toHaveClass(/quadrant--drag-over/)
+      } finally {
+        await page.mouse.up()
+      }
 
       const link = target.getByRole("listitem").getByRole("link", { name: title })
       await expect(target).toHaveAttribute("role", "list")
@@ -149,7 +174,8 @@ test.describe("Eisenhower Shell", () => {
     await expect(flowSection).toBeVisible()
 
     const cards = flowSection.locator(".eisenhower__flow-card")
-    await expect(cards).toHaveCount(4)
+    await expect(cards).toHaveCount(5)
+    await expect(cards.filter({ hasText: "RICE" })).toHaveCount(1)
   })
 
   test("title switcher dropdown is discoverable", async ({ page }) => {

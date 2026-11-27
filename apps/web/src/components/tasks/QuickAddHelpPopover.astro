@@ -1,0 +1,465 @@
+---
+/**
+ * QuickAddHelpPopover — Reusable Tabler help trigger + NLP / shorthand guide
+ *
+ * Explains all natural-language tokens and list prefixes supported by
+ * `nl-task-parser.ts` and `quick-add.ts`, with one-click example insertion.
+ *
+ * Uses delegated document events so it works both inline and inside dynamically
+ * cloned `<template>` modals (e.g. QuickAddDialog).
+ *
+ * @domain tasks
+ */
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  targetInputId: string
+  align?: "left" | "right"
+}
+
+const { targetInputId, align = "right" } = Astro.props
+const popoverId = `qa-help-popover-${targetInputId}`
+---
+
+<div class={`qa-help-wrap qa-help-wrap--${align}`} data-qa-help-wrap data-qa-target={targetInputId}>
+  <button
+    type="button"
+    class="btn btn-ghost btn-icon qa-help-trigger"
+    data-qa-help-toggle
+    aria-label="Quick add shorthand & NLP help"
+    aria-expanded="false"
+    aria-controls={popoverId}
+    title="Quick add shortcuts & natural language tips"
+  >
+    <Icon name="help" size={16} sprite />
+  </button>
+
+  <div
+    id={popoverId}
+    class="qa-help-popover"
+    data-qa-help-popover
+    data-qa-target={targetInputId}
+    role="dialog"
+    aria-label="Quick add shorthand guide"
+    hidden
+  >
+    <div class="qa-help-popover__header">
+      <div class="qa-help-popover__title">
+        <Icon name="sparkles" size={15} sprite />
+        <span>Quick Add Shorthand &amp; NLP</span>
+      </div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-icon qa-help-popover__close"
+        data-qa-help-close
+        aria-label="Close quick add guide"
+      >
+        <Icon name="x" size={14} sprite />
+      </button>
+    </div>
+
+    <div class="qa-help-popover__body">
+      <p class="qa-help-popover__lead">
+        Type naturally — Meitheal extracts dates, priority, labels, assignees, and instant lists automatically.
+      </p>
+
+      <dl class="qa-help-list">
+        <div class="qa-help-row">
+          <dt><Icon name="calendar" size={13} sprite /> Dates</dt>
+          <dd>
+            <code>today</code>, <code>tomorrow</code>, <code>next monday</code>, <code>in 3 days</code>, <code>Jan 15</code>, <code>2026-11-30</code>
+          </dd>
+        </div>
+        <div class="qa-help-row">
+          <dt><Icon name="flame" size={13} sprite /> Priority</dt>
+          <dd>
+            <code>!!</code> (Critical P1), <code>!</code> (High P2), or <code>p1</code>–<code>p5</code>
+          </dd>
+        </div>
+        <div class="qa-help-row">
+          <dt><Icon name="tag" size={13} sprite /> Labels &amp; People</dt>
+          <dd>
+            <code>#label</code> to tag · <code>@name</code> to assign
+          </dd>
+        </div>
+        <div class="qa-help-row">
+          <dt><Icon name="shopping-cart" size={13} sprite /> Instant Lists</dt>
+          <dd>
+            <code>shopping: 2x milk, eggs</code> · <code>errand: post office, bank</code>
+          </dd>
+        </div>
+      </dl>
+
+      <div class="qa-help-examples">
+        <span class="qa-help-examples__label">Click an example to try it</span>
+        <div class="qa-help-examples__chips">
+          <button
+            type="button"
+            class="qa-help-chip"
+            data-qa-help-example="Call dentist tomorrow !! #health @alex"
+          >
+            Call dentist tomorrow !! #health @alex
+          </button>
+          <button
+            type="button"
+            class="qa-help-chip"
+            data-qa-help-example="shopping: 2x milk, eggs, sourdough"
+          >
+            shopping: 2x milk, eggs, sourdough
+          </button>
+          <button
+            type="button"
+            class="qa-help-chip"
+            data-qa-help-example="errand: post office, dry cleaner friday p2"
+          >
+            errand: post office, dry cleaner friday p2
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const w = window as Window & { __meithealQaHelpBound?: boolean }
+  if (!w.__meithealQaHelpBound) {
+    w.__meithealQaHelpBound = true
+
+    let activePopover: HTMLElement | null = null
+    let activeTrigger: HTMLButtonElement | null = null
+
+    const positionPopover = (popover: HTMLElement, trigger: HTMLButtonElement) => {
+      const rect = trigger.getBoundingClientRect()
+      const popWidth = Math.min(368, window.innerWidth - 24)
+      popover.style.width = `${popWidth}px`
+      const left = Math.max(12, Math.min(rect.right - popWidth, window.innerWidth - popWidth - 12))
+      popover.style.left = `${left}px`
+
+      const measuredHeight = Math.min(popover.scrollHeight || popover.offsetHeight || 340, window.innerHeight - 24)
+      const spaceBelow = window.innerHeight - rect.bottom - 16
+      const spaceAbove = rect.top - 16
+      if (spaceBelow >= measuredHeight) {
+        popover.style.top = `${rect.bottom + 8}px`
+        popover.style.maxHeight = `${Math.max(180, spaceBelow)}px`
+        popover.style.transformOrigin = "top right"
+      } else if (spaceAbove >= measuredHeight || spaceAbove > spaceBelow) {
+        const clampedTop = Math.max(12, rect.top - Math.min(measuredHeight, spaceAbove) - 8)
+        popover.style.top = `${clampedTop}px`
+        popover.style.maxHeight = `${Math.max(180, Math.min(spaceAbove, rect.top - 20))}px`
+        popover.style.transformOrigin = "bottom right"
+      } else {
+        const clampedTop = Math.max(12, window.innerHeight - measuredHeight - 12)
+        popover.style.top = `${clampedTop}px`
+        popover.style.maxHeight = `${window.innerHeight - 24}px`
+        popover.style.transformOrigin = "top right"
+      }
+    }
+
+    const closeAllPopovers = () => {
+      document.querySelectorAll<HTMLElement>("[data-qa-help-popover]").forEach((popover) => {
+        if (!popover.hidden) popover.hidden = true
+      })
+      document.querySelectorAll<HTMLButtonElement>("[data-qa-help-toggle]").forEach((toggle) => {
+        toggle.setAttribute("aria-expanded", "false")
+      })
+      activePopover = null
+      activeTrigger = null
+    }
+
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target) return
+
+      const toggle = target.closest<HTMLButtonElement>("[data-qa-help-toggle]")
+      if (toggle) {
+        const controlsId = toggle.getAttribute("aria-controls")
+        const wrap = toggle.closest<HTMLElement>("[data-qa-help-wrap]")
+        const popover =
+          wrap?.querySelector<HTMLElement>("[data-qa-help-popover]") ??
+          (controlsId ? document.getElementById(controlsId) : null) ??
+          null
+        if (!popover) return
+        const opening = popover.hidden
+        closeAllPopovers()
+        if (opening) {
+          const topLayerDialog = toggle.closest<HTMLDialogElement>("dialog[open]")
+          const portalHost = topLayerDialog ?? document.body
+          if (popover.parentElement !== portalHost) {
+            portalHost.appendChild(popover)
+          }
+          popover.hidden = false
+          positionPopover(popover, toggle)
+          toggle.setAttribute("aria-expanded", "true")
+          activePopover = popover
+          activeTrigger = toggle
+        }
+        return
+      }
+
+      const closeBtn = target.closest<HTMLButtonElement>("[data-qa-help-close]")
+      if (closeBtn) {
+        const trigger = activeTrigger
+        closeAllPopovers()
+        trigger?.focus()
+        return
+      }
+
+      const exampleBtn = target.closest<HTMLButtonElement>("[data-qa-help-example]")
+      if (exampleBtn) {
+        const popover = exampleBtn.closest<HTMLElement>("[data-qa-help-popover]")
+        const targetId = popover?.dataset.qaTarget
+        const sample = exampleBtn.dataset.qaHelpExample ?? ""
+        const input = targetId ? document.getElementById(targetId) as HTMLInputElement | null : null
+        closeAllPopovers()
+        if (input) {
+          input.value = sample
+          input.dispatchEvent(new Event("input", { bubbles: true }))
+          input.focus()
+          input.setSelectionRange(sample.length, sample.length)
+        }
+        return
+      }
+
+      if (!target.closest("[data-qa-help-popover]") && !target.closest("[data-qa-help-wrap]")) {
+        closeAllPopovers()
+      }
+    })
+
+    const repositionOpen = () => {
+      if (activePopover && activeTrigger && !activePopover.hidden) {
+        if (!document.body.contains(activeTrigger)) {
+          closeAllPopovers()
+          return
+        }
+        positionPopover(activePopover, activeTrigger)
+      }
+    }
+
+    window.addEventListener("resize", repositionOpen, { passive: true })
+    window.addEventListener("scroll", repositionOpen, { passive: true, capture: true })
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && activePopover && !activePopover.hidden) {
+        event.stopPropagation()
+        const trigger = activeTrigger
+        closeAllPopovers()
+        trigger?.focus()
+      }
+    })
+  }
+</script>
+
+<style is:inline>
+  .qa-help-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .qa-help-trigger {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md, 8px);
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .qa-help-trigger:hover,
+  .qa-help-trigger[aria-expanded="true"] {
+    color: var(--accent-text, var(--accent));
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  .qa-help-trigger:active {
+    transform: scale(0.97);
+  }
+
+  .qa-help-popover {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 10150;
+    width: min(368px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
+    box-shadow: var(--shadow-lg, 0 18px 42px rgba(0, 0, 0, 0.36));
+    color: var(--text-primary);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform-origin: top right;
+    animation: qa-help-pop 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .qa-help-wrap--left .qa-help-popover {
+    right: auto;
+    left: 0;
+    transform-origin: top left;
+  }
+
+  .qa-help-popover[hidden] {
+    display: none !important;
+  }
+
+  @keyframes qa-help-pop {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .qa-help-popover__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+
+  .qa-help-popover__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .qa-help-popover__title svg {
+    color: var(--accent-text, var(--accent));
+  }
+
+  .qa-help-popover__close {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: var(--text-muted);
+  }
+
+  .qa-help-popover__body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .qa-help-popover__lead {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+
+  .qa-help-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .qa-help-row {
+    display: grid;
+    grid-template-columns: 118px 1fr;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
+
+  .qa-help-row dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .qa-help-row dd {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .qa-help-row code {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-size: 0.72rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .qa-help-examples {
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .qa-help-examples__label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .qa-help-examples__chips {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .qa-help-chip {
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    cursor: pointer;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .qa-help-chip:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+  }
+
+  .qa-help-chip:active {
+    transform: scale(0.985);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .qa-help-popover {
+      animation: none;
+    }
+    .qa-help-trigger,
+    .qa-help-chip {
+      transition: none;
+    }
+  }
+</style>

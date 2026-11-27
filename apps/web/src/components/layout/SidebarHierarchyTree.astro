@@ -1,0 +1,234 @@
+---
+import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
+import { resolveBoardPageScope } from "@lib/board-http"
+
+/**
+ * SidebarHierarchyTree — Area → Project sidebar navigation
+ *
+ * ClickUp-inspired hierarchy with tree connector lines, per-entity
+ * ⋯ + action pairs, and body-level dropdowns that escape sidebar overflow.
+ *
+ * Features:
+ * - Two-level hierarchy: Area → Project with CSS tree connector lines
+ * - "Home" area always visible (ungrouped projects merge in)
+ * - Area row: ⋯ (Edit Area, Rename, Color & Icon, Delete) + (New Project)
+ * - Project row: ⋯ (Manage Project, Rename, Icon & Color) + (Task kind picker)
+ * - Pinned projects section (context menu)
+ * - Collapse state per area (localStorage)
+ * - Dropdowns rendered at body level via DropdownController
+ * - WAI-ARIA keyboard navigation
+ *
+ * @domain navigation
+ * @phase 15.2 — Sidebar UX Refinements
+ */
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
+import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../lib/design-tokens"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+import type { IconName } from "../../generated/icon-registry"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+const workScope = workScopeResult.ok ? workScopeResult.scope : null
+
+
+export interface Props {
+  locale: Locale
+  label?: string
+  boardId?: string
+  boardName?: string
+}
+const { locale, label, boardName } = Astro.props
+
+let areas: Pick<AreaRow, "id" | "name" | "icon" | "color" | "position">[] = []
+let projects: ProjectRow[] = []
+const goalAreas = new Map<string, string>()
+
+try {
+  if (!workScope) throw new Error("Work unavailable")
+  await ensureSchema()
+  const repo = new HierarchyRepository(getPersistenceClient(), workScope)
+  const [allAreas, allProjects, goals] = await Promise.all([
+    repo.findAllAreas(), available("projects") ? repo.findAllProjects() : [], available("goals") && available("projects") ? repo.findAllGoals() : [],
+  ])
+  areas = allAreas
+  projects = allProjects
+  for (const goal of goals) if (goal.area_id) goalAreas.set(goal.id, goal.area_id)
+} catch {
+  // Schema may not exist yet — render empty
+}
+
+// Build area → projects mapping
+const projectsByArea = new Map<string, ProjectRow[]>()
+const ungroupedProjects: ProjectRow[] = []
+
+for (const p of projects) {
+  const areaId = p.area_id ?? (p.goal_id ? goalAreas.get(p.goal_id) : null)
+  if (areaId) {
+    const list = projectsByArea.get(areaId) ?? []
+    list.push(p)
+    projectsByArea.set(areaId, list)
+  } else {
+    ungroupedProjects.push(p)
+  }
+}
+
+const currentPath = Astro.url.pathname
+const hasContent = areas.length > 0 || projects.length > 0
+const visibleAreas = areas
+const areasLabel = label || t("sidebar.areas_header", locale) || "Areas"
+
+// Task kinds for per-project add
+const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
+  { kind: "standard_action", icon: "checkbox", labelKey: "sidebar.task_kind_standard_action" },
+  { kind: "shopping_item", icon: "shopping-cart", labelKey: "sidebar.task_kind_shopping_item" },
+  { kind: "checklist", icon: "list-check", labelKey: "sidebar.task_kind_checklist" },
+  { kind: "calendar_event", icon: "calendar-event", labelKey: "sidebar.task_kind_calendar_event" },
+  { kind: "quick_capture", icon: "bolt", labelKey: "sidebar.task_kind_quick_capture" },
+]
+---
+{!workScope ? <p role="status">Navigation is unavailable. Reload to try again.</p> : <>
+
+
+{(hasContent || boardName) && (
+  <div class:list={["stree", { "stree--board": Boolean(boardName) }]} id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
+    <details id="sidebar-areas-group" open>
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={boardName ? `${areasLabel} in ${boardName}` : areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
+      {boardName ? <>
+        <a class="nav-link sidebar-household-link" href={`/boards/${encodeURIComponent(workScope.boardId)}`} aria-current={currentPath === `/boards/${workScope.boardId}` ? "page" : undefined}>{boardName}</a>
+        <span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
+      </> : <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>}
+    </summary>
+    <div id="project-nav-content">
+
+    {/* ── Pinned ── */}
+    <div class="stree__pinned" id="project-nav-pinned" hidden>
+      <div class="stree__pinned-header">
+        <span class="stree__section-label inline-flex items-center gap-1"><Icon name="pin" size={11} /> {t("sidebar.pinned", locale)}</span>
+        <span class="stree__pin-help" title={t("sidebar.pin_help", locale)}>?</span>
+      </div>
+      <div class="stree__pinned-list" id="project-nav-pinned-list"></div>
+    </div>
+
+    {/* ── Area-grouped hierarchy ── */}
+    <div class="stree__list" id="project-nav-list">
+      {visibleAreas.map((area) => {
+        const areaProjects = projectsByArea.get(String(area.id)) ?? []
+        const areaIconName = mapEntityEmojiToTabler(area.icon)
+        return (
+          <div class="stree__area" data-area-group={area.id}>
+            <div class="stree__area-row">
+              <button
+                type="button"
+                class="stree__area-toggle"
+                data-area-toggle={area.id}
+                data-area-name-label={area.name}
+                aria-expanded="true"
+                aria-controls={`stree-area-projects-${area.id}`}
+                aria-label={area.name}
+                title={`Collapse ${area.name}`}
+              >
+                <span class="stree__toggle" aria-hidden="true"><Icon name="chevron-down" size={11} class="-rotate-90" /></span>
+                <span class="stree__area-icon inline-flex items-center justify-center" style={`color: ${area.color}`} aria-hidden="true">
+                  {areaIconName ? <Icon name={areaIconName} size={15} /> : area.icon}
+                </span>
+                <span class="stree__area-name">{area.name}</span>
+              </button>
+              {/* ── Area ⋯ + actions ── */}
+              <div class="stree__actions">
+                <button
+                  type="button"
+                  class="stree__action-btn"
+                  data-area-menu={area.id}
+                  data-area-name={area.name}
+                  data-area-color={area.color}
+                  data-area-icon={area.icon}
+                  title={t("sidebar.area_options", locale)}
+                  aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
+                ><Icon name="adjustments-horizontal" size={13} /></button>
+                {available("projects") && <button
+                  type="button"
+                  class="stree__action-btn stree__action-btn--add"
+                  data-area-add={area.id}
+                  title={`New project in ${area.name}`}
+                  aria-label={`New project in ${area.name}`}
+                ><Icon name="plus" size={13} /></button>}
+              </div>
+            </div>
+
+            {/* ── Projects under area ── */}
+            <div class="stree__children" id={`stree-area-projects-${area.id}`} data-area-projects={area.id}>
+              {areaProjects.map((proj, i) => {
+                const projIconName = mapEntityEmojiToTabler(proj.icon)
+                return (
+                <div class={`stree__project ${i === areaProjects.length - 1 ? "stree__project--last" : ""}`}>
+                  <div class="stree__connector">
+                    <span class="stree__line-v"></span>
+                    <span class="stree__line-h"></span>
+                  </div>
+                  <a
+                    href={`/projects/${proj.id}`}
+                    class={`stree__project-link ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                    data-project-id={proj.id}
+                    data-project-name={proj.title}
+                    title={proj.title}
+                  >
+                    <span class="stree__project-icon inline-flex items-center justify-center" style={`color: ${proj.color}`}>
+                      {projIconName ? <Icon name={projIconName} size={14} /> : proj.icon}
+                    </span>
+                    <span class="stree__project-name">{proj.title}</span>
+                  </a>
+                  <span class="stree__count" data-project-task-count={proj.id}>·</span>
+                  {/* ── Project ⋯ + actions ── */}
+                  <div class="stree__actions">
+                    <button
+                      type="button"
+                      class="stree__action-btn"
+                      data-project-menu={proj.id}
+                      data-project-title={proj.title}
+                      data-project-color={proj.color}
+                      data-project-icon-value={proj.icon}
+                      title={t("sidebar.project_options", locale)}
+                      aria-label={`${t("sidebar.project_options", locale)} - ${proj.title}`}
+                    ><Icon name="adjustments-horizontal" size={13} /></button>
+                    <button
+                      type="button"
+                      class="stree__action-btn stree__action-btn--add"
+                      data-task-add-project={proj.id}
+                      data-task-add-name={proj.title}
+                      title={t("sidebar.add_task", locale)}
+                      aria-label={`Add task to ${proj.title}`}
+                    ><Icon name="plus" size={13} /></button>
+                  </div>
+                </div>
+                )
+              })}
+              {available("projects") && areaProjects.length === 0 && (
+                <span class="stree__empty-hint">{t("sidebar.no_projects", locale)}</span>
+              )}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* ── New Area ── */}
+      <button type="button" class="stree__new-area" id="new-area-btn" aria-label="Create new area" title={t("sidebar.new_area", locale)}>
+        <span class="stree__new-area-icon inline-flex items-center justify-center" aria-hidden="true"><Icon name="plus" size={13} /></span>
+        <span>{t("sidebar.new_area", locale)}</span>
+      </button>
+    </div>
+    </div>
+    </details>
+  </div>
+)}
+
+{/* ── Dropdown templates (moved to body via JS to escape overflow) ── */}
+
+<SidebarHierarchyActions />
+</>}

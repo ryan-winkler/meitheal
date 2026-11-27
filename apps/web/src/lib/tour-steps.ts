@@ -2,11 +2,10 @@
  * Tabler Function Tour — Pure step definitions and dismiss/restore state helpers.
  *
  * Follows the same dismissible & restorable model as InlineHelper (Pillars):
- * users can skip/dismiss anytime and restore via the ? shortcut or Sidebar Account menu.
+ * users can skip any step and replay from the sidebar keyboard menu.
  */
 
 export const TOUR_STORAGE_KEY = "meitheal-function-tour-state:v1"
-export const TOUR_RESTORE_EVENT = "meitheal:tour-restore"
 export const TOUR_START_EVENT = "meitheal:tour-start"
 
 export type TourStatus = "available" | "dismissed" | "completed"
@@ -21,49 +20,37 @@ export interface TourStep {
   selector: string
   title: string
   description: string
-  placement?: "right" | "bottom" | "top" | "left" | "auto"
+  placement: "right" | "bottom"
 }
 
 export const CORE_TOUR_STEPS: readonly TourStep[] = [
   {
     id: "quick-create",
     selector: "#sidebar-rail-new-task, [data-board-new-task], #quick-title",
-    title: "Capture work in seconds",
-    description:
-      "Start a new task, shopping list, checklist, or event from anywhere — or press C on your keyboard.",
+    title: "Create a task",
+    description: "Choose New task or press C to create a task, list, or event.",
     placement: "right",
   },
   {
     id: "global-search",
     selector: "#topbar-search-trigger, [data-search-hub-trigger]",
-    title: "Jump straight to any ticket or Board",
-    description:
-      "Search by task title, Board name, or Board key (like MTH-12). Press / or Cmd+K from any screen.",
+    title: "Search tasks and Boards",
+    description: "Press / or Cmd+K to search by title, Board name, or ticket key.",
     placement: "bottom",
   },
   {
     id: "boards-nav",
     selector: 'a[href="/boards"], .board-directory-grid, .board-workspace-navigation',
-    title: "Separate areas of life with Boards",
-    description:
-      "Give each Board its own workflow lanes, Areas, Projects, permissions, and custom ticket key.",
+    title: "Organize work with Boards",
+    description: "Each Board can have its own lanes, Areas, Projects, and members.",
     placement: "right",
   },
   {
     id: "views-nav",
     selector: '#kanban-board, .board-context-tabs, a[href="/tasks"]',
-    title: "Switch views without losing context",
-    description:
-      "Move cleanly between Kanban, Calendar, Timeline, and Table views — or star priority cards to promote them.",
+    title: "Switch task views",
+    description: "Use Kanban, Calendar, Timeline, or Table. Star a card to promote it.",
     placement: "bottom",
-  },
-  {
-    id: "account-menu",
-    selector: "#sidebar-user-trigger",
-    title: "Customize your profile, menu & tour",
-    description:
-      "Open your account menu anytime to edit your profile, customize sidebar links, or replay this tour.",
-    placement: "right",
   },
 ]
 

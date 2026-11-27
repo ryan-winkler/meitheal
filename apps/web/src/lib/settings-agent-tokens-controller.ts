@@ -7,13 +7,9 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { safeFetch } from "@lib/safe-fetch"
 import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { createTablerSvgElement } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
-import { qs, setAttr } from "@lib/dom-helpers"
-
-const SAFE_PATH_SEGMENT_RE = /^[A-Za-z0-9._-]+$/
 
 interface BoardGrant {
   id: string
@@ -46,6 +42,12 @@ interface BoardEntry extends BoardGrant {
 
 const isExpired = (iso: string | null) =>
   iso !== null && (!Number.isFinite(Date.parse(iso)) || Date.parse(iso) <= Date.now())
+const daysUntilExpiry = (iso: string | null): number | null => {
+  if (!iso) return null
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return 0
+  return Math.ceil((ms - Date.now()) / 86_400_000)
+}
 const metaContent = (name: string) =>
   document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content.trim() || ""
 
@@ -67,6 +69,7 @@ export function initAgentTokensSettings(): void {
   const newAssigneeGroup = byId("agent-token-new-assignee")
   const newAssigneeName = byId<HTMLInputElement>("agent-token-new-assignee-name")
   const expiresSelect = byId<HTMLSelectElement>("agent-token-expires")
+  const haPresetBtn = byId<HTMLButtonElement>("agent-token-ha-preset")
 
   if (
     !listEl || !statusEl || !emptyEl || !createBtn || !formEl || !cancelBtn ||
@@ -134,7 +137,7 @@ export function initAgentTokensSettings(): void {
       const data = await res.json() as { users?: DirectoryUser[] }
       if (signal.aborted) return
       const current = assigneeSelect!.value
-      const createOpt = qs<HTMLOptionElement>(assigneeSelect!, 'option[value="__new__"]')
+      const createOpt = assigneeSelect!.querySelector<HTMLOptionElement>('option[value="__new__"]')
       assigneeSelect!.querySelectorAll("option[data-agent-option]").forEach(o => o.remove())
       agentNames.clear()
       for (const u of data.users ?? []) {
@@ -222,20 +225,55 @@ export function initAgentTokensSettings(): void {
       }
       showToast(hard ? "Token deleted" : "Token revoked", "success")
       await loadTokens()
-      const next = hard ? createBtn : qs<HTMLButtonElement>(listEl!, `[data-delete="${CSS.escape(id)}"]`)
+      const next = hard ? createBtn : listEl!.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(id)}"]`)
       ;(next ?? createBtn)?.focus()
     } catch {
       if (!signal.aborted) showToast(hard ? "Failed to delete token" : "Failed to revoke token", "error")
     }
   }
 
-  async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
-    if (!SAFE_PATH_SEGMENT_RE.test(boardId)) {
-      showToast("Could not update Board access", "error")
-      return
+  async function renewOrRotateToken(id: string, action: "renew" | "rotate", name: string) {
+    if (action === "rotate") {
+      const confirmed = await confirmDialog({
+        message: `Rotate "${name}"? A brand-new token will be generated immediately while keeping all Board grants and scopes. Any tool using the old token will need the new one.`,
+        variant: "warning",
+        confirmText: "Rotate Token",
+        signal,
+      })
+      if (!confirmed || signal.aborted) return
     }
     try {
-      const res = await safeFetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+      const res = await fetch("/api/agent-tokens", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "renew" ? { id, action: "renew", expiresAt: null } : { id, action: "rotate" }),
+        signal,
+      })
+      if (signal.aborted) return
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { detail?: string; error?: string }
+        showToast(err.detail || err.error || `Failed to ${action} token`, "error")
+        return
+      }
+      const data = await res.json() as { token?: string }
+      if (action === "rotate" && data.token) {
+        formEl!.hidden = true
+        revealEl!.hidden = false
+        plaintextEl!.textContent = data.token
+        copyBtn!.focus()
+        showToast("Token rotated — copy the new token now!", "success")
+      } else {
+        showToast("Token renewed (no expiry) — existing integrations work immediately", "success")
+      }
+      await loadTokens()
+    } catch {
+      if (!signal.aborted) showToast(`Failed to ${action} token`, "error")
+    }
+  }
+
+  async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
+    try {
+      const res = await window.fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
         method: "PATCH",
         headers: boardHeaders(boardId),
         body: JSON.stringify({ action: "agent", tokenId, enabled }),
@@ -270,6 +308,8 @@ export function initAgentTokensSettings(): void {
 
     for (const token of tokens) {
       const expired = isExpired(token.expiresAt)
+      const remainingDays = daysUntilExpiry(token.expiresAt)
+      const expiringSoon = !expired && remainingDays !== null && remainingDays <= 14
       const inactive = Boolean(token.revoked || expired)
       const row = el("div", `agent-tokens__row${inactive ? " agent-tokens__revoked" : ""}`)
       row.dataset.tokenId = token.id
@@ -278,7 +318,8 @@ export function initAgentTokensSettings(): void {
       const head = el("div", "agent-tokens__row-head")
       head.append(el("span", "agent-tokens__row-name", token.name))
       if (token.revoked) head.append(el("span", "badge badge-pending", "Revoked"))
-      else if (expired) head.append(el("span", "badge badge-pending", "Expired"))
+      else if (expired) head.append(el("span", "badge badge-danger", "Expired"))
+      else if (expiringSoon) head.append(el("span", "badge badge-warning", `Expires in ${remainingDays}d`))
 
       const meta = el("div", "agent-tokens__row-meta")
       meta.append(el("span", "agent-tokens__row-prefix", `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`))
@@ -320,7 +361,7 @@ export function initAgentTokensSettings(): void {
             rm.dataset.boardRemove = b.id
             rm.dataset.boardToken = token.id
             rm.title = `Remove ${b.name} access`
-            setAttr(rm, "aria-label", `Remove ${b.name} access for ${token.name}`)
+            rm.setAttribute("aria-label", `Remove ${b.name} access for ${token.name}`)
             rm.append(createTablerSvgElement("x", 11))
             chip.append(rm)
           }
@@ -332,7 +373,7 @@ export function initAgentTokensSettings(): void {
       if (addable.length > 0) {
         const addSel = el("select", "agent-tokens__board-add")
         addSel.dataset.boardAddToken = token.id
-        setAttr(addSel, "aria-label", `Grant Board access for ${token.name}`)
+        addSel.setAttribute("aria-label", `Grant Board access for ${token.name}`)
         addSel.add(new Option("+ Grant Board…", ""))
         for (const b of addable) addSel.add(new Option(b.ticketPrefix ? `${b.ticketPrefix} · ${b.name}` : b.name, b.id))
         boardsBar.append(addSel)
@@ -342,11 +383,32 @@ export function initAgentTokensSettings(): void {
 
       const actions = el("div", "agent-tokens__row-actions")
       if (!token.revoked) {
+        if (token.expiresAt) {
+          const renewBtn = el("button", "btn btn-secondary btn-sm")
+          renewBtn.type = "button"
+          renewBtn.dataset.renew = token.id
+          renewBtn.dataset.tokenName = token.name
+          renewBtn.title = expired
+            ? "Restore token immediately by removing its expiry (no need to re-paste in Home Assistant)"
+            : "Renew token and remove expiry"
+          renewBtn.setAttribute("aria-label", `Renew token ${token.name}`)
+          renewBtn.append(createTablerSvgElement("refresh", 13), document.createTextNode(expired ? " Restore" : " Renew"))
+          actions.append(renewBtn)
+        }
+        const rotateBtn = el("button", "btn btn-ghost btn-sm")
+        rotateBtn.type = "button"
+        rotateBtn.dataset.rotate = token.id
+        rotateBtn.dataset.tokenName = token.name
+        rotateBtn.title = "Rotate token secret (keeps all scopes & Board grants)"
+        rotateBtn.setAttribute("aria-label", `Rotate token ${token.name}`)
+        rotateBtn.append(createTablerSvgElement("refresh", 13), document.createTextNode(" Rotate"))
+        actions.append(rotateBtn)
+
         const revokeBtn = el("button", "btn btn-ghost btn-sm")
         revokeBtn.type = "button"
         revokeBtn.dataset.revoke = token.id
         revokeBtn.title = "Revoke"
-        setAttr(revokeBtn, "aria-label", `Revoke token ${token.name}`)
+        revokeBtn.setAttribute("aria-label", `Revoke token ${token.name}`)
         revokeBtn.append(createTablerSvgElement("x", 14))
         actions.append(revokeBtn)
       }
@@ -354,7 +416,7 @@ export function initAgentTokensSettings(): void {
       deleteBtn.type = "button"
       deleteBtn.dataset.delete = token.id
       deleteBtn.title = "Delete permanently"
-      setAttr(deleteBtn, "aria-label", `Delete token ${token.name} permanently`)
+      deleteBtn.setAttribute("aria-label", `Delete token ${token.name} permanently`)
       deleteBtn.append(createTablerSvgElement("trash", 14))
       actions.append(deleteBtn)
 
@@ -397,7 +459,7 @@ export function initAgentTokensSettings(): void {
 
   pageLifecycle.on(listEl, "click", event => {
     const target = event.target instanceof Element
-      ? event.target.closest<HTMLElement>("[data-revoke], [data-delete], [data-copy-id], [data-board-remove], #tokens-retry")
+      ? event.target.closest<HTMLElement>("[data-renew], [data-rotate], [data-revoke], [data-delete], [data-copy-id], [data-board-remove], #tokens-retry")
       : null
     if (!target) return
     if (target.id === "tokens-retry") {
@@ -416,7 +478,9 @@ export function initAgentTokensSettings(): void {
       void updateBoardAccess(target.dataset.boardRemove, target.dataset.boardToken, false)
       return
     }
-    if (target.dataset.revoke) void mutateToken(target.dataset.revoke, false)
+    if (target.dataset.renew) void renewOrRotateToken(target.dataset.renew, "renew", target.dataset.tokenName || "token")
+    else if (target.dataset.rotate) void renewOrRotateToken(target.dataset.rotate, "rotate", target.dataset.tokenName || "token")
+    else if (target.dataset.revoke) void mutateToken(target.dataset.revoke, false)
     else if (target.dataset.delete) void mutateToken(target.dataset.delete, true)
   })
 
@@ -456,6 +520,18 @@ export function initAgentTokensSettings(): void {
     void Promise.all([populateAssignees(), loadManageableBoards()])
   })
 
+  if (haPresetBtn) {
+    pageLifecycle.on(haPresetBtn, "click", () => {
+      if (!nameInput.value.trim()) nameInput.value = "home-assistant"
+      const haScopes = new Set(["tasks:read", "tasks:write", "tasks:delete", "search:read"])
+      document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]').forEach(cb => {
+        cb.checked = haScopes.has(cb.value)
+      })
+      expiresSelect.value = ""
+      showToast("Home Assistant preset applied (no expiry)", "info")
+    })
+  }
+
   pageLifecycle.on(cancelBtn, "click", () => {
     formGen++
     createCtrl?.abort()
@@ -476,7 +552,7 @@ export function initAgentTokensSettings(): void {
     const scopes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')).map(cb => cb.value)
     if (scopes.length === 0) {
       showToast("Select at least one scope", "error")
-      qs<HTMLInputElement>(formEl, '[name="agent-token-scopes"]')?.focus()
+      formEl.querySelector<HTMLInputElement>('[name="agent-token-scopes"]')?.focus()
       return
     }
     const creatingNew = assigneeSelect.value === "__new__"
@@ -521,7 +597,7 @@ export function initAgentTokensSettings(): void {
         agentNames.set(created.id, created.name)
         const opt = new Option(created.name, created.id)
         opt.dataset.agentOption = "1"
-        assigneeSelect.insertBefore(opt, qs(assigneeSelect, 'option[value="__new__"]'))
+        assigneeSelect.insertBefore(opt, assigneeSelect.querySelector('option[value="__new__"]'))
         assigneeSelect.value = created.id
         toggleNewAssignee()
         assigneeId = created.id

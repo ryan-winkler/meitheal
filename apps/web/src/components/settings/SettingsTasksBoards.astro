@@ -7,6 +7,7 @@ import { VALID_CUSTOM_FIELD_TYPES } from "../../lib/custom-field-defs"
 import TaskDetailLayoutEditor from "../tasks/TaskDetailLayoutEditor.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsLabels from "./SettingsLabels.astro"
+import SettingsShoppingCategories from "./SettingsShoppingCategories.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 import Icon from "../ui/Icon.astro"
@@ -71,6 +72,49 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
             data-mode-quick="Opens a compact one-line Quick Add prompt with natural-language date parsing."
           >
             Opens the full New Task dialog with area, labels, due date, and description.
+          </p>
+        </div>
+
+        <div class="settings-section-divider"></div>
+
+        <!-- After creating a task (per-user browser preference) -->
+        <div id="after-task-create-section">
+          <div class="settings-field-head">
+            <label for="after-task-create-select" class="settings-label">After creating a task</label>
+            <button
+              type="button"
+              class="settings-help-btn"
+              data-settings-help="afterTaskCreate"
+              data-help-title="After Creating a Task"
+              data-help-body="Choose where Meitheal takes you after saving a new task on this browser. You can also toggle this right inside the New Task modal footer."
+              aria-label="Help for After creating a task"
+            >
+              <Icon name="help" size={16} sprite={true} />
+            </button>
+          </div>
+          <SettingsActionRow>
+            <select
+              id="after-task-create-select"
+              class="form-select settings-input-narrow"
+              aria-label="After creating a task"
+            >
+              <option value="board">Go back to board</option>
+              <option value="open">Open created task</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-after-task-create"
+              >{t("settings.save", locale)}</button
+            >
+          </SettingsActionRow>
+          <p
+            id="after-task-create-help"
+            class="settings-hint"
+            data-mode-board="Closes the dialog and returns to your current board or view with a toast link to open the new task."
+            data-mode-open="Immediately opens the newly created task so you can add checklists, attachments, or comments."
+          >
+            Closes the dialog and returns to your current board or view with a toast link to open the new task.
           </p>
         </div>
 
@@ -188,6 +232,9 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
     <!-- Labels -->
     <SettingsLabels locale={locale} />
 
+    <!-- Shopping Categories (Grocy-compatible) -->
+    <SettingsShoppingCategories />
+
     <!-- Optional Features -->
     <SettingsPanelCard
       title={t("settings.features_title", locale)}
@@ -200,7 +247,10 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
     <SettingsHomeAssistantArea />
   </div>
   <div id="settings-task-detail-layout" class="mt-6">
-    <SettingsPanelCard title={t("task_layout.layout", locale)} subtitle={t("task_layout.settings_subtitle", locale)}>
+    <SettingsPanelCard
+      title="Task & Form Layouts"
+      subtitle="Customize section and field order, visibility, and labels per task kind and for Routine, Pillar, and Goal forms."
+    >
       <TaskDetailLayoutEditor locale={locale} allowServerSave={true} />
     </SettingsPanelCard>
   </div>

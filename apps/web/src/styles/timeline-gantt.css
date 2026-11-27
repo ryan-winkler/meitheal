@@ -42,6 +42,16 @@
   opacity: 0.6;
   cursor: default;
 }
+.timeline-ctrl-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.timeline-ctrl-btn.is-spinning svg {
+  animation: ganttRefreshSpin 700ms linear infinite;
+}
+@keyframes ganttRefreshSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 @media (max-width: 640px) {
   .timeline-controls-bar {
@@ -304,7 +314,12 @@
   overflow: hidden;
 }
 
-/* Signal bar and controls should not flex-grow */
+/* Filter toolbar, signal bar, and controls must not flex-grow in column layout */
+#tasks-view-timeline .filter-toolbar {
+  flex: 0 0 auto !important;
+  position: relative;
+  margin-bottom: 8px;
+}
 #tasks-view-timeline .signal-bar,
 #tasks-view-timeline .timeline-controls-bar {
   flex-shrink: 0;
@@ -523,4 +538,214 @@
 .gantt-sidebar-group-qualifier {
   color: var(--text-secondary);
   text-transform: none;
+}
+
+/* ── SortableJS drag handles, swap & nested group drop feedback ────────── */
+
+.gantt-row-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs, 4px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+  opacity: 0.45;
+  touch-action: none;
+  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1), color 140ms cubic-bezier(0.23, 1, 0.32, 1), background 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.gantt-sidebar-row:hover .gantt-row-drag-handle,
+.gantt-row-drag-handle:focus-visible {
+  opacity: 1;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.gantt-row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.gantt-sortable-ghost {
+  opacity: 0.38 !important;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)) !important;
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.gantt-sortable-chosen {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)) !important;
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.25));
+  z-index: 20 !important;
+}
+
+.gantt-sidebar-row--group-drop {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.gantt-vrow-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.gantt-vrow-badge--danger {
+  color: var(--danger-text, #f87171);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+}
+
+.gantt-vrow-badge--warning {
+  color: var(--warning-text, #fbbf24);
+  border-color: color-mix(in srgb, var(--warning, #f59e0b) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+}
+
+.gantt-vrow-badge--info {
+  color: var(--accent-text, var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.gantt-vrow-badge--success {
+  color: var(--success-text, #34d399);
+  border-color: color-mix(in srgb, var(--success, #10b981) 40%, var(--border));
+  background: color-mix(in srgb, var(--success, #10b981) 12%, transparent);
+}
+
+.timeline-date-nav {
+  display: inline-flex;
+  align-items: center;
+}
+
+.timeline-date-nav > .timeline-ctrl-btn {
+  border-radius: 0;
+  margin-inline-start: -1px;
+  transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1), border-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.timeline-date-nav > .timeline-ctrl-btn:first-child {
+  margin-inline-start: 0;
+  border-start-start-radius: var(--radius-sm, 6px);
+  border-end-start-radius: var(--radius-sm, 6px);
+}
+
+.timeline-date-nav > .timeline-ctrl-btn:last-child {
+  border-start-end-radius: var(--radius-sm, 6px);
+  border-end-end-radius: var(--radius-sm, 6px);
+}
+
+.timeline-date-nav > .timeline-ctrl-btn:active {
+  transform: scale(0.97);
+}
+
+.timeline-date-nav__btn {
+  padding-inline: 7px;
+}
+
+.timeline-date-nav {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.timeline-date-nav > .timeline-ctrl-btn {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  min-height: 28px;
+}
+
+.timeline-date-nav > .timeline-ctrl-btn + .timeline-ctrl-btn {
+  border-left: 1px solid var(--border);
+}
+
+.timeline-date-nav__btn {
+  min-width: 28px;
+  padding: 4px 6px;
+  justify-content: center;
+}
+
+.timeline-nav-prev-icon {
+  transform: rotate(90deg);
+}
+
+.timeline-nav-next-icon {
+  transform: rotate(-90deg);
+}
+
+.timeline-visible-range {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-visible-range:empty {
+  display: none;
+}
+
+.gantt-scroll-wrapper {
+  cursor: grab;
+}
+
+.gantt-scroll-wrapper.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.gantt-bar--dragging rect:first-of-type,
+.gantt-milestone--dragging polygon {
+  filter: brightness(1.18) drop-shadow(0 6px 14px rgba(0, 0, 0, 0.32));
+}
+
+@keyframes ganttBarSettle {
+  0% {
+    filter: brightness(1.28) drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 55%, transparent));
+  }
+  100% {
+    filter: none;
+  }
+}
+
+.gantt-bar--settled rect:first-of-type,
+.gantt-milestone--settled polygon {
+  animation: ganttBarSettle 460ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-ctrl-btn.is-spinning svg,
+  .gantt-bar--settled rect:first-of-type,
+  .gantt-milestone--settled polygon {
+    animation: none;
+  }
+  .gantt-row-drag-handle,
+  .timeline-date-nav > .timeline-ctrl-btn {
+    transition: none;
+  }
 }

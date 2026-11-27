@@ -13,13 +13,15 @@
  *
  * Emits `meitheal:columns-change` CustomEvent when column visibility changes.
  */
+import Icon from "./Icon.astro"
+
 interface Props {
   class?: string
 }
 const { class: className } = Astro.props
 ---
 
-<div class={`column-customizer ${className ?? ''}`}>
+<div class={`column-customizer ${className ?? ""}`}>
   <button
     type="button"
     class="column-customizer__toggle"
@@ -29,25 +31,38 @@ const { class: className } = Astro.props
     aria-expanded="false"
     aria-controls="column-customizer-panel"
   >
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-columns-3"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
-    <span class="column-customizer__label">Columns</span>
+    <Icon name="table" size={15} sprite />
+    <span class="column-customizer__toggle-text">Columns</span>
   </button>
 
   <div class="column-customizer__panel hidden" id="column-customizer-panel" role="region" aria-label="Column Visibility">
     <div class="column-customizer__header">
       <h4>Visible Columns</h4>
-      <button type="button" class="btn-icon" id="column-customizer-close" aria-label="Close panel">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      <button type="button" class="btn-icon column-customizer__close" id="column-customizer-close" aria-label="Close panel">
+        <Icon name="x" size={14} sprite />
       </button>
     </div>
 
+    <div class="column-customizer__search-wrap">
+      <Icon name="search" size={13} sprite class="column-customizer__search-icon" />
+      <input
+        type="search"
+        id="column-customizer-search"
+        class="column-customizer__search"
+        placeholder="Search columns…"
+        aria-label="Filter columns"
+        autocomplete="off"
+      />
+    </div>
+
     <ul class="column-customizer__list" id="column-customizer-list">
-      <!-- Populated by JS from the actual table columns -->
+      <!-- Populated by JS from TABLE_COLUMNS with Core + Planning groups -->
     </ul>
 
     <div class="column-customizer__footer">
-      <button type="button" class="btn text-xs" id="column-customizer-reset">
-        Reset to Defaults
+      <button type="button" class="btn text-xs column-customizer__reset" id="column-customizer-reset">
+        <Icon name="refresh" size={13} sprite />
+        <span>Reset to Defaults</span>
       </button>
     </div>
   </div>
@@ -55,19 +70,33 @@ const { class: className } = Astro.props
 
 <script>
   import { loadTableFilterState } from "@lib/filter-state"
+  import { createSpriteIconElement } from "../../generated/icon-registry"
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_COLUMN_PREFS_KEY } from "@lib/table-registry"
+  import {
+    getDefaultVisibleTableColumns,
+    loadTableColumnPreferences,
+    TABLE_COLUMNS,
+    TABLE_COLUMN_PREFS_KEY,
+  } from "@lib/table-registry"
 
   pageLifecycle.onPageLoad(signal => {
     const wrapper = document.querySelector<HTMLElement>(".column-customizer")
     const toggle = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-toggle")
     const panel = wrapper?.querySelector<HTMLElement>("#column-customizer-panel")
     const list = wrapper?.querySelector<HTMLUListElement>("#column-customizer-list")
+    const searchInput = wrapper?.querySelector<HTMLInputElement>("#column-customizer-search")
     const closeBtn = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-close")
     const resetBtn = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-reset")
     if (!wrapper || !toggle || !panel || !list || !closeBtn || !resetBtn || wrapper.dataset.initialized) return
     wrapper.dataset.initialized = "true"
     signal.addEventListener("abort", () => { delete wrapper.dataset.initialized }, { once: true })
+
+    function getActiveScoringInfo(): { framework: string; label: string } {
+      const table = document.getElementById("task-table")
+      const framework = table?.dataset.activeFramework ?? "rice"
+      const label = table?.dataset.activeFrameworkLabel ?? "RICE"
+      return { framework, label }
+    }
 
     function close(restoreFocus = false) {
       toggle!.setAttribute("aria-expanded", "false")
@@ -88,20 +117,77 @@ const { class: className } = Astro.props
 
     function render() {
       const visible = loadTableFilterState().columns ?? loadTableColumnPreferences()
-      list!.replaceChildren(...TABLE_COLUMNS.map(column => {
-        const item = document.createElement("li")
-        item.className = "column-customizer__item"
-        const label = document.createElement("label")
-        label.className = "column-customizer__label"
-        const checkbox = document.createElement("input")
-        checkbox.type = "checkbox"
-        checkbox.dataset.colId = column.id
-        checkbox.checked = visible.includes(column.id)
-        checkbox.disabled = column.id === "title"
-        label.append(checkbox, column.label)
-        item.append(label)
-        return item
+      const query = (searchInput?.value ?? "").trim().toLowerCase()
+      const { framework, label: activeFrameworkLabel } = getActiveScoringInfo()
+
+      const available = TABLE_COLUMNS.filter(column => {
+        if (column.id === "rice" && framework === "none") return false
+        return true
+      }).map(column => ({
+        ...column,
+        displayLabel: column.id === "rice" ? (activeFrameworkLabel || "Score") : column.label,
       }))
+
+      const filtered = query
+        ? available.filter(column =>
+            column.displayLabel.toLowerCase().includes(query) ||
+            column.id.toLowerCase().includes(query) ||
+            column.group.includes(query))
+        : available
+
+      const nodes: HTMLLIElement[] = []
+      const groups: Array<{ key: "core" | "planning"; title: string }> = [
+        { key: "core", title: "Core Fields" },
+        { key: "planning", title: "Planning & Strategy" },
+      ]
+
+      for (const group of groups) {
+        const items = filtered.filter(col => col.group === group.key)
+        if (!items.length) continue
+
+        const heading = document.createElement("li")
+        heading.className = "column-customizer__group"
+        heading.setAttribute("role", "presentation")
+        heading.textContent = group.title
+        nodes.push(heading)
+
+        for (const column of items) {
+          const item = document.createElement("li")
+          item.className = "column-customizer__item"
+
+          const label = document.createElement("label")
+          label.className = "column-customizer__label"
+          if (column.id === "title") label.classList.add("is-locked")
+
+          const checkbox = document.createElement("input")
+          checkbox.type = "checkbox"
+          checkbox.dataset.colId = column.id
+          checkbox.checked = visible.includes(column.id)
+          checkbox.disabled = column.id === "title"
+
+          const iconWrap = document.createElement("span")
+          iconWrap.className = "column-customizer__icon"
+          iconWrap.setAttribute("aria-hidden", "true")
+          iconWrap.appendChild(createSpriteIconElement(column.icon, { size: 14 }))
+
+          const text = document.createElement("span")
+          text.className = "column-customizer__text"
+          text.textContent = column.displayLabel
+
+          label.append(checkbox, iconWrap, text)
+          item.append(label)
+          nodes.push(item)
+        }
+      }
+
+      if (!nodes.length) {
+        const empty = document.createElement("li")
+        empty.className = "column-customizer__empty"
+        empty.textContent = "No matching columns"
+        nodes.push(empty)
+      }
+
+      list!.replaceChildren(...nodes)
     }
 
     toggle.addEventListener("click", () => {
@@ -109,6 +195,7 @@ const { class: className } = Astro.props
         close()
         return
       }
+      if (searchInput) searchInput.value = ""
       render()
       toggle.setAttribute("aria-expanded", "true")
       panel.classList.remove("hidden")
@@ -116,14 +203,22 @@ const { class: className } = Astro.props
         panel.setAttribute("popover", "manual")
         panel.showPopover()
       }
+      searchInput?.focus({ preventScroll: true })
     }, { signal })
     closeBtn.addEventListener("click", () => close(true), { signal })
-    list.addEventListener("change", () => {
-      const visible = [...list.querySelectorAll<HTMLInputElement>("input:checked")].map(input => input.dataset.colId ?? "")
-      updateColumns(visible)
+    searchInput?.addEventListener("input", () => render(), { signal })
+    list.addEventListener("change", (event) => {
+      const target = event.target as HTMLInputElement | null
+      if (!target || target.type !== "checkbox" || !target.dataset.colId) return
+      const current = new Set(loadTableFilterState().columns ?? loadTableColumnPreferences())
+      if (target.checked) current.add(target.dataset.colId)
+      else if (target.dataset.colId !== "title") current.delete(target.dataset.colId)
+      current.add("title")
+      const ordered = TABLE_COLUMNS.map(c => c.id).filter(id => current.has(id))
+      updateColumns(ordered)
     }, { signal })
     resetBtn.addEventListener("click", () => {
-      updateColumns(TABLE_COLUMNS.map(column => column.id))
+      updateColumns(getDefaultVisibleTableColumns())
       render()
     }, { signal })
     wrapper.addEventListener("keydown", event => {

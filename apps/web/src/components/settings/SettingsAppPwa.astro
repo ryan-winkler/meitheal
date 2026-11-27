@@ -1,13 +1,18 @@
 ---
-import { verifyLicenseKey } from "@meitheal/domain-auth"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
+import {
+  AGPL_LICENSE_SUMMARY,
+  groupChangelogItemsByCategory,
+  readRepoAboutDocs,
+  tokenizeInlineCode,
+} from "../../lib/repo-about-docs"
+import { PWA_TASK_SHORTCUT_KINDS } from "../../lib/pwa-manifest-builder"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
-import SettingsFeedback from "./SettingsFeedback.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
@@ -27,8 +32,7 @@ const version =
     ? __MEITHEAL_VERSION__
     : "0.0.0-dev")
 const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pwa-settings")!
-const license = verifyLicenseKey(process.env.MEITHEAL_LICENSE_KEY)
-const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" : "verified"
+const aboutDocs = await readRepoAboutDocs()
 ---
 
 <section
@@ -39,8 +43,80 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
 >
   <SettingsSectionIntro section={appPwaSection} />
   <div class="settings-grid">
-  <SettingsFeedback version={version} />
-  <!-- About -->
+  <!-- About Meitheal & Sponsors -->
+  <SettingsPanelCard
+    id="about-meitheal-card"
+    icon="sparkles"
+    title="About Meitheal & Sponsors"
+    subtitle="Local-first household & homelab task hub for Home Assistant — independent, open source, and community-supported."
+    tone="accent"
+  >
+    <div class="about-hero-meta">
+      <div class="about-version-pill">
+        <span class="about-version-pill__label">Version</span>
+        <code class="about-version-pill__val">v{version}</code>
+      </div>
+      <div class="about-version-pill">
+        <span class="about-version-pill__label">License</span>
+        <a href="#about-license-card" class="about-version-pill__link">{AGPL_LICENSE_SUMMARY.spdx}</a>
+      </div>
+      <div class="about-version-pill">
+        <span class="about-version-pill__label">Storage</span>
+        <span class="about-version-pill__val">Local SQLite</span>
+      </div>
+    </div>
+
+    <div class="about-sponsors-box">
+      <div class="about-sponsors-box__head">
+        <div>
+          <h3 class="about-sponsors-box__title">Sponsors &amp; Supporters</h3>
+          <p class="about-sponsors-box__desc">
+            Meitheal has no subscriptions or cloud tracking. Sponsors fund Home Assistant Green &amp; Raspberry Pi test hardware, multi-arch builds, and ongoing maintenance — and can feature their <strong>logo right here on the About page</strong>.
+          </p>
+        </div>
+        <div class="about-sponsors-box__cta">
+          <a
+            href="mailto:Sponsor@meitheal.io?subject=Meitheal%20Sponsorship"
+            class="btn btn-primary btn-sm"
+          >
+            <Icon name="star" size={14} sprite={true} />
+            <span>Become a Sponsor</span>
+          </a>
+          <a
+            href="https://ko-fi.com/ryanw_eu"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-sm"
+          >
+            <span>Ko-fi</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="about-sponsors-slots" aria-label="Sponsor showcase">
+        <a
+          href="mailto:Sponsor@meitheal.io?subject=Meitheal%20Sponsor%20Slot"
+          class="about-sponsor-slot"
+        >
+          <span class="about-sponsor-slot__badge">Open Sponsor Slot</span>
+          <span class="about-sponsor-slot__label">Your logo &amp; link here</span>
+          <span class="about-sponsor-slot__hint">Email Sponsor@meitheal.io to feature on Meitheal's About page &amp; README</span>
+        </a>
+        <a
+          href="https://github.com/ryan-winkler/meitheal/blob/dev/COMMERCIAL.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="about-sponsor-slot"
+        >
+          <span class="about-sponsor-slot__badge">Commercial Partner</span>
+          <span class="about-sponsor-slot__label">Commercial License &amp; Support</span>
+          <span class="about-sponsor-slot__hint">Dedicated licensing for commercial deployments</span>
+        </a>
+      </div>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- App Readiness & Companion -->
   <SettingsPanelCard
     title={t("settings.app_readiness_title", locale)}
     subtitle={t("settings.app_readiness_subtitle", locale)}
@@ -54,12 +130,6 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
       </SettingsCallout>
       <p set:html={t("settings.pwa_about_p1", locale)}></p>
       <p>{t("settings.pwa_about_p2", locale)}</p>
-      <p style="margin-top: 8px;">
-        {t("settings.pwa_version", locale)} <code>{version}</code>
-        <span class="pwa-link-separator" aria-hidden="true">·</span>
-        <span>{t("settings.app_license_label", locale)}</span>
-        <span id="app-license-status" class:list={["badge", license.valid ? "badge-active" : "badge-pending"]} style="font-size: 12px; margin-left: 6px;">{t(`settings.app_license_${licenseStatus}`, locale)}</span>
-      </p>
       <div
         id="pwa-status-compact"
         class="pwa-compact-row"
@@ -134,6 +204,45 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
           <small style="margin-top: 4px; display: block;"
             >{t("settings.pwa_uninstall_safe", locale)}</small
           >
+        </div>
+        <!-- App Permissions, Offline Sync & Share -->
+        <div class="pwa-permissions-grid" aria-label="App permissions and offline sync">
+          <div class="pwa-perm-row">
+            <div class="pwa-perm-row__info">
+              <span class="pwa-perm-row__title">
+                <Icon name="bell" size={14} sprite={true} />
+                <span>Notifications</span>
+                <span id="pwa-notif-perm-badge" class="badge badge-pending">Checking…</span>
+              </span>
+              <span class="pwa-perm-row__desc">Allow browser reminders for due tasks and routines.</span>
+            </div>
+            <div class="pwa-perm-row__actions">
+              <button type="button" id="pwa-enable-notif-btn" class="btn btn-secondary btn-sm">
+                <Icon name="bell" size={13} sprite={true} />
+                <span>Enable notifications</span>
+              </button>
+            </div>
+          </div>
+          <div class="pwa-perm-row">
+            <div class="pwa-perm-row__info">
+              <span class="pwa-perm-row__title">
+                <Icon name="refresh" size={14} sprite={true} />
+                <span>Offline Sync Queue</span>
+                <span id="pwa-sync-queue-badge" class="badge badge-active">0 pending</span>
+              </span>
+              <span id="pwa-storage-estimate" class="pwa-perm-row__desc">Open the original Board while online to send offline tasks.</span>
+            </div>
+            <div class="pwa-perm-row__actions">
+              <button type="button" id="pwa-sync-now-btn" class="btn btn-secondary btn-sm">
+                <Icon name="refresh" size={13} sprite={true} />
+                <span>Sync now</span>
+              </button>
+              <button type="button" id="pwa-share-app-btn" class="btn btn-ghost btn-sm">
+                <Icon name="external-link" size={13} sprite={true} />
+                <span>Share Meitheal</span>
+              </button>
+            </div>
+          </div>
         </div>
         <details
           id="pwa-compact-details"
@@ -271,35 +380,51 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
         </div>
       </div>
     </div>
-    <SettingsActionRow
-      style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
-    >
-      <a
-        href="https://github.com/ryan-winkler/meitheal/issues/new/choose"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
-      >
-      <a
-        href="https://github.com/ryan-winkler/meitheal/discussions"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
-      >
-      <a
-        href="https://github.com/ryan-winkler/meitheal"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary settings-link"
-        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
-      >
-    </SettingsActionRow>
+  </SettingsPanelCard>
+
+  <!-- Home Screen Shortcuts & Quick-Capture PWAs (W3C Manifest Shortcuts) -->
+  <SettingsPanelCard
+    id="pwa-shortcuts-card"
+    icon="bolt"
+    title="Home Screen Shortcuts & Quick-Capture PWAs"
+    subtitle="Pin Meitheal or any specific task type (Task, Shopping, Checklist, Routine, Event) directly to your home screen."
+  >
+    <div class="pwa-shortcuts-grid" role="list" aria-label="Installable task-type shortcuts">
+      {PWA_TASK_SHORTCUT_KINDS.map((spec) => (
+        <a
+          href={`/new?kind=${encodeURIComponent(spec.kind)}`}
+          class="pwa-shortcut-tile"
+          role="listitem"
+        >
+          <span class="pwa-shortcut-tile__icon" aria-hidden="true">
+            <Icon name={spec.icon as any} size={18} sprite={true} />
+          </span>
+          <span class="pwa-shortcut-tile__copy">
+            <strong class="pwa-shortcut-tile__title">{spec.label}</strong>
+            <span class="pwa-shortcut-tile__desc">{spec.description}</span>
+          </span>
+          <span class="pwa-shortcut-tile__arrow" aria-hidden="true">
+            <Icon name="external-link" size={14} sprite={true} />
+          </span>
+        </a>
+      ))}
+    </div>
+    <div class="pwa-ios-guide" id="pwa-ios-install-guide">
+      <div class="pwa-ios-guide__head">
+        <img src="/apple-touch-icon.png" alt="Meitheal app icon" width="32" height="32" loading="lazy" decoding="async" class="pwa-ios-guide__icon" />
+        <div>
+          <strong>Install on iPhone, iPad, or Android</strong>
+          <p>
+            Open any shortcut above, then tap <strong>Install</strong> (Android/Desktop Chrome &amp; Edge) or <strong>Share → Add to Home Screen</strong> (iOS Safari). Long-press the main Meitheal app icon anytime to jump straight to <em>New Task</em>, <em>Shopping</em>, <em>Routine</em>, <em>Today</em>, or <em>Calendar</em>.
+          </p>
+        </div>
+      </div>
+    </div>
   </SettingsPanelCard>
 
   <!-- Help & Support -->
   <SettingsPanelCard
+    id="help-support-card"
     icon="book"
     title={t("settings.help_support_title", locale)}
     subtitle={t("settings.help_support_subtitle", locale)}
@@ -355,18 +480,204 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     </SettingsActionRow>
     <SettingsActionRow class="mt-2">
       <a
-        href="#local-feedback"
-        data-settings-section-link
+        href="https://github.com/ryan-winkler/meitheal/issues/new/choose"
+        target="_blank"
+        rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_local_feedback", locale)}</a
+        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal/discussions"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
       >
     </SettingsActionRow>
+    <p class="mt-3 mb-0">
+      <a class="settings-security-link" href="mailto:hi@meitheal.io">
+        {t("settings.help_private_security", locale)}
+      </a>
+    </p>
+  </SettingsPanelCard>
+
+  <!-- License (Tabler License Page Pattern) -->
+  <SettingsPanelCard
+    id="about-license-card"
+    icon="shield-check"
+    title={`License — ${AGPL_LICENSE_SUMMARY.spdx}`}
+    subtitle={AGPL_LICENSE_SUMMARY.title}
+  >
+    <p class="about-license-summary">{AGPL_LICENSE_SUMMARY.summary}</p>
+
+    <div class="about-license-grid" role="region" aria-label="License rights summary">
+      <div class="about-license-col">
+        <h3 class="about-license-col__title">Permissions</h3>
+        <ul class="about-license-list">
+          {AGPL_LICENSE_SUMMARY.permissions.map((item) => (
+            <li class="about-license-list__item">
+              <span class="about-license-icon about-license-icon--allow" aria-hidden="true">
+                <Icon name="check" size={14} sprite={true} />
+              </span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="about-license-col">
+        <h3 class="about-license-col__title">Conditions</h3>
+        <ul class="about-license-list">
+          {AGPL_LICENSE_SUMMARY.conditions.map((item) => (
+            <li class="about-license-list__item">
+              <span class="about-license-icon about-license-icon--cond" aria-hidden="true">
+                <Icon name="info-circle" size={14} sprite={true} />
+              </span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="about-license-col">
+        <h3 class="about-license-col__title">Limitations</h3>
+        <ul class="about-license-list">
+          {AGPL_LICENSE_SUMMARY.limitations.map((item) => (
+            <li class="about-license-list__item">
+              <span class="about-license-icon about-license-icon--limit" aria-hidden="true">
+                <Icon name="x" size={14} sprite={true} />
+              </span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+
+    <div class="about-license-footer">
+      <p class="about-license-note">
+        This is a human-readable summary and not a substitute for the full legal text. A separate commercial license is available for uses outside AGPL-3.0-only terms.
+      </p>
+      <div class="about-license-links">
+        <a
+          href="https://github.com/ryan-winkler/meitheal/blob/dev/LICENSE"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-secondary btn-sm"
+        >
+          <Icon name="file-text" size={14} sprite={true} />
+          <span>LICENSE on GitHub</span>
+        </a>
+        <a
+          href="https://github.com/ryan-winkler/meitheal/blob/dev/COMMERCIAL.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-ghost btn-sm"
+        >
+          <span>Commercial License</span>
+        </a>
+      </div>
+    </div>
+
+    {aboutDocs.licenseText && (
+      <SettingsDisclosure icon="file-text" title="Full AGPL-3.0-only License Text (from repository LICENSE)">
+        <pre class="about-legal-pre">{aboutDocs.licenseText}</pre>
+      </SettingsDisclosure>
+    )}
+    {aboutDocs.noticeText && (
+      <SettingsDisclosure icon="info-circle" title="Third-Party Notices (from repository NOTICE)">
+        <pre class="about-legal-pre">{aboutDocs.noticeText}</pre>
+      </SettingsDisclosure>
+    )}
+  </SettingsPanelCard>
+
+  <!-- Live Repository Changelog (Keep a Changelog 1.1.0) -->
+  <SettingsPanelCard
+    id="about-changelog-card"
+    icon="clipboard-list"
+    title="Changelog"
+    subtitle="Keep a Changelog 1.1.0 release history loaded directly from CHANGELOG.md — human-readable and machine-parseable."
+  >
+    {aboutDocs.releases.length > 0 ? (
+      <div class="about-changelog-list">
+        {aboutDocs.releases.map((release, idx) => {
+          const groups = groupChangelogItemsByCategory(release.items)
+          return (
+            <details class="about-release" open={idx === 0}>
+              <summary class="about-release__summary">
+                <span class="about-release__ver">v{release.version}</span>
+                <span class="about-release__channel">{release.channel}</span>
+                {release.date && <time class="about-release__date" datetime={release.date}>{release.date}</time>}
+                {idx === 0 && <span class="about-release__latest">Latest</span>}
+                <span class="about-release__chevron" aria-hidden="true">
+                  <Icon name="chevron-down" size={14} sprite={true} />
+                </span>
+              </summary>
+              <div class="about-release__body">
+                {release.summary && (
+                  <p class="about-release__lead">
+                    {tokenizeInlineCode(release.summary).map((tok) =>
+                      tok.type === "code" ? <code class="about-inline-code">{tok.value}</code> : tok.value
+                    )}
+                  </p>
+                )}
+                {groups.map((group) => (
+                  <div class="about-release__group">
+                    {group.category && (
+                      <h4 class={`about-release__cat about-release__cat--${group.category.toLowerCase()}`}>
+                        <span class="about-release__cat-dot" aria-hidden="true"></span>
+                        <span>{group.category}</span>
+                      </h4>
+                    )}
+                    <ul class="about-release__items">
+                      {group.items.map((item) => (
+                        <li>
+                          {item.title && (
+                            <strong>
+                              {tokenizeInlineCode(item.title).map((tok) =>
+                                tok.type === "code" ? <code class="about-inline-code">{tok.value}</code> : tok.value
+                              )}
+                              {": "}
+                            </strong>
+                          )}
+                          <span>
+                            {tokenizeInlineCode(item.body).map((tok) =>
+                              tok.type === "code" ? <code class="about-inline-code">{tok.value}</code> : tok.value
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )
+        })}
+      </div>
+    ) : (
+      <p class="about-license-note">
+        Release notes are published on <a href="https://github.com/ryan-winkler/meitheal/releases" target="_blank" rel="noopener noreferrer">GitHub Releases</a>.
+      </p>
+    )}
   </SettingsPanelCard>
 
   </div>
 </section>
 
 <style is:inline>
+  .settings-security-link {
+    color: var(--color-text-primary);
+    text-decoration: underline;
+  }
+
   .pwa-compact-row {
     padding: 8px 0;
     border-top: 1px solid var(--border);
@@ -444,6 +755,49 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     font-size: 12px !important;
     padding: 4px 10px !important;
   }
+  .pwa-permissions-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .pwa-perm-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .pwa-perm-row__info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .pwa-perm-row__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .pwa-perm-row__desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+  .pwa-perm-row__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
   .settings-companion-card {
     display: flex;
     flex-direction: column;
@@ -486,12 +840,467 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     color: var(--text-secondary);
     line-height: 1.6;
   }
+
+  /* About, Sponsors, Tabler License & Live Changelog */
+  .about-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .about-version-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    font-size: 0.78rem;
+  }
+  .about-version-pill__label {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .about-version-pill__val {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: var(--font-mono);
+  }
+  .about-version-pill__link {
+    color: var(--accent-text, var(--accent));
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .about-version-pill__link:hover {
+    text-decoration: underline;
+  }
+  .about-sponsors-box {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
+  }
+  .about-sponsors-box__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .about-sponsors-box__title {
+    margin: 0 0 4px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .about-sponsors-box__desc {
+    margin: 0;
+    max-width: 60ch;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+  .about-sponsors-box__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .about-sponsors-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 10px;
+  }
+  .about-sponsor-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px dashed color-mix(in srgb, var(--accent) 38%, var(--border));
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .about-sponsor-slot:hover {
+    border-style: solid;
+    border-color: var(--accent);
+    background: var(--bg-hover);
+  }
+  .about-sponsor-slot:active {
+    transform: scale(0.98);
+  }
+  .about-sponsor-slot__badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent-text, var(--accent));
+  }
+  .about-sponsor-slot__label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .about-sponsor-slot__hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .about-license-summary {
+    margin: 0 0 14px;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+  .about-license-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .about-license-col {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-secondary);
+  }
+  .about-license-col__title {
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  .about-license-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .about-license-list__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+  }
+  .about-license-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+  }
+  .about-license-icon--allow {
+    background: rgb(var(--success-rgb, 34 197 94) / 0.16);
+    color: var(--success, #22c55e);
+  }
+  .about-license-icon--cond {
+    background: rgb(var(--info-rgb, 56 189 248) / 0.16);
+    color: var(--info, #38bdf8);
+  }
+  .about-license-icon--limit {
+    background: rgb(var(--danger-rgb, 239 68 68) / 0.16);
+    color: var(--danger, #ef4444);
+  }
+  .about-license-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 12px;
+    margin-bottom: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .about-license-note {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    max-width: 56ch;
+    line-height: 1.5;
+  }
+  .about-license-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .about-legal-pre {
+    margin: 0;
+    max-height: 280px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .about-changelog-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .about-release {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-secondary);
+    overflow: hidden;
+  }
+  .about-release__summary {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    row-gap: 4px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8125rem;
+  }
+  .about-release__summary::-webkit-details-marker {
+    display: none;
+  }
+  .about-release__ver {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .about-release__channel {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+  .about-release__latest {
+    padding: 2px 7px;
+    border-radius: var(--radius-sm, 4px);
+    background: rgb(var(--accent-rgb) / 0.16);
+    color: var(--accent-text, var(--accent));
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .about-release__chevron {
+    margin-left: auto;
+    color: var(--text-muted);
+    transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .about-release[open] .about-release__chevron {
+    transform: rotate(180deg);
+  }
+  .about-release__body {
+    padding: 0 14px 14px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+  .about-release__date {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .about-release__lead {
+    margin: 10px 0 8px;
+    color: var(--text-secondary);
+  }
+  .about-release__group {
+    margin-top: 12px;
+  }
+  .about-release__group:first-child {
+    margin-top: 10px;
+  }
+  .about-release__cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+  .about-release__cat-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .about-release__cat--added {
+    border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+    background: color-mix(in srgb, var(--success) 10%, var(--bg-secondary));
+    color: var(--success-text, var(--success));
+  }
+  .about-release__cat--added .about-release__cat-dot { background: var(--success); }
+  .about-release__cat--changed {
+    border-color: color-mix(in srgb, var(--info) 38%, var(--border));
+    background: color-mix(in srgb, var(--info) 10%, var(--bg-secondary));
+    color: var(--info);
+  }
+  .about-release__cat--changed .about-release__cat-dot { background: var(--info); }
+  .about-release__cat--fixed {
+    border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+    background: color-mix(in srgb, var(--warning) 10%, var(--bg-secondary));
+    color: var(--warning-text, var(--warning));
+  }
+  .about-release__cat--fixed .about-release__cat-dot { background: var(--warning); }
+  .about-release__cat--security {
+    border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+    background: color-mix(in srgb, var(--danger) 10%, var(--bg-secondary));
+    color: var(--danger-text, var(--danger));
+  }
+  .about-release__cat--security .about-release__cat-dot { background: var(--danger); }
+  .about-release__items {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .about-release__items li {
+    line-height: 1.55;
+  }
+  .about-release__items strong {
+    color: var(--text-primary);
+  }
+  .about-inline-code {
+    display: inline;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    word-break: break-word;
+  }
+  .pwa-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .pwa-shortcut-tile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .pwa-shortcut-tile:hover {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+  }
+  .pwa-shortcut-tile:active {
+    transform: scale(0.98);
+  }
+  .pwa-shortcut-tile__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm, 8px);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+    color: var(--accent-text, var(--accent));
+    flex-shrink: 0;
+  }
+  .pwa-shortcut-tile__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .pwa-shortcut-tile__title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .pwa-shortcut-tile__desc {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .pwa-shortcut-tile__arrow {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .pwa-ios-guide {
+    padding: 12px 14px;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .pwa-ios-guide__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .pwa-ios-guide__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+  .pwa-ios-guide__head strong {
+    font-size: 0.84rem;
+    color: var(--text-primary);
+  }
+  .pwa-ios-guide__head p {
+    margin: 4px 0 0;
+    font-size: 0.76rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .about-sponsor-slot,
+    .about-release__chevron,
+    .pwa-shortcut-tile {
+      transition: none;
+    }
+  }
 </style>
 
 <script>
   import { getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
   import { clearCurrentOfflineCache, hasUnattributedOfflineData } from "@domains/offline/offline-store"
   import { activateSwWithButtonUi, consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
+  import {
+    countOfflineMutations,
+    OFFLINE_QUEUE_EVENT,
+    replayOfflineMutations,
+  } from "@lib/pwa-offline-sync"
+  import { showToast } from "@lib/toast"
   import { pageLifecycle } from "../../lib/page-lifecycle"
 
   let troubleshootTimer: number | undefined
@@ -566,8 +1375,16 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
       if (details) details.style.display = "block"
     }
 
-    // Install button — show when install prompt available
-    if (installBtn) {
+    // Install button — show when install prompt available (hide in standalone mode)
+    const isStandalone = Boolean(
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone
+    )
+    const installedBadge = document.getElementById("pwa-installed-badge")
+    if (isStandalone) {
+      if (installBtn) installBtn.style.display = "none"
+      if (installedBadge) installedBadge.style.display = "inline-flex"
+    } else if (installBtn) {
       const showInstallBtn = () => {
         if ((window as any).__pwa_install_prompt) {
           installBtn.style.display = ""
@@ -755,6 +1572,119 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     }
   }
 
+  function initPwaPermissionsAndSync(signal: AbortSignal) {
+    const notifBadge = document.getElementById("pwa-notif-perm-badge")
+    const notifBtn = document.getElementById("pwa-enable-notif-btn") as HTMLButtonElement | null
+    const queueBadge = document.getElementById("pwa-sync-queue-badge")
+    const storageEl = document.getElementById("pwa-storage-estimate")
+    const syncBtn = document.getElementById("pwa-sync-now-btn") as HTMLButtonElement | null
+    const shareBtn = document.getElementById("pwa-share-app-btn") as HTMLButtonElement | null
+
+    const updateNotifUi = () => {
+      if (!notifBadge || !notifBtn) return
+      if (!("Notification" in window)) {
+        notifBadge.textContent = "Unsupported"
+        notifBadge.className = "badge badge-pending"
+        notifBtn.hidden = true
+        return
+      }
+      const perm = Notification.permission
+      if (perm === "granted") {
+        notifBadge.textContent = "Allowed"
+        notifBadge.className = "badge badge-active"
+        notifBtn.hidden = true
+      } else if (perm === "denied") {
+        notifBadge.textContent = "Blocked"
+        notifBadge.className = "badge badge-pending"
+        notifBtn.hidden = true
+      } else {
+        notifBadge.textContent = "Not enabled"
+        notifBadge.className = "badge badge-pending"
+        notifBtn.hidden = false
+      }
+    }
+    updateNotifUi()
+    window.addEventListener("meitheal:notification-permission-changed", updateNotifUi, { signal })
+
+    notifBtn?.addEventListener("click", async () => {
+      if (!("Notification" in window)) return
+      try {
+        const res = await Notification.requestPermission()
+        updateNotifUi()
+        if (res === "granted") showToast("Notifications enabled", "success")
+        else if (res === "denied") showToast("Notifications blocked in browser settings", "warning")
+      } catch {
+        showToast("Could not request notification permission", "error")
+      }
+    }, { signal })
+
+    const updateQueueBadge = (count: number) => {
+      if (!queueBadge) return
+      queueBadge.textContent = `${count} pending`
+      queueBadge.className = count > 0 ? "badge badge-pending" : "badge badge-active"
+    }
+
+    void countOfflineMutations().then(updateQueueBadge).catch(() => {})
+    window.addEventListener(OFFLINE_QUEUE_EVENT, ((e: CustomEvent<{ count?: number }>) => {
+      if (typeof e.detail?.count === "number") updateQueueBadge(e.detail.count)
+    }) as EventListener, { signal })
+
+    if (storageEl && navigator.storage?.estimate) {
+      void navigator.storage.estimate().then(({ usage, quota }) => {
+        if (signal.aborted || typeof usage !== "number" || typeof quota !== "number" || quota <= 0) return
+        const usedMb = (usage / (1024 * 1024)).toFixed(1)
+        const quotaMb = Math.round(quota / (1024 * 1024))
+        storageEl.textContent = `Offline outbox ready · Using ${usedMb} MB of ${quotaMb} MB browser storage.`
+      }).catch(() => {})
+    }
+
+    syncBtn?.addEventListener("click", async () => {
+      syncBtn.disabled = true
+      try {
+        const res = await replayOfflineMutations()
+        updateQueueBadge(res.remaining)
+        if (res.synced > 0) {
+          showToast(`Synced ${res.synced} offline ${res.synced === 1 ? "change" : "changes"}`, "success")
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed"))
+        } else if (res.remaining > 0) {
+          showToast("Pending changes remain saved for the original Board.", "info")
+        } else {
+          showToast("Everything is already synced", "success")
+        }
+      } catch {
+        showToast("Could not check the offline queue. Try again on the original Board.", "warning")
+      } finally {
+        syncBtn.disabled = false
+      }
+    }, { signal })
+
+    shareBtn?.addEventListener("click", async () => {
+      const rawPrefix = typeof (window as any).__ingress_path === "string" ? (window as any).__ingress_path.replace(/\/+$/, "") : ""
+      const safePrefix = rawPrefix.startsWith("/") && !rawPrefix.startsWith("//") && !rawPrefix.includes("\\") ? rawPrefix : ""
+      const target = new URL(`${safePrefix}/new`, window.location.origin)
+      if (target.origin !== window.location.origin) return
+      const shareUrl = target.href
+      if (typeof navigator.share === "function") {
+        try {
+          await navigator.share({
+            title: "Meitheal Quick Capture",
+            text: "Capture tasks, shopping lists, and routines in Meitheal.",
+            url: shareUrl,
+          })
+        } catch {
+          // User canceled native share sheet
+        }
+      } else if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(shareUrl)
+          showToast("Quick Capture link copied", "success")
+        } catch {
+          showToast("Couldn’t copy link", "error")
+        }
+      }
+    }, { signal })
+  }
+
   window.__pwaSettingsHmrAc?.abort()
   const hmrAc = new AbortController()
   window.__pwaSettingsHmrAc = hmrAc
@@ -766,6 +1696,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     initPwaCompact(signal)
     initPwaPopout(signal)
     initPwaTroubleshooting(signal)
+    initPwaPermissionsAndSync(signal)
   })
 </script>
 

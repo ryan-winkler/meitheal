@@ -9,8 +9,8 @@ import TaskDetailSection from "./TaskDetailSection.astro"
 import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
 import StrategicEvaluator from "./StrategicEvaluator.astro";
 import Icon from "../ui/Icon.astro";
-import { ensureSchema, getPersistenceClient } from "@domains/tasks"
-import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
 import { t } from "../../i18n/translations"
 
 interface Props { suppressUrlOpen?: boolean; namedBoard?: boolean }
@@ -23,7 +23,9 @@ let serverLayoutJson: string | null = null
 try {
   const client = getPersistenceClient()
   await ensureSchema()
-  serverLayoutJson = await readCachedTaskDetailLayout(client)
+  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
+  const raw = stored[taskDetailServerSettingKey]
+  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
 } catch { /* fallback to built-in layout defaults */ }
 ---
     <!-- Task Detail Centered Panel -->
@@ -54,6 +56,7 @@ try {
           tabindex="0"
         ></div>
         {namedBoard ? <slot /> : <>
+        <input type="file" id="td-attachment-input" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" hidden />
         <!-- Sticky Header Bar -->
         <div class="td-toolbar flex-none bg-bg-card z-20">
           <div class="td-toolbar__top">
@@ -63,7 +66,7 @@ try {
               <a href="#" id="td-parent" class="text-xs text-text-secondary hidden hover:text-accent hover:underline mb-0.5 truncate"></a>
               <div class="flex items-center gap-2 text-text-secondary">
                 <span id="td-type-icon" class="flex items-center justify-center shrink-0" style="width:16px;height:16px"></span>
-                <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
+                <span id="td-id" class="text-xs font-mono bg-bg-input text-[color:var(--accent-text)] border border-border px-2 py-0.5 rounded cursor-help"></span>
                 <span id="td-task-kind-badge" class="hidden text-xs font-medium px-2 py-0.5 rounded bg-bg-input text-text-secondary border border-border"></span>
                 <span id="td-created" class="text-[10px] hidden @md/task-inspector:inline"></span>
                 <span class="text-border hidden @md/task-inspector:inline">•</span>
@@ -73,8 +76,8 @@ try {
           </div>
           <div class="flex gap-1.5 items-center flex-none">
             <div id="td-task-actions" hidden class="flex gap-1.5 items-center">
-              <button id="td-toggle-promote" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
-                <Icon name="star" size={18} sprite={true} />
+              <button id="td-toggle-promote" type="button" aria-pressed="false" disabled class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
+                <Icon name="star" size={18} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
                 <Icon name="link" size={18} sprite={true} />
@@ -99,16 +102,27 @@ try {
             <div class="td-toolbar__view">
               <button id="td-toggle-focus" type="button" class="btn btn-secondary"
                 data-enter-label={t("task_layout.focus", locale)} data-exit-label={t("task_layout.exit_focus", locale)}>
-                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" sprite={true} />
-                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" sprite={true} />
+                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" />
+                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" />
                 <span>{t("task_layout.focus", locale)}</span>
               </button>
               <button id="td-toggle-layout" type="button" class="td-layout-icon-btn" aria-expanded="false"
                 aria-controls="td-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
-                <Icon name="adjustments-horizontal" size={19} sprite={true} />
+                <Icon name="adjustments-horizontal" size={19} />
               </button>
+              <span id="td-save-status" class="td-save-status" role="status" aria-live="polite" data-state="idle">
+                <Icon name="check" size={13} sprite={true} class="td-save-status__icon" />
+                <span id="td-save-status-text"></span>
+              </span>
             </div>
-            <button id="td-toggle-done" type="button" class="btn btn-primary td-done-btn">Mark as Done</button>
+            <div class="td-toolbar__primary">
+              <button id="td-deferral-action" type="button" class="btn btn-secondary td-defer-btn"
+                data-defer-label={t("deferral.defer", locale)} data-resume-label={t("deferral.resume", locale)} hidden>
+                <Icon name="clock" size={15} sprite={true} />
+                <span id="td-deferral-action-label">{t("deferral.defer", locale)}</span>
+              </button>
+              <button id="td-toggle-done" type="button" class="btn btn-primary td-done-btn">Mark as Done</button>
+            </div>
           </div>
         </div>
 
@@ -138,12 +152,12 @@ try {
           <div class="td-reading-column">
             <div id="td-layout-panel" hidden>
               <h2 class="td-layout-title">{t("task_layout.layout", locale)}</h2>
-              <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
+              <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} showEntityForms={false} />
             </div>
             <div class="td-task-actions flex flex-wrap items-center gap-2">
               <button id="td-pin-action" type="button" aria-pressed="false"
                 class="inline-flex items-center gap-2 min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover aria-pressed:border-accent aria-pressed:bg-accent/10 aria-pressed:text-accent" hidden>
-                <Icon name="pin" size={16} sprite={true} />
+                <Icon name="pin" size={16} />
                 <span>{t("pins.pin", locale)}</span>
               </button>
               <button id="td-pin-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
@@ -151,8 +165,6 @@ try {
               </button>
               <p id="td-pin-status" role="status" aria-atomic="true" class="text-sm text-text-secondary" hidden></p>
               <span id="td-deferred-badge" class="rounded bg-accent/10 px-2 py-1 text-sm text-accent" hidden>{t("deferral.title", locale)}</span>
-              <button id="td-deferral-action" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover"
-                data-defer-label={t("deferral.defer", locale)} data-resume-label={t("deferral.resume", locale)} hidden></button>
               <button id="td-deferral-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
                 {t("deferral.refresh_task", locale)}
               </button>
@@ -161,7 +173,6 @@ try {
                 <span class="block">{t("task_modal.copy_link_manually", locale)}</span>
                 <input type="url" id="td-copy-link-value" class="form-input w-full" readonly />
               </label>
-              <div id="td-task-reactions"></div>
             </div>
             <!-- Title -->
             <div class="td-title-row">
@@ -180,7 +191,7 @@ try {
               <div class="td-description-view">
                 <div class="td-description-view__actions">
                   <button id="td-desc-edit-btn-hover" class="btn btn-secondary" type="button">
-                    <Icon name="pencil" size={15} sprite={true} />
+                    <Icon name="pencil" size={15} />
                     {t("task_layout.edit_description", locale)}
                   </button>
                   <span id="td-desc-saved" class="text-accent text-xs" style="display:none;" role="status">Saved</span>
@@ -193,7 +204,7 @@ try {
                 <div class="relative">
                   <textarea
                     id="td-description"
-                    class="form-input min-h-[160px] resize-y text-sm w-full focus:ring-1 focus:ring-accent font-mono leading-relaxed"
+                    class="form-input min-h-[160px] resize-y text-sm w-full font-mono leading-relaxed"
                     placeholder="Add a detailed description (Markdown supported)..."
                     aria-label={t("tasks.description", locale)}
                     aria-describedby="td-desc-reference-hint"
@@ -351,14 +362,14 @@ try {
                       <input id="td-time-tracked" type="number" min="0" step="1" class="form-input text-xs py-1.5 bg-bg-card hover:bg-bg-hover border border-border transition-colors w-full min-w-0 font-mono placeholder-text-muted" placeholder="0" />
                     </div>
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0" data-layout-item="recurrence">
-                    <label for="td-recurrence" class="text-xs text-text-secondary font-medium">Recurrence Pattern</label>
+                    <label for="td-recurrence" class="text-xs text-text-secondary font-medium">Recurrence</label>
                     <select id="td-recurrence" class="form-select text-xs py-1.5 px-2 bg-bg-card hover:border-border-focus border border-border transition-colors w-full min-w-0 cursor-pointer font-medium">
-                      <option value="">None (One-time)</option>
-                      <option value="FREQ=DAILY">Every day</option>
-                      <option value="FREQ=WEEKLY">Every week</option>
-                      <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday</option>
-                      <option value="FREQ=MONTHLY">Every month</option>
-                      <option value="FREQ=YEARLY">Every year</option>
+                      <option value="">Does not repeat</option>
+                      <option value="FREQ=DAILY">Daily</option>
+                      <option value="FREQ=WEEKLY">Weekly</option>
+                      <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday (Monday to Friday)</option>
+                      <option value="FREQ=MONTHLY">Monthly</option>
+                      <option value="FREQ=YEARLY">Annually</option>
                     </select>
                     <span id="td-recurrence-desc" class="col-start-2 text-xs text-text-secondary hidden"></span>
                   </div>
@@ -366,6 +377,19 @@ try {
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0" data-layout-item="reminder">
                     <label for="td-reminder" class="text-xs text-text-secondary font-medium">Reminder Time</label>
                     <input id="td-reminder" type="datetime-local" class="form-input text-xs py-1.5 bg-bg-card hover:border-border-focus border border-border transition-colors w-full min-w-0 cursor-pointer" />
+                  </div>
+
+                  <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0" data-layout-item="calendar-push">
+                    <span class="text-xs text-text-secondary font-medium">Calendar Sync</span>
+                    <button
+                      id="td-push-calendar-btn"
+                      type="button"
+                      class="btn btn-sm btn-secondary justify-center gap-1.5 w-full"
+                      title="Manually push this ticket's due date or event schedule to the Board's connected Home Assistant calendar"
+                    >
+                      <Icon name="calendar-event" size={14} sprite={true} />
+                      <span>Push to Calendar</span>
+                    </button>
                   </div>
                 </div>
 
@@ -438,15 +462,17 @@ try {
             <TaskDetailSection name="scoring"><StrategicEvaluator embedded /></TaskDetailSection>
 
             <TaskDetailSection name="checklists">
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <span class="text-[11px] text-text-muted">Lightweight steps inside this task</span>
-                <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
-                    <Icon name="plus" size={12} sprite={true} />
+              <div class="td-checklist-head">
+                <span id="td-checklist-subtitle" class="td-checklist-subtitle">Lightweight steps inside this task</span>
+                <div class="td-checklist-head-actions">
+                  <button type="button" id="td-checklist-uncheck-all" class="btn btn-ghost btn-sm td-checklist-uncheck-btn" hidden>
+                    Uncheck all
+                  </button>
+                  <button type="button" id="td-add-checklist-item" class="td-add-item-btn">
+                    <Icon name="plus" size={14} sprite={true} />
                     <span>Add Item</span>
-                </button>
-                <button type="button" id="td-checklist-uncheck-all" class="btn btn-ghost text-xs px-2 py-1" hidden>
-                  Uncheck all
-                </button>
+                  </button>
+                </div>
               </div>
               <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
                   <div class="w-full mr-3 h-1.5 bg-bg-card rounded-full overflow-hidden border border-border">
@@ -465,11 +491,10 @@ try {
 
             <TaskDetailSection name="attachments">
               <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
+                <button type="button" id="td-add-attachment-btn" class="btn btn-ghost btn-sm">
                   <Icon name="plus" size={12} sprite={true} />
-                  Add Image
-                  <input type="file" id="td-attachment-input" accept="image/*" class="sr-only" />
-                </label>
+                  Add image
+                </button>
               </div>
               <div id="td-attachments" class="flex flex-wrap gap-3 mt-2"></div>
             </TaskDetailSection>
@@ -503,7 +528,7 @@ try {
                     <div id="td-add-subtask">
                       <div class="flex items-center gap-3 flex-wrap">
                         <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
-                          <Icon name="plus" size={12} sprite={true} />
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                           Add child item
                         </button>
                         <button type="button" id="td-add-subtask-full-btn" class="text-xs text-text-secondary hover:text-text-primary transition-colors">Full form…</button>
@@ -546,89 +571,113 @@ try {
             </TaskDetailSection>
 
             <TaskDetailSection name="comments">
-              <p id="td-comment-link-status" tabindex="-1" role="status"
-                class="text-sm text-text-primary [&:not(:empty)]:mb-3 focus:outline-2 focus:outline-accent"
-                data-unavailable={t("task_modal.comment_link_unavailable", locale)}
-                data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
-              <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)} data-task-label={t("task_modal.kind_task", locale)}
-                class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
-              <template id="td-reaction-controls"
-                data-task-label={t("reactions.task", locale)}
-                data-comment-label={t("reactions.comment", locale)}
-                data-loading={t("reactions.loading", locale)}
-                data-saving={t("reactions.saving", locale)}
-                data-empty={t("reactions.empty", locale)}
-                data-unavailable={t("reactions.unavailable", locale)}
-                data-load-failed={t("reactions.load_failed", locale)}
-                data-save-failed={t("reactions.save_failed", locale)}
-                data-remove-failed={t("reactions.remove_failed", locale)}
-                data-participant-required={t("task_modal.participant_required", locale)}
-                data-invalid={t("reactions.invalid", locale)}
-                data-saved={t("reactions.saved", locale)}
-                data-removed={t("reactions.removed", locale)}
-                data-remove-label={t("reactions.remove", locale)}
-                data-remove-description={t("reactions.remove_description", locale)}>
-                <p data-reaction-status role="status" class="text-sm text-text-secondary [&:not(:empty)]:my-2"></p>
-                <p data-reaction-error role="alert" class="text-sm text-text-primary [&:not(:empty)]:my-2"></p>
-                <button type="button" data-reaction-retry class="btn btn-ghost min-h-11" hidden>{t("reactions.retry", locale)}</button>
-                <div data-reaction-groups class="flex flex-wrap gap-1.5 my-2" hidden></div>
-                <ul data-reaction-list class="space-y-1" role="list"></ul>
-                <div class="flex flex-wrap gap-2">
-                  <button type="button" data-reaction-newest class="btn btn-ghost min-h-11" hidden>{t("reactions.newest", locale)}</button>
-                  <button type="button" data-reaction-older class="btn btn-ghost min-h-11" hidden>{t("reactions.older", locale)}</button>
+              <div class="td-chat-card">
+                <div class="td-chat-header">
+                  <div class="td-chat-header__title">
+                    <Icon name="message-circle" size={14} sprite />
+                    <span>Discussion &amp; Reactions</span>
+                  </div>
+                  <div id="td-task-reactions" class="td-chat-reactions"></div>
                 </div>
-                <form data-reaction-form class="mt-2 space-y-2" hidden>
-                  <label class="block text-sm text-text-secondary">
-                    {t("reactions.input", locale)}
-                    <input type="text" class="form-input mt-1 w-full min-h-11" maxlength="128" autocomplete="off" dir="auto" required />
-                  </label>
-                  <div class="flex flex-wrap items-center gap-1">
-                    {["👍", "❤️", "🎉", "👀"].map(emoji => (
-                      <button type="button" data-reaction-emoji={emoji} class="btn btn-ghost min-h-11 min-w-11">{emoji}</button>
-                    ))}
+                <div class="td-chat-body">
+                  <p id="td-comment-link-status" tabindex="-1" role="status"
+                    class="text-sm text-text-primary [&:not(:empty)]:mb-3 focus:outline-2 focus:outline-accent"
+                    data-unavailable={t("task_modal.comment_link_unavailable", locale)}
+                    data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
+                  <div class="chat">
+                    <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)} data-task-label={t("task_modal.kind_task", locale)}
+                      class="chat-bubbles"></div>
                   </div>
-                  <button type="submit" class="btn btn-primary min-h-11">{t("reactions.add", locale)}</button>
-                </form>
-              </template>
-              <template id="td-comment-management"
-                data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
-                data-participant-required={t("task_modal.participant_required", locale)}
-                data-mention-failed={t("mention_inbox.write_error", locale)}
-                data-mention-context-changed={t("mention_inbox.context_changed", locale)}
-                data-edit-failed={t("task_modal.comment_edit_failed", locale)}
-                data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
-                <div data-comment-actions class="flex flex-wrap gap-2">
-                  <button data-comment-edit type="button" class="btn btn-ghost min-h-11">{t("task_modal.comment_edit", locale)}</button>
-                  <button data-comment-delete type="button" class="btn btn-ghost min-h-11">{t("task_modal.comment_delete", locale)}</button>
                 </div>
-                <form data-comment-editor class="mt-2" hidden>
-                  <div class="relative">
-                    <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" required></textarea>
-                  </div>
-                  <p data-reference-hint class="text-xs text-text-muted">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
-                  <div class="flex flex-wrap gap-2">
-                    <button type="submit" class="btn btn-primary min-h-11">{t("task_modal.comment_save", locale)}</button>
-                    <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("common.cancel", locale)}</button>
-                  </div>
-                </form>
-                <p role="alert" class="text-sm text-text-primary [&:not(:empty)]:mt-2"></p>
-              </template>
-              <div class="flex gap-3 items-start relative mt-6">
-                <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
-                <div class="min-w-0 flex-1">
-                  <div class="relative">
-                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
-                  </div>
-                    <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
-                    <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden
-                      data-mention-failed={t("mention_inbox.write_error", locale)}
-                      data-mention-context-changed={t("mention_inbox.context_changed", locale)}
-                      data-failed={t("task_modal.comment_failed", locale)}
-                      data-participant-required={t("task_modal.participant_required", locale)}></p>
-                    <div class="flex justify-end items-center gap-3 mt-2">
-                      <span class="text-[10px] text-text-muted hidden @md/task-inspector:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
-                      <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>
+                <template id="td-reaction-controls"
+                  data-task-label={t("reactions.task", locale)}
+                  data-comment-label={t("reactions.comment", locale)}
+                  data-loading={t("reactions.loading", locale)}
+                  data-saving={t("reactions.saving", locale)}
+                  data-empty={t("reactions.empty", locale)}
+                  data-unavailable={t("reactions.unavailable", locale)}
+                  data-load-failed={t("reactions.load_failed", locale)}
+                  data-save-failed={t("reactions.save_failed", locale)}
+                  data-remove-failed={t("reactions.remove_failed", locale)}
+                  data-participant-required={t("task_modal.participant_required", locale)}
+                  data-invalid={t("reactions.invalid", locale)}
+                  data-saved={t("reactions.saved", locale)}
+                  data-removed={t("reactions.removed", locale)}
+                  data-remove-label={t("reactions.remove", locale)}
+                  data-remove-description={t("reactions.remove_description", locale)}>
+                  <div class="td-reaction-popover">
+                    <form data-reaction-form class="td-reaction-form" hidden>
+                      <div class="td-emoji-quick-row" role="group" aria-label="Quick reactions">
+                        {["👍", "❤️", "🎉", "👀", "🔥", "✅"].map(emoji => (
+                          <button type="button" data-reaction-emoji={emoji} class="td-emoji-quick-btn" aria-pressed="false">{emoji}</button>
+                        ))}
+                      </div>
+                      <div class="td-reaction-input-row">
+                        <input type="text" class="form-input td-reaction-input" aria-label={t("reactions.input", locale)} placeholder={t("reactions.input", locale)} maxlength="128" autocomplete="off" dir="auto" required />
+                        <button type="submit" class="btn btn-primary btn-sm">{t("reactions.add", locale)}</button>
+                      </div>
+                      <p class="td-reaction-policy-hint">One reaction per person — picking another switches yours.</p>
+                    </form>
+                    <p data-reaction-status role="status" class="td-reaction-status"></p>
+                    <p data-reaction-error role="alert" class="td-reaction-error"></p>
+                    <button type="button" data-reaction-retry class="btn btn-ghost btn-sm" hidden>{t("reactions.retry", locale)}</button>
+                    <ul data-reaction-list class="td-reaction-list" role="list" hidden></ul>
+                    <div class="td-reaction-pager">
+                      <button type="button" data-reaction-newest class="btn btn-ghost btn-sm" hidden>{t("reactions.newest", locale)}</button>
+                      <button type="button" data-reaction-older class="btn btn-ghost btn-sm" hidden>{t("reactions.older", locale)}</button>
                     </div>
+                  </div>
+                </template>
+                <template id="td-comment-management"
+                  data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
+                  data-participant-required={t("task_modal.participant_required", locale)}
+                  data-mention-failed={t("mention_inbox.write_error", locale)}
+                  data-mention-context-changed={t("mention_inbox.context_changed", locale)}
+                  data-edit-failed={t("task_modal.comment_edit_failed", locale)}
+                  data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
+                  <div data-comment-actions class="td-chat-bubble-actions">
+                    <button data-comment-edit type="button" class="td-chat-action-link">{t("task_modal.comment_edit", locale)}</button>
+                    <button data-comment-delete type="button" class="td-chat-action-link td-chat-action-link--danger">{t("task_modal.comment_delete", locale)}</button>
+                  </div>
+                  <form data-comment-editor class="mt-2" hidden>
+                    <div class="relative">
+                      <textarea class="form-input w-full resize-y text-sm" aria-label={t("task_modal.comment_edit", locale)} aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" required></textarea>
+                    </div>
+                    <p data-reference-hint class="text-xs text-text-muted mt-1">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                      <button type="submit" class="btn btn-primary btn-sm">{t("task_modal.comment_save", locale)}</button>
+                      <button data-comment-cancel type="button" class="btn btn-ghost btn-sm">{t("common.cancel", locale)}</button>
+                    </div>
+                  </form>
+                  <p role="alert" class="text-xs text-danger [&:not(:empty)]:mt-2"></p>
+                </template>
+                <div class="td-chat-footer">
+                  <div class="td-chat-composer-wrap relative">
+                    <div class="input-group input-group-flat td-chat-input-group">
+                      <textarea id="td-comment-input" rows="1" class="form-control td-chat-textarea" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
+                      <span class="input-group-text td-chat-input-addons">
+                        <button type="button" id="td-chat-emoji-btn" class="td-chat-tool-btn" title="React or insert emoji" aria-label="Toggle task reactions">
+                          <Icon name="mood-smile" size={17} sprite={true} />
+                        </button>
+                        <button type="button" id="td-chat-attach-btn" class="td-chat-tool-btn" title="Attach image" aria-label="Attach image">
+                          <Icon name="paperclip" size={18} sprite={true} />
+                        </button>
+                      </span>
+                    </div>
+                    <button type="button" id="td-comment-submit" class="btn btn-primary td-chat-send-btn" title="Post comment (Ctrl/Cmd+Enter)">
+                      <Icon name="send" size={16} sprite={true} />
+                      <span>Send</span>
+                    </button>
+                  </div>
+                  <div class="td-chat-composer-meta">
+                    <p id="td-comment-reference-hint" class="text-xs text-text-muted m-0">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
+                    <span class="text-[10px] text-text-muted hidden @md/task-inspector:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
+                  </div>
+                  <p id="td-comment-error" class="text-xs text-danger mt-2 mb-0" role="alert" hidden
+                    data-mention-failed={t("mention_inbox.write_error", locale)}
+                    data-mention-context-changed={t("mention_inbox.context_changed", locale)}
+                    data-failed={t("task_modal.comment_failed", locale)}
+                    data-participant-required={t("task_modal.participant_required", locale)}></p>
                 </div>
               </div>
             </TaskDetailSection>
@@ -669,10 +718,10 @@ try {
     </div>
 
 <script>
-  import "@lib/task-modal-controller"
+  import "@lib/task-detail-lazy-loader"
 </script>
 
-<style>
+<style is:inline>
   .td-event-schedule {
     display: flex;
     flex-direction: column;
@@ -687,14 +736,14 @@ try {
     align-items: center;
     gap: 8px;
   }
-  :global(.td-cl-row) {
+  .td-cl-row {
     flex-wrap: wrap;
     min-height: 44px;
     padding: 4px 0;
   }
-  :global(.td-shop-qty) { width: 56px; text-align: center; padding: 4px; }
-  :global(.td-shop-cat) { width: 112px; padding: 4px; }
-  :global(.td-cl-del) {
+  .td-shop-qty { width: 56px; text-align: center; padding: 4px; }
+  .td-shop-cat { width: 112px; padding: 4px; }
+  .td-cl-del {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -703,11 +752,61 @@ try {
     opacity: 0;
     transition: opacity 120ms ease;
   }
-  :global(.td-cl-row:hover .td-cl-del),
-  :global(.td-cl-row:focus-within .td-cl-del) {
+  .td-cl-row:hover .td-cl-del,
+  .td-cl-row:focus-within .td-cl-del {
     opacity: 1;
   }
   @media (hover: none), (pointer: coarse) {
-    :global(.td-cl-del) { opacity: 1; }
+    .td-cl-del { opacity: 1; }
+  }
+  .td-save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    opacity: 0;
+    transform: translateY(-2px) scale(0.96);
+    pointer-events: none;
+    transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .td-save-status[data-state="saving"] {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+  }
+  .td-save-status[data-state="saving"] .td-save-status__icon {
+    display: none;
+  }
+  .td-save-status[data-state="saved"] {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    color: var(--success-text, #10b981);
+    background: color-mix(in srgb, var(--success, #10b981) 14%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--success, #10b981) 42%, var(--border));
+  }
+  @keyframes tdFieldSavedPulse {
+    0% {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--success, #10b981) 55%, transparent);
+      border-color: var(--success, #10b981);
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+  .td-field--saved {
+    animation: tdFieldSavedPulse 850ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .td-save-status,
+    .td-field--saved {
+      transition: none;
+      animation: none;
+    }
   }
 </style>

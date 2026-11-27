@@ -75,6 +75,7 @@ const ALLOWED_KEYS = new Set([
   "task-detail-width",
   "backlog_mode",
   "completed_auto_hide_days",
+  "shopping_categories",
   // ── Notifications ──
   "enable-notifications",
   "notification-sound",

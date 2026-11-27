@@ -36,13 +36,13 @@ function trimBareUrlPunctuation(url: string): { cleaned: string; trailing: strin
 
 function renderInline(raw: string): string {
   const codeSpans: string[] = []
-  const links: string[] = []
+  const linkTokens: string[] = []
   let text = escapeHtml(raw.replace(/\u0000/g, "")).replace(/`([^`]+)`/g, (_m, code: string) => {
     const idx = codeSpans.push(`<code>${code}</code>`) - 1
     return `\u0000C${idx}\u0000`
   })
   const stashLink = (anchorHtml: string) => {
-    const idx = links.push(anchorHtml) - 1
+    const idx = linkTokens.push(anchorHtml) - 1
     return `\u0000L${idx}\u0000`
   }
 
@@ -76,7 +76,7 @@ function renderInline(raw: string): string {
     .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
 
   return text
-    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => links[Number(idx)] ?? "")
+    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => linkTokens[Number(idx)] ?? "")
     .replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
 }
 

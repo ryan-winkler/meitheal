@@ -3,7 +3,6 @@ import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/on
 import { commentMentionContextHeader, commentMentionToken } from "@lib/comment-mentions"
 import { fetchCommentPrivate } from "@lib/comment-mention-client"
 import { taskDetailPath } from "@lib/task-page-url"
-import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const limit = 5
 
@@ -23,9 +22,9 @@ function ticketLabel(item: SearchResultItem): string {
 }
 
 export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSignal): () => void {
-  const picker = qs<HTMLElement>(overlay, "#td-task-reference-picker")
-  const status = qs<HTMLElement>(picker, '[role="status"]')
-  const list = qs<HTMLElement>(picker, '[role="listbox"]')
+  const picker = overlay.querySelector<HTMLElement>("#td-task-reference-picker")
+  const status = picker?.querySelector<HTMLElement>('[role="status"]')
+  const list = picker?.querySelector<HTMLElement>('[role="listbox"]')
   const home = picker?.parentElement
   if (!picker || !status || !list || !home) return () => {}
 
@@ -69,10 +68,10 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
     timer = window.setTimeout(async () => {
       if (!isCurrent(state)) return
       input.after(picker)
-      setAttr(input, "aria-controls", list.id)
+      input.setAttribute("aria-controls", list.id)
       picker.hidden = false
       const person = token.kind === "person"
-      setAttr(list, "aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
+      list.setAttribute("aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
       status.textContent = (person ? picker.dataset.personLoading : picker.dataset.loading) ?? ""
       picker.scrollIntoView({ block: "nearest" })
       try {
@@ -114,15 +113,18 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
             })
         }
         list.replaceChildren(...results.map((item, index) => {
-          const option = domEl("li")
+          const option = document.createElement("li")
           option.id = `${list.id}-${index}`
           option.dataset.index = String(index)
-          setAttr(option, "role", "option")
-          setAttr(option, "aria-selected", "false")
+          option.setAttribute("role", "option")
+          option.setAttribute("aria-selected", "false")
           option.className = "flex min-h-11 cursor-pointer select-none items-center gap-2 rounded px-3 py-2 hover:bg-bg-hover aria-selected:outline-2 aria-selected:-outline-offset-2 aria-selected:outline-accent"
-          const title = domEl("span", "line-clamp-2 min-w-0 flex-1 wrap-anywhere")
+          const title = document.createElement("span")
+          title.className = "line-clamp-2 min-w-0 flex-1 wrap-anywhere"
           title.textContent = item.title
-          const ticket = domEl("span", "shrink-0 text-xs text-text-secondary", item.detail)
+          const ticket = document.createElement("span")
+          ticket.className = "shrink-0 text-xs text-text-secondary"
+          ticket.textContent = item.detail
           option.append(title)
           if (item.detail) option.append(ticket)
           return option
@@ -172,11 +174,11 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
       event.preventDefault()
       if (event.key === "Enter") return insert(selected)
       const next = event.key === "ArrowDown" ? selected + 1 : selected < 0 ? results.length - 1 : selected - 1
-      setAttr(list.children[selected], "aria-selected", "false")
+      list.children[selected]?.setAttribute("aria-selected", "false")
       selected = (next + results.length) % results.length
       const option = list.children[selected]!
-      setAttr(option, "aria-selected", "true")
-      setAttr(input, "aria-activedescendant", option.id)
+      option.setAttribute("aria-selected", "true")
+      input.setAttribute("aria-activedescendant", option.id)
       option.scrollIntoView({ block: "nearest" })
     } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Enter"].includes(event.key)) {
       close()

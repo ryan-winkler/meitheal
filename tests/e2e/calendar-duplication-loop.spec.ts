@@ -38,6 +38,7 @@ import {
 import { sanitizeTodoTitle } from "../../apps/web/src/lib/cleanup-corrupt-titles"
 import { TaskRepository, resolveIntegrationScope } from "../../apps/web/src/domains/tasks"
 import { POST as saveCredentials } from "../../apps/web/src/pages/api/integrations/calendar/caldav-credentials"
+import { POST as pushCalendarRoute } from "../../apps/web/src/pages/api/integrations/calendar/push"
 
 type Database = ReturnType<typeof getPersistenceClient>
 type HAFixture = Awaited<ReturnType<typeof startHAWebSocketFixture>>
@@ -198,6 +199,15 @@ test("native task due-date reminder & outbound write-back include line break, ti
   await db.execute("CREATE TRIGGER fail_reminder_log BEFORE INSERT ON task_activity_log WHEN NEW.event_type='calendar_sync' BEGIN SELECT RAISE(ABORT, 'fixture'); END")
   const ctx = await resolveIntegrationScope(db, calFixture.binding.id, calFixture.binding.generation, { resource: "task", action: "read" })
   if (!ctx.ok) throw new Error("Missing fixture scope")
+  expect(await repo.updateTask(taskId, { labels: '["no-sync"]' })).toMatchObject({ ok: true })
+  const manual = await integrationRoute(pushCalendarRoute, "/api/integrations/calendar/push", { task_id: taskId })
+  expect(manual.status).toBe(409)
+  expect(await manual.text()).toContain("no-sync")
+  expect(await pushTaskToCalendar(ctx.value, taskId, createdTask.title, dueIso)).toBe(false)
+  await checkDueDates(now)
+  expect(ha.serviceCalls.filter(call => ["create_event", "update_event"].includes(call.service))).toHaveLength(0)
+  resetDueDateRemindersForTests()
+  expect(await repo.updateTask(taskId, { labels: "[]" })).toMatchObject({ ok: true })
   holdServices.push({ domain: "calendar", service: "create_event" })
   const reminding = checkDueDates(now)
   await expect.poll(() => ha.serviceCalls.filter(c => c.service === "create_event").length).toBe(1)

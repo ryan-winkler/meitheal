@@ -1,14 +1,17 @@
 import { createClientLogger } from "@lib/client-logger"
+import { bindCardPreferencesSync } from "@lib/card-view-sync"
 import { onTaskCompleted } from "@lib/gamification-hook"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { taskApi } from "@lib/task-api-client"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { UPCOMING_SECTIONS } from "@lib/upcoming-registry"
 
 const log = createClientLogger("tasks", "upcoming-shell")
 
 export function initUpcomingPage(): void {
+  const shell = document.getElementById("upcoming-shell")
   initPageShellNavigation({
     barId: "upcoming-bar",
     shellId: "upcoming-shell",
@@ -18,8 +21,69 @@ export function initUpcomingPage(): void {
     preserveOverviewOnLoad: true,
   })
 
+  bindCardPreferencesSync(shell, pageLifecycle.signal)
   initTaskCheckboxes()
+  initPromoteButtons()
+  initTaskRowClicks(shell)
   initAccordions()
+}
+
+function initPromoteButtons(): void {
+  document.querySelectorAll<HTMLButtonElement>(".upcoming-promote-btn").forEach((btn) => {
+    pageLifecycle.on(btn, "click", async (event) => {
+      event.stopPropagation()
+      const id = btn.dataset.id
+      if (!id || btn.dataset.busy === "true") return
+      btn.dataset.busy = "true"
+      const current = btn.getAttribute("aria-pressed") === "true"
+      const next = !current
+      const row = btn.closest<HTMLElement>(".task-item")
+
+      const applyState = (promoted: boolean) => {
+        btn.classList.toggle("is-promoted", promoted)
+        btn.setAttribute("aria-pressed", String(promoted))
+        const label = promoted ? "Remove promotion" : "Promote to top"
+        btn.title = label
+        btn.setAttribute("aria-label", label)
+        if (row) {
+          row.dataset.promoted = String(promoted)
+          const labelsWrap = row.querySelector<HTMLElement>(".task-labels")
+          const existingPill = labelsWrap?.querySelector<HTMLElement>(".task-promoted-pill")
+          if (promoted && labelsWrap && !existingPill) {
+            const pill = document.createElement("span")
+            pill.className = "task-promoted-pill"
+            pill.textContent = "Promoted"
+            labelsWrap.prepend(pill)
+          } else if (!promoted && existingPill) {
+            existingPill.remove()
+          }
+        }
+      }
+
+      applyState(next)
+      try {
+        await taskApi.updateTask(id, { is_promoted: next })
+        showToast(next ? "common.promoted" : "common.demoted")
+      } catch (error) {
+        applyState(current)
+        log.error("Failed to toggle upcoming task promotion", error)
+        showToast("common.failed_update", "error")
+      } finally {
+        delete btn.dataset.busy
+      }
+    })
+  })
+}
+
+function initTaskRowClicks(shell: HTMLElement | null): void {
+  if (!shell) return
+  pageLifecycle.on(shell, "click", (event) => {
+    const target = event.target instanceof HTMLElement ? event.target : null
+    if (!target || event.defaultPrevented || target.closest("a, button, input, label")) return
+    const row = target.closest<HTMLElement>(".task-item")
+    const id = row?.dataset.id
+    if (id) openTaskDetailHandoff(id)
+  })
 }
 
 function initTaskCheckboxes(): void {

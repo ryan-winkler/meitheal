@@ -8,9 +8,7 @@ description: "Enroll genuinely new databases and keep unknown restored access ru
 
 Date 2026-11-19
 
-Status Accepted (superseded for Home Assistant cold backup marker inclusion and pre-0016 local upgrades by [ADR 0030](0030-home-assistant-backup-and-upgrade-continuity.md))
-
-> **Update ([ADR 0030](0030-home-assistant-backup-and-upgrade-continuity.md)):** Home Assistant cold backups now include `/data/meitheal-board-grants.json` (excluding only `*.log`, `*.tmp`, and `meitheal-board-grants-pending`), and genuine non-empty local pre-`0016` Meitheal upgrades (`schema_version < 26`) auto-enroll when no conflicting marker or pending journal entry exists on disk. Post-`0016` continuity locks, conflicting-marker cold-replay blocks, empty/unknown file rejections, and explicit offline operator recovery remain unchanged.
+Status Accepted
 
 ## Context
 

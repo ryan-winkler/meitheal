@@ -69,7 +69,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
       insert.run(long)
       for (let index = 1; index <= 26; index++) insert.run("Unused household " + String(index).padStart(2, "0"))
     } finally { database.close() }
-    await page.goto(origin + prefix + "/tasks?area=&labels=Shared%20maintenance")
+    await page.goto(origin + prefix + "/tasks?view=kanban&area=&labels=Shared%20maintenance#kanban")
     await expect(page.locator(".kanban-card[data-task-id]")).toHaveCount(2)
     await expect(page.locator(`.kanban-card[data-task-id="${firstTask.body.id}"]`)).toBeVisible()
     await expect(page.locator(`.kanban-card[data-task-id="${secondTask.body.id}"]`)).toBeVisible()
@@ -295,6 +295,20 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
     const page = await context.newPage()
     const settingsUrl = origin + prefix + "/settings#tasks-boards-settings"
     expect((await page.goto(origin + prefix + "/fixture", { waitUntil: "domcontentloaded" }))?.status()).toBe(200)
+    const publicAsset = prefix + "/icons/label-cleanup-fixture.svg"
+    const version = await page.evaluate(async prefix => (await (await fetch(prefix + "/version.json")).json()).version as string, prefix)
+    const names = ["api", "nav", "static", "precache"].map(kind => `meitheal-${kind}-v${version}`)
+    await page.route(origin + publicAsset, route => route.fulfill({
+      contentType: "image/svg+xml",
+      headers: { date: new Date().toUTCString() },
+      body: "Public offline fixture",
+    }))
+    await page.evaluate(async ({ names, publicAsset }) => {
+      const asset = await fetch(publicAsset)
+      if (!asset.ok || asset.type !== "basic") throw new Error("Public cache fixture requires a same-origin HTTP response")
+      for (const name of names) await (await caches.open(name)).put(publicAsset, asset.clone())
+    }, { names, publicAsset })
+    await page.unroute(origin + publicAsset)
     await test.step("Install and claim the older worker", async () => {
       await page.evaluate(async prefix => {
         await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
@@ -310,18 +324,14 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
     await expect(cleanup.getByRole("checkbox")).toHaveCount(1)
     const variants = [prefix + "/api/labels/cleanup", prefix + "/api/%256cabels/cleanup/", prefix + "/api/labels/%2563leanup"]
     const ordinaryApi = prefix + "/api/ordinary-label-fixture"
-    const publicAsset = prefix + "/icons/label-cleanup-fixture.svg"
-    const version = await page.evaluate(async prefix => (await (await fetch(prefix + "/version.json")).json()).version as string, prefix)
-    const names = ["api", "nav", "static", "precache"].map(kind => `meitheal-${kind}-v${version}`)
-    await page.evaluate(async ({ names, variants, ordinaryApi, publicAsset }) => {
+    await page.evaluate(async ({ names, variants, ordinaryApi }) => {
       const headers = { date: new Date().toUTCString() }
       for (const name of names) {
         const cache = await caches.open(name)
         for (const url of variants) await cache.put(url, new Response("Stale private cleanup fixture", { headers }))
         await cache.put(ordinaryApi, new Response("Stale Board API fixture", { headers }))
-        await cache.put(publicAsset, new Response("Public offline fixture", { headers }))
       }
-    }, { names, variants, ordinaryApi, publicAsset })
+    }, { names, variants, ordinaryApi })
     await context.setOffline(true)
     await expect(cleanup.getByRole("checkbox")).toHaveCount(0)
     await expect(cleanup.locator("[data-cleanup-review]")).toBeDisabled()

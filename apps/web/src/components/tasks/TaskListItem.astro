@@ -78,7 +78,7 @@ if (task.checklists === null) {
   }
 }
 
-// Custom fields
+// Custom fields (filter structured objects such as shopping items)
 const scheduledDate = effectiveTaskScheduledDate(task)
 const scheduledDisplayDay = scheduledDate
   ? (calendarDayFromInput(scheduledDate, Astro.locals.timezone || "Europe/Dublin") ?? scheduledDate.split("T")[0])
@@ -149,6 +149,11 @@ const customEntries = Object.entries(task.custom_fields)
     </div>
 
     <div class="tli__meta">
+      {task.is_promoted && section !== "Promoted" && (
+        <span class="task-promoted-pill">
+          <Icon name="star" size={11} sprite /> Promoted
+        </span>
+      )}
       <PriorityLabel priority={task.priority} />
       {scheduledDisplayDay && (
         <span class="tli__due-date">
@@ -287,7 +292,7 @@ const customEntries = Object.entries(task.custom_fields)
   )}
 </div>
 
-<style>
+<style is:global>
   /* ── TaskListItem base ─────────────────────────────────────────── */
   .tli {
     display: flex;
@@ -301,17 +306,20 @@ const customEntries = Object.entries(task.custom_fields)
   .tli:hover {
     background: var(--bg-hover);
   }
-  :global([data-theme="knight-rider"]) .tli[data-work-active]:not(.tli--done) .tli__progress-fill {
+  .tli[data-promoted="true"]:not([data-task-color]) {
+    box-shadow: inset 3px 0 0 var(--tblr-yellow, #f59f00);
+  }
+  [data-theme="knight-rider"] .tli[data-work-active]:not(.tli--done) .tli__progress-fill {
     background-color: var(--knight-active-indicator);
   }
-  :global([data-theme="knight-rider"]) .tli:is(:focus-visible, .tli--focused) {
+  [data-theme="knight-rider"] .tli:is(:focus-visible, .tli--focused) {
     outline-color: var(--border-focus);
   }
-  :global([data-theme="knight-rider"]) .tli[data-task-color] .tli__color,
-  :global([data-theme="knight-rider"]) .tli[data-work-active]:not(.tli--done) .tli__color {
+  [data-theme="knight-rider"] .tli[data-task-color] .tli__color,
+  [data-theme="knight-rider"] .tli[data-work-active]:not(.tli--done) .tli__color {
     display: none;
   }
-  :global([data-theme="knight-rider"]) .tli.tli--done {
+  [data-theme="knight-rider"] .tli.tli--done {
     opacity: 1;
   }
 
@@ -321,7 +329,7 @@ const customEntries = Object.entries(task.custom_fields)
     flex-shrink: 0;
     cursor: pointer;
   }
-  :global([data-theme="knight-rider"]) .tli__checkbox:not(:focus-visible) {
+  [data-theme="knight-rider"] .tli__checkbox:not(:focus-visible) {
     outline: 1px solid var(--text-muted);
     border-radius: 2px;
   }
@@ -373,18 +381,23 @@ const customEntries = Object.entries(task.custom_fields)
     cursor: pointer;
     font-size: 16px;
     color: var(--text-muted);
-    padding: 2px;
-    transition: transform 200ms ease, color 200ms ease;
+    padding: 4px;
+    border-radius: 6px;
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), color 160ms ease, background-color 160ms ease;
     flex-shrink: 0;
   }
   .tli__fav:hover {
-    transform: scale(1.2);
-    color: var(--warning);
+    transform: scale(1.12);
+    color: var(--tblr-yellow, #f59f00);
+    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 12%, transparent);
+  }
+  .tli__fav:active {
+    transform: scale(0.94);
   }
   .tli__fav.is-fav {
-    color: var(--warning);
+    color: var(--tblr-yellow, #f59f00);
   }
-  .tli__fav.is-fav :global(svg) {
+  .tli__fav.is-fav svg {
     fill: currentColor;
   }
 
@@ -417,7 +430,7 @@ const customEntries = Object.entries(task.custom_fields)
     opacity: 0.7;
   }
 
-  :global([data-theme="knight-rider"]) .tli--done .tli__title-text {
+  [data-theme="knight-rider"] .tli--done .tli__title-text {
     opacity: 1;
     color: var(--text-muted);
     text-decoration: line-through;
@@ -491,7 +504,12 @@ const customEntries = Object.entries(task.custom_fields)
 
   /* ── Checklist ─────────────────────────────────────────────────── */
   .tli__checklist {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
     font-size: 11px;
+    font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
 
@@ -528,7 +546,7 @@ const customEntries = Object.entries(task.custom_fields)
     max-width: min(11rem, 100%);
     color: var(--text-secondary);
   }
-  .tli__assignee :global(svg) {
+  .tli__assignee svg {
     flex-shrink: 0;
   }
   .tli__assignee span {
@@ -592,11 +610,16 @@ const customEntries = Object.entries(task.custom_fields)
     font-size: 14px;
     padding: 2px 6px;
     color: var(--text-muted);
-    transition: background 0.15s, color 0.15s;
+    transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .tli__action:hover {
     background: var(--bg-hover);
     color: var(--text);
+  }
+  .tli__action:active,
+  .tli__snooze-btn:active,
+  .tli__focus-btn:active {
+    transform: scale(0.95);
   }
   .tli__action.danger:hover {
     color: var(--danger);

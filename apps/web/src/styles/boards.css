@@ -15,7 +15,21 @@
 }
 .boards-heading h1 { margin: 0; font-size: clamp(1.375rem, 2.1vw, 1.875rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
 .boards-heading p { margin: 0; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.45; }
-.boards-heading--workspace { padding-bottom: 0.5rem; }
+.boards-heading--workspace {
+  align-items: center;
+  padding: 0.95rem 0 1.05rem;
+}
+.board-new-task-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 .named-boards, .board-tile, .board-form, .board-area-card__stack, .board-disclosure__body,
 .board-settings-card, .board-create-card, .board-people, .board-fieldset, .board-subitem, .board-sublist { display: grid; gap: 0.75rem; min-width: 0; }
@@ -57,9 +71,9 @@
 .board-area-card__head, .board-subitem__head, .board-sublist__head, .board-submission-row { flex-wrap: wrap; }
 
 .board-card-identity { display: flex; align-items: center; gap: 0.75rem; color: inherit; min-width: 0; flex: 1 1 auto; }
-.board-card-title-link { display: inline-flex; align-items: center; min-height: 24px; color: inherit; text-decoration: none; }
-.board-card-title-link:hover, .board-area-title:hover { color: var(--accent); }
-.board-card-title-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.board-name:hover, a.board-name:hover, .board-area-title:hover { color: var(--accent); }
+a.board-name { text-decoration: none; }
+a.board-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
 .board-icon-badge, .board-area-swatch, .board-empty-card__icon, .board-action-icon {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: var(--radius-sm);
@@ -135,7 +149,7 @@
 .board-send { max-width: 38rem; }
 
 /* Board Settings */
-.board-settings { padding-block: 0.875rem; border-top: 1px solid var(--border); }
+.board-settings { padding-block: 1.15rem; border-top: 1px solid var(--border); }
 .board-settings summary { cursor: pointer; }
 .board-settings-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 1rem; align-items: start; }
 .board-settings-card { border-radius: var(--radius-md); align-content: start; }
@@ -145,7 +159,7 @@
 .board-member { margin-top: 0.25rem; }
 .board-context-link a, .board-inline-link { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.84rem; font-weight: 550; color: var(--accent); text-decoration: none; }
 .board-context-link a:hover, .board-inline-link:hover { text-decoration: underline; }
-.board-expired-banner { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--text-secondary); }
+/* .board-expired-banner and .board-verification-banner live globally in _feedback.css */
 .board-danger { color: var(--danger); }
 
 /* Workspace Sub-Navigation */
@@ -169,7 +183,7 @@
   border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 .board-context-tabs > a:hover { background: var(--bg-hover); color: var(--text-primary); }
-.board-context-tabs > a[aria-current="page"] { font-weight: 600; color: var(--accent); border-bottom-color: var(--accent); }
+.board-context-tabs > a[aria-current="page"] { font-weight: 600; color: var(--accent-text); border-bottom-color: var(--accent); }
 .board-context-tabs__settings { margin-left: auto; }
 .board-settings [hidden], .board-settings[hidden] { display: none !important; }
 

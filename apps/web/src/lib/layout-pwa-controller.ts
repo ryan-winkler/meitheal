@@ -9,6 +9,12 @@ import {
 } from "@domains/offline/sw-register"
 import { dialogText } from "@lib/dialog-overlay"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import {
+  buildOfflineSyncSummary,
+  countOfflineMutations,
+  OFFLINE_QUEUE_EVENT,
+  replayOfflineMutations,
+} from "@lib/pwa-offline-sync"
 import { announceStatus, dismissToast, pushToast, showToast } from "@lib/toast"
 
 window.__meithealPwaGlobalAc?.abort()
@@ -48,7 +54,38 @@ export async function consumePwaInstallPrompt(): Promise<"accepted" | "dismissed
   } catch {
     outcome = "error"
   }
+  if (outcome === "accepted") {
+    offerPostInstallNotifications()
+  }
   return outcome
+}
+
+function offerPostInstallNotifications(): void {
+  if (typeof window === "undefined" || !("Notification" in window)) return
+  if (Notification.permission !== "default") return
+  pushToast({
+    id: "pwa-enable-notifications",
+    type: "info",
+    icon: "bell",
+    message: "Meitheal installed! Enable task reminders and notifications?",
+    duration: 10000,
+    action: {
+      id: "pwa-enable-notifications-btn",
+      label: "Enable notifications",
+      primary: true,
+      onClick: async () => {
+        try {
+          const result = await Notification.requestPermission()
+          if (result === "granted") {
+            showToast("Notifications enabled", "success")
+          }
+          window.dispatchEvent(new Event("meitheal:notification-permission-changed"))
+        } catch {
+          // Ignore unsupported browser permission errors
+        }
+      },
+    },
+  })
 }
 
 export interface SwActivationButtonOptions {
@@ -169,5 +206,189 @@ window.addEventListener("meitheal-sw-update", ((e: CustomEvent<SwUpdateEventDeta
   if (dismissedWorker !== offeredWorker) showUpdateToast()
 }) as EventListener, { signal: globalSignal })
 pageLifecycle.onPageLoad(() => {
-  if (!globalSignal.aborted) showUpdateToast()
+  if (!globalSignal.aborted) {
+    showUpdateToast()
+    void flushOfflineOutbox().catch(() => {})
+    bindSessionReconnectBanner()
+  }
 })
+
+// ── Offline Connectivity Indicator & Outbox Replay ──
+let pendingOfflineCount = 0
+let offlineReplayFailed = false
+
+function syncOfflineBanner() {
+  const banner = document.getElementById("meitheal-offline-banner")
+  if (!banner) return
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false
+  banner.hidden = !offline && pendingOfflineCount === 0
+  const textEl = document.getElementById("meitheal-offline-banner-text")
+  if (textEl) {
+    textEl.textContent = offline
+      ? buildOfflineSyncSummary(pendingOfflineCount, 0)
+      : offlineReplayFailed ? "Offline changes remain saved for review."
+        : `Syncing ${pendingOfflineCount} pending offline ${pendingOfflineCount === 1 ? "change" : "changes"}…`
+  }
+}
+
+async function flushOfflineOutbox(notify = true) {
+  const result = await replayOfflineMutations()
+  offlineReplayFailed = result.failed > 0
+  window.dispatchEvent(new CustomEvent(OFFLINE_QUEUE_EVENT, { detail: { count: result.remaining } }))
+  if (result.synced > 0) {
+    if (notify) showToast(buildOfflineSyncSummary(0, result.synced), "success")
+    document.dispatchEvent(new CustomEvent("meitheal:tasks-changed"))
+  }
+}
+
+void countOfflineMutations().then((count) => {
+  pendingOfflineCount = count
+  syncOfflineBanner()
+  if (count > 0 && typeof navigator !== "undefined" && navigator.onLine !== false) {
+    void flushOfflineOutbox().catch(() => {})
+  }
+}).catch(() => {})
+
+window.addEventListener(OFFLINE_QUEUE_EVENT, ((e: CustomEvent<{ count?: number }>) => {
+  if (typeof e.detail?.count === "number") {
+    pendingOfflineCount = e.detail.count
+    syncOfflineBanner()
+  }
+}) as EventListener, { signal: globalSignal })
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
+    if (event.data?.type === "SYNC_TRIGGERED") {
+      void flushOfflineOutbox().catch(() => {})
+    }
+  }, { signal: globalSignal })
+}
+
+window.addEventListener("offline", () => {
+  syncOfflineBanner()
+  announceStatus("Offline mode active")
+}, { signal: globalSignal })
+
+window.addEventListener("online", () => {
+  syncOfflineBanner()
+  announceStatus("Back online")
+  void runIngressSessionKeepalive(true)
+  void flushOfflineOutbox().catch(() => {})
+}, { signal: globalSignal })
+
+// ── HA Ingress Session Keepalive & Reconnect Recovery ──
+// Supervisor's ingress_session cookie expires after ~1 hour in standalone PWAs
+// because HA's frontend shell is not mounted. Periodically validate the same-origin
+// session while active/resuming so users do not hit "You don't have access".
+const KEEPALIVE_INTERVAL_MS = 15 * 60 * 1000
+const KEEPALIVE_MIN_GAP_MS = 60 * 1000
+let lastKeepaliveAt = 0
+
+async function runIngressSessionKeepalive(force = false): Promise<boolean> {
+  const ingressPath = window.__ingress_path
+  if (!ingressPath || typeof navigator !== "undefined" && navigator.onLine === false) return true
+  const now = Date.now()
+  if (!force && now - lastKeepaliveAt < KEEPALIVE_MIN_GAP_MS) return true
+  lastKeepaliveAt = now
+
+  // Best-effort same-origin Supervisor session refresh (sliding 1-hour window)
+  try {
+    await fetch(`${window.location.origin}/api/hassio/ingress/validate_session`, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+    })
+  } catch {
+    // Ignore when running outside Supervisor or offline
+  }
+
+  // Verify Meitheal ingress reachability through the ingress proxy
+  try {
+    const res = await fetch("/api/health", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    })
+    if (res.ok) {
+      hideSessionReconnectBanner()
+      return true
+    }
+    const isAppJson = /\bjson\b/i.test(res.headers.get("content-type") || "")
+    if ((res.status === 401 || res.status === 403) && !isAppJson) {
+      showSessionReconnectBanner()
+      return false
+    }
+  } catch {
+    // Network blip; handled by offline banner
+  }
+  return true
+}
+
+function showSessionReconnectBanner() {
+  const banner = document.getElementById("meitheal-session-reconnect-banner")
+  if (banner) banner.hidden = false
+}
+
+function hideSessionReconnectBanner() {
+  const banner = document.getElementById("meitheal-session-reconnect-banner")
+  if (banner) banner.hidden = true
+}
+
+function bindSessionReconnectBanner() {
+  const retryBtn = document.getElementById("meitheal-session-retry-btn")
+  if (retryBtn && retryBtn.dataset.bound !== "1") {
+    retryBtn.dataset.bound = "1"
+    retryBtn.addEventListener("click", async () => {
+      retryBtn.setAttribute("aria-busy", "true")
+      const ok = await runIngressSessionKeepalive(true)
+      retryBtn.removeAttribute("aria-busy")
+      if (ok) {
+        hideSessionReconnectBanner()
+        showToast("Session restored", "success")
+      }
+    }, { signal: globalSignal })
+  }
+  const reconnectLink = document.getElementById("meitheal-session-reconnect-link") as HTMLAnchorElement | null
+  if (reconnectLink && window.__ingress_path) {
+    // Target same-origin Home Assistant root (not the ingress-prefixed URL) to renew ingress_session cookie
+    reconnectLink.href = `${window.location.origin}/`
+  }
+}
+
+window.addEventListener("meitheal:ingress-session-expired", () => {
+  showSessionReconnectBanner()
+}, { signal: globalSignal })
+
+window.addEventListener("meitheal:work-access-stale", () => {
+  pushToast({
+    id: "work-access-stale",
+    type: "warning",
+    icon: "refresh",
+    message: "Work access updated in another session.",
+    duration: 8000,
+    action: {
+      id: "work-access-stale-refresh-btn",
+      label: "Refresh",
+      primary: true,
+      onClick: () => window.location.reload(),
+    },
+  })
+}, { signal: globalSignal })
+
+if (window.__ingress_path) {
+  const keepaliveTimer = window.setInterval(() => {
+    if (!document.hidden) void runIngressSessionKeepalive(false)
+  }, KEEPALIVE_INTERVAL_MS)
+  globalSignal.addEventListener("abort", () => window.clearInterval(keepaliveTimer), { once: true })
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void runIngressSessionKeepalive(false)
+  }, { signal: globalSignal })
+  window.addEventListener("focus", () => {
+    if (!document.hidden) void runIngressSessionKeepalive(false)
+  }, { signal: globalSignal })
+}
+
+syncOfflineBanner()
+bindSessionReconnectBanner()
+

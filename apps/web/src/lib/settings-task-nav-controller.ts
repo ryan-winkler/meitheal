@@ -11,24 +11,23 @@ import {
   type TaskNavPrefs,
   type TaskNavTypeId,
 } from "./task-nav-types"
-import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 function syncTaskNavUi(root: HTMLElement, prefs: TaskNavPrefs): void {
   root.querySelectorAll<HTMLButtonElement>("[data-task-nav-mode]").forEach((btn) => {
     const active = btn.dataset.taskNavMode === prefs.mode
-    setAttr(btn, "aria-pressed", String(active))
+    btn.setAttribute("aria-pressed", String(active))
     btn.classList.toggle("btn-primary", active)
     btn.classList.toggle("btn-secondary", !active)
   })
 
   for (const entry of TASK_NAV_TYPES) {
-    const checkbox = qs<HTMLInputElement>(root, `[data-task-nav-visible="${entry.id}"]`)
+    const checkbox = root.querySelector<HTMLInputElement>(`[data-task-nav-visible="${entry.id}"]`)
     if (checkbox) checkbox.checked = isTaskNavTypeVisible(prefs, entry.id)
 
-    const pinBtn = qs<HTMLButtonElement>(root, `[data-task-nav-pin="${entry.id}"]`)
+    const pinBtn = root.querySelector<HTMLButtonElement>(`[data-task-nav-pin="${entry.id}"]`)
     if (pinBtn) {
       const pinned = prefs.pinned.includes(entry.id)
-      setAttr(pinBtn, "aria-pressed", String(pinned))
+      pinBtn.setAttribute("aria-pressed", String(pinned))
       pinBtn.classList.toggle("btn-primary", pinned)
       pinBtn.classList.toggle("btn-ghost", !pinned)
       pinBtn.textContent = pinned
@@ -40,7 +39,7 @@ function syncTaskNavUi(root: HTMLElement, prefs: TaskNavPrefs): void {
 
 /** Initialize task navigation visibility and pinning controls in Settings once per lifecycle. */
 export function initSettingsTaskNav(signal: AbortSignal): void {
-  const root = byId("task-nav-prefs-card")
+  const root = document.getElementById("task-nav-prefs-card")
   if (!root || root.dataset.taskNavBooted === "true") return
 
   root.dataset.taskNavBooted = "true"

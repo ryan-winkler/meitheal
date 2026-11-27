@@ -1009,7 +1009,6 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
     const root = content.locator("html")
     const body = content.locator("body")
     await expect(content.locator("#settings-shell")).toHaveAttribute("data-settings-booted", "true")
-    await expect(content.locator("#local-feedback [data-feedback-form] fieldset")).toBeEnabled()
     if (location === panel) await expect(root).toHaveAttribute("data-ha-theme", "light")
     await body.evaluate(() => document.fonts.ready)
 
@@ -1035,13 +1034,12 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
       )).toEqual([])
       await page.reload()
       await expect(content.locator("#settings-shell")).toHaveAttribute("data-settings-booted", "true")
-      await expect(content.locator("#local-feedback [data-feedback-form] fieldset")).toBeEnabled()
       await expect(root).toHaveAttribute("data-theme", theme)
       await body.evaluate(() => document.fonts.ready)
       const light = theme === "light" || (theme === "auto" && location === panel)
       await expect.poll(() => body.evaluate(element =>
         getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase(),
-      )).toBe(light ? "#ecebe4" : "#171a18")
+      )).toBe(light ? "#e8f2ec" : "#171a18")
 
       const { violations } = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze()
       expect(violations.flatMap(violation => violation.nodes.map(node => node.target))).toEqual([])
@@ -1129,30 +1127,22 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
-  await expect.poll(palette).toBe("#ecebe4")
+  await expect.poll(palette).toBe("#e8f2ec")
   await expect.poll(observerCounts).toEqual({ active: 1, registrations: 1 })
 
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
   await expect.poll(palette).toBe("#171a18")
-  const savedLight = page.waitForResponse(response => response.url() === origin + prefix + "/api/settings"
-    && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
   await selectedTheme.selectOption("light")
   await expect(root).toHaveAttribute("data-theme", "light")
-  await content.locator("#appearance-save-btn").click()
-  expect((await savedLight).ok()).toBe(true)
   await setParentBackground("#fafafa")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
-  await expect.poll(palette).toBe("#ecebe4")
+  await expect.poll(palette).toBe("#e8f2ec")
   await selectedTheme.selectOption("auto")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect.poll(palette).toBe("#171a18")
-  const savedAuto = page.waitForResponse(response => response.url() === origin + prefix + "/api/settings"
-    && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
-  await content.locator("#appearance-save-btn").click()
-  expect((await savedAuto).ok()).toBe(true)
 
   await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })))
   await expect.poll(observerCounts).toEqual({ active: 0, registrations: 1 })
@@ -1239,8 +1229,9 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(match).toBeChecked()
   await parentColor("--primary-text-color", "#121929")
   await expect(root).toHaveAttribute("data-ha-match", "light")
+  // Look and Feel choices are drafts until saved.
   await content.locator("#appearance-save-btn").click()
-  await expect(content.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.")
+  await expect(content.locator("#appearance-dirty-bar")).toBeHidden()
   await page.reload()
   await expect(match).toBeChecked()
   await expect(root).toHaveAttribute("data-ha-match", "light")
@@ -1294,7 +1285,7 @@ coreTest("ingress Auto follows Home Assistant when the cached theme is invalid",
   const background = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
-  await expect.poll(background).toBe("#ecebe4")
+  await expect.poll(background).toBe("#e8f2ec")
   await page.evaluate(() => document.documentElement.style.setProperty("--primary-background-color", "#16202a"))
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
   await expect(root).toHaveAttribute("data-theme", "auto")
@@ -1511,107 +1502,46 @@ coreTest("a live ingress role change prevents reuse of an administrator's Custom
   }
 })
 
-coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
-  const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
-  const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
-  const appPwa = origin + prefix + "/settings#app-pwa-settings"
-  const settings = origin + prefix + "/settings#local-feedback"
-  const message = 'Synthetic <img src=x onerror="window.feedbackExecuted=true"> report'
-  try {
-    await member.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    const userPage = await member.newPage()
-    const submissionIds: string[] = []
-    await userPage.route("**/api/feedback", async route => {
-      const request = route.request()
-      if (request.method() !== "POST") return route.continue()
-      submissionIds.push(request.postDataJSON().submissionId)
-      if (submissionIds.length > 1) return route.continue()
-      const saved = await route.fetch()
-      expect(saved.status()).toBe(201)
-      await route.abort()
-    })
-    await userPage.goto(appPwa)
-    await expect(userPage.locator("#settings-panels")).not.toHaveAttribute("inert", "")
-    const appPanel = userPage.locator("#app-pwa-settings")
-    const localFeedback = appPanel.getByRole("link", { name: "Share local feedback", exact: true })
-    const changelog = appPanel.getByRole("link", { name: /Changelog/ })
-    await changelog.focus()
-    await expect(changelog).toBeFocused()
-    await userPage.keyboard.press("Tab")
-    await expect(localFeedback).toBeFocused()
-    const guides = appPanel.getByRole("link", { name: "Guides", exact: true })
-    await expect(guides).toHaveAttribute("href", "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md")
-    await expect(guides).toHaveAttribute("target", "_blank")
-    await expect(localFeedback).toHaveAttribute("href", "#local-feedback")
-    await userPage.keyboard.press("Enter")
-    await expect(userPage).toHaveURL(settings)
-    const feedbackCard = userPage.locator("#local-feedback")
-    await expect(feedbackCard).toBeFocused()
-    await expect(feedbackCard.getByRole("link", { name: "Report a security vulnerability privately" }))
-      .toHaveAttribute("href", "mailto:info@coolockvillage.ie")
-    expect(submissionIds).toHaveLength(0)
-    const denied = await userPage.evaluate(async () => {
-      const response = await fetch("/api/settings?key=ha-token")
-      return { status: response.status, contentType: response.headers.get("content-type") }
-    })
-    expect(denied.status).toBe(403)
-    expect(denied.contentType).toContain("json")
-    await expect(userPage.getByText("Local feedback queue")).toHaveCount(0)
-    await expect(userPage.locator("#export-db-btn")).toHaveCount(0)
-    await userPage.locator("[data-feedback-form]").getByLabel("Category", { exact: true }).selectOption("problem")
-    await userPage.getByLabel("Message", { exact: true }).fill(message)
-    await userPage.getByRole("button", { name: "Save feedback" }).click()
-    await expect(userPage.locator("[data-feedback-status]")).toContainText("Could not reach")
-    await expect(userPage.getByLabel("Message", { exact: true })).toHaveValue(message)
-    await userPage.getByRole("button", { name: "Save feedback" }).click()
-    await expect(userPage.locator("[data-feedback-status]")).toContainText("Feedback saved. Receipt")
-    expect(submissionIds).toHaveLength(2)
-    expect(submissionIds[0]).toBe(submissionIds[1])
+coreTest("Settings offers GitHub support without a local feedback form or queue", async ({ browser }) => {
+  const cases = [
+    { role: "member", locale: "ga", issue: "Fadhbanna ar GitHub", discussions: "Plé ar GitHub", guides: "Treoracha" },
+    { role: "admin", locale: "en", issue: "GitHub Issues", discussions: "GitHub Discussions", guides: "Guides" },
+  ]
+  for (const { role, locale, issue, discussions, guides } of cases) {
+    const context = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
+    try {
+      await context.addCookies([
+        { name: "feedback-fixture", value: role, url: origin },
+        { name: "meitheal-locale", value: locale, url: origin },
+      ])
+      const page = await context.newPage()
+      await page.goto(origin + prefix + "/settings#local-feedback")
+      const appPanel = page.locator("#app-pwa-settings")
+      await expect(appPanel).toBeVisible()
+      await expect(appPanel.locator("[data-feedback-form], [data-feedback-queue], a[href='#local-feedback']")).toHaveCount(0)
 
-    await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
-    const adminPage = await admin.newPage()
-    await adminPage.goto(settings)
-    await adminPage.getByText("Local feedback queue", { exact: true }).click()
-    await expect(adminPage.locator("[data-queue-status]")).toHaveText("1 report shown.")
-    await adminPage.getByLabel("Report state").selectOption("")
-    const entry = adminPage.locator("[data-report-id]")
-    await entry.getByText(/^Problem · Open/).click()
-    await expect(entry.getByText(message, { exact: true })).toBeVisible()
-    await expect(entry.locator("img")).toHaveCount(0)
-    await entry.getByRole("button", { name: "Claim report" }).click()
-    await expect(entry.getByText(/^Problem · In progress/)).toBeVisible()
-    await entry.getByLabel("Disposition").fill("Synthetic fix verified")
-    await entry.getByRole("button", { name: "Resolve report" }).click()
-    await expect(entry.getByText(/^Problem · Resolved/)).toBeVisible()
-    await entry.getByText("Prepare a reviewed export").click()
-    await entry.getByLabel("Text to share").fill("Reviewed reproduction")
-    await entry.getByRole("button", { name: "Preview export" }).click()
-    await expect(entry.locator("[data-export-preview]")).toContainText("Reviewed reproduction")
-    await expect(entry.locator("[data-export-preview]")).not.toContainText("fixture-member")
-    const download = adminPage.waitForEvent("download")
-    await entry.getByRole("button", { name: "Download reviewed JSON" }).click()
-    expect(JSON.parse(await readFile(await (await download).path(), "utf-8"))).toEqual({
-      category: "problem", message: "Reviewed reproduction", appVersion: null, routeFamily: null,
-    })
+      const help = appPanel.locator("#help-support-card")
+      const links = [
+        { name: issue, href: "https://github.com/ryan-winkler/meitheal/issues/new/choose" },
+        { name: discussions, href: "https://github.com/ryan-winkler/meitheal/discussions" },
+        { name: guides, href: "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md" },
+      ]
+      for (const { name, href } of links) {
+        const link = help.getByRole("link", { name, exact: true })
+        await expect(link).toBeVisible()
+        await expect(link).toHaveAttribute("href", href)
+        await expect(link).toHaveAttribute("target", "_blank")
+        await expect(link).toHaveAttribute("rel", "noopener noreferrer")
+        await expect(appPanel.locator(`a[href="${href}"]`)).toHaveCount(1)
+      }
 
-    await entry.getByRole("button", { name: "Delete closed report" }).click()
-    await adminPage.getByRole("alertdialog").getByRole("button", { name: "Delete report" }).click()
-    await expect(entry).toHaveCount(0)
-    await expect(adminPage.locator("[data-queue-status]")).toHaveText("Report deleted.")
-
-    await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
-    const irishPage = await member.newPage()
-    await irishPage.goto(appPwa)
-    const irishPanel = irishPage.locator("#app-pwa-settings")
-    await expect(irishPanel.getByRole("link", { name: "Treoracha", exact: true })).toBeVisible()
-    const irishFeedback = irishPanel.getByRole("link", { name: "Roinn aiseolas áitiúil", exact: true })
-    await expect(irishFeedback).toHaveAttribute("href", "#local-feedback")
-    const bounds = await irishFeedback.boundingBox()
-    expect(bounds).not.toBeNull()
-    expect(bounds!.x).toBeGreaterThanOrEqual(0)
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
-  } finally {
-    await member.close()
-    await admin.close()
+      const issues = help.getByRole("link", { name: issue, exact: true })
+      const bounds = await issues.boundingBox()
+      expect(bounds).not.toBeNull()
+      expect(bounds!.x).toBeGreaterThanOrEqual(0)
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+    } finally {
+      await context.close()
+    }
   }
 })

@@ -8,7 +8,7 @@ import { isOrganizationFeatureAvailable as available } from "@lib/organization-r
 import Layout from "../../layouts/Layout.astro"
 import Icon from "../../components/ui/Icon.astro"
 import InlineHelper from "../../components/ui/InlineHelper.astro"
-import "../../styles/boards.css"
+import BoardsStyles from "../../components/boards/BoardsStyles.astro"
 import { assertBoardDirectoryCurrent, boardViewKey, readBoardDirectory } from "@lib/board-view"
 import { boardNavigationLinks } from "@lib/board-workspace"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
@@ -24,6 +24,7 @@ const boards = directory?.boards ?? []
 if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(error) { const failure=boardScopeErrorResponse(error);if(failure)return failure;throw error } }
 ---
 <Layout title={label("board", true)} scopeGuard={false}>
+  <BoardsStyles />
   <span slot="page-title">{label("board", true)}</span>
   <div class="boards-workspace">
     {!user && (
@@ -128,15 +129,15 @@ if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(erro
                       <span class:list={["board-icon-badge", { "board-icon-badge--archived": isArchived }]} aria-hidden="true">
                         <Icon name="layout-kanban" size={18} sprite />
                       </span>
-                      <div class="board-card-titles">
-                        <a class="board-name board-card-title-link" href={`/boards/${encodeURIComponent(board.id)}`}>{board.name}</a>
+                      <span class="board-card-titles">
+                        <a class="board-name" href={`/boards/${encodeURIComponent(board.id)}`} data-astro-prefetch="hover">{board.name}</a>
                         <span class="board-card-meta">
                           <code class="board-key-code" title={`Ticket prefix: ${board.ticketPrefix}-1`}>{board.ticketPrefix}</code>
                           <span class:list={["board-role-badge", isArchived ? "board-role-badge--muted" : `board-role-badge--${board.role}`]}>
                             {isArchived ? "Archived" : board.role}
                           </span>
                         </span>
-                      </div>
+                      </span>
                     </div>
                     <form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
                       <input type="hidden" name="hidden" value={board.hidden ? "false" : "true"} />
@@ -166,11 +167,15 @@ if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(erro
                       <span>Open {label("task", true).toLowerCase()}</span>
                     </a>
                     {available("organizer") && (available("groups") || available("projects")) && (
-                      <a href={nav.planning} class="board-card-link">
+                      <a href={nav.groups} class="board-card-link">
                         <Icon name="folder" size={15} sprite />
                         <span>{label("group", true)} &amp; {label("project", true)}</span>
                       </a>
                     )}
+                    <a href={nav.planning} class="board-card-link">
+                      <Icon name="eisenhower" size={15} sprite />
+                      <span>{label("planning", false)}</span>
+                    </a>
                     {board.role === "owner" && (
                       <a href={`/boards/${encodeURIComponent(board.id)}?view=groups#settings`} class="board-card-link board-card-link--icon" title={`${board.name} settings`} aria-label={`${board.name} settings`}>
                         <Icon name="settings" size={15} sprite />

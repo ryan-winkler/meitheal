@@ -10,7 +10,7 @@ import { currentTaskApiContext } from "@lib/task-api"
  */
 
 import { createClientLogger } from "@lib/client-logger"
-import { shouldEnableIDB } from "@lib/companion-detect"
+import { shouldEnableAttachmentIDB, shouldEnableIDB } from "@lib/companion-detect"
 
 const log = createClientLogger("offline", "store")
 
@@ -135,8 +135,8 @@ function settleCurrent(db: IDBDatabase, complete: () => void, reject: (reason?: 
   } catch (error) { reject(error) }
 }
 
-async function getDb(selected?: OfflinePartition): Promise<IDBDatabase | null> {
-  if (!shouldEnableIDB()) return null
+async function getDb(selected?: OfflinePartition, storage: "offline" | "attachments" = "offline"): Promise<IDBDatabase | null> {
+  if (!(storage === "attachments" ? shouldEnableAttachmentIDB() : shouldEnableIDB())) return null
   const partition = selected ?? currentOfflinePartition()
   if (!partition) throw new Error("Open an authenticated Board before using offline work.")
   assertOfflinePartition(partition)
@@ -154,7 +154,9 @@ async function getDb(selected?: OfflinePartition): Promise<IDBDatabase | null> {
 /** Old global data is retained without attributing or replaying it as the current user. */
 export async function hasUnattributedOfflineData(): Promise<boolean> {
   if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return false
-  return (await indexedDB.databases()).some(database => database.name === DB_NAME)
+  return (await indexedDB.databases()).some(
+    database => database.name === DB_NAME || database.name === "meitheal-offline-outbox",
+  )
 }
 
 // --- Task CRUD ---
@@ -233,20 +235,25 @@ export async function deleteTask(id: string): Promise<void> {
 
 const MAX_QUEUE_DEPTH = 100
 
-export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "createdAt" | "retryCount" | "partition">): Promise<string> {
-  const db = await getDb()
+export async function enqueueSyncOp(
+  op: Omit<PendingSyncOperation, "id" | "createdAt" | "retryCount" | "partition">,
+  attempt?: { id: string; partition: OfflinePartition },
+): Promise<string> {
+  const db = await getDb(attempt?.partition)
   if (!db) return ""
 
   // Check queue depth warning
-  const depth = await getSyncQueueDepth()
+  const partition = partitionByDatabase.get(db)!
+  const depth = await getSyncQueueDepth(partition)
+  assertOfflinePartition(partition)
   if (depth >= MAX_QUEUE_DEPTH) {
     log.warn(`Sync queue at capacity (${depth}/${MAX_QUEUE_DEPTH})`)
   }
 
   const entry: PendingSyncOperation = {
-    id: crypto.randomUUID(),
+    id: attempt?.id ?? crypto.randomUUID(),
     ...op,
-    partition: partitionByDatabase.get(db)!,
+    partition,
     createdAt: new Date().toISOString(),
     retryCount: 0,
   }
@@ -320,8 +327,9 @@ export async function incrementRetryCount(id: string, partition?: OfflinePartiti
   })
 }
 
-export async function getSyncQueueDepth(): Promise<number> {
-  const db = await getDb()
+export async function getSyncQueueDepth(partition?: OfflinePartition): Promise<number> {
+  if (!partition && !currentOfflinePartition()) return 0
+  const db = await getDb(partition)
   if (!db) return 0
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readonly")
@@ -364,8 +372,8 @@ export interface TaskAttachment {
 }
 
 export async function saveAttachment(attachment: TaskAttachment): Promise<void> {
-  const db = await getDb()
-  if (!db) return
+  const db = await getDb(undefined, "attachments")
+  if (!db) throw new Error("Browser storage is unavailable for attachments.")
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)
@@ -378,7 +386,7 @@ export async function saveAttachment(attachment: TaskAttachment): Promise<void> 
 }
 
 export async function getAttachmentsByTaskId(taskId: string, partition?: OfflinePartition): Promise<TaskAttachment[]> {
-  const db = await getDb(partition)
+  const db = await getDb(partition, "attachments")
   if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readonly")
@@ -391,7 +399,7 @@ export async function getAttachmentsByTaskId(taskId: string, partition?: Offline
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
-  const db = await getDb()
+  const db = await getDb(undefined, "attachments")
   if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")

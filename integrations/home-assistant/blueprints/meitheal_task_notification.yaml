@@ -34,14 +34,17 @@ blueprint:
             - label: "Board Changed"
               value: "meitheal_board_updated"
     ingress_path:
-      name: "Meitheal Ingress Path"
+      name: "Meitheal sidebar path"
       description: >-
-        The ingress path for your Meitheal addon. Find this in
-        Settings → Add-ons → Meitheal → Info (e.g. /api/hassio_ingress/TOKEN/)
-      default: "/api/hassio_ingress/"
+        Copy the complete path after your Home Assistant host when opening
+        Meitheal from the sidebar. Published Canary uses /8d9fd00d_meitheal_canary;
+        local Canary uses /local_meitheal_canary. The /app/<full-slug> route
+        is also accepted. Only Meitheal and Meitheal Canary App slugs are
+        supported. Invalid paths stop the automation; no target is substituted.
+        Do not use an /api/hassio_ingress/ session address.
+      default: "/8d9fd00d_meitheal_canary"
       selector:
         text:
-          type: url
 
 trigger:
   - platform: event
@@ -68,8 +71,25 @@ variables:
     } %}
     {{ types.get(trigger.event.event_type, 'Meitheal') }}
   ingress_path: !input ingress_path
+  # Core registers the full App slug, including the repository prefix.
+  # Keep the complete route; never turn an unknown target into a different App.
+  panel_path: >-
+    {% set raw = ingress_path | string | trim %}
+    {% if raw | regex_match('^/(app/)?([0-9a-f]{8}|local)_meitheal(_canary)?$') %}{{ raw }}{% endif %}
+  # Readable ticket keys (MTH-4) when the event has one; the ticket page finds the Board.
+  ticket: >-
+    {% set key = trigger.event.data.get('ticket_key') %}
+    {{ key | trim if key is string and key | trim | regex_match('^[A-Za-z0-9]{1,16}-[0-9]{1,9}$') else task_id }}
+  task_url: >-
+    {{ panel_path ~ '?meitheal=' ~ (('/tickets/' ~ (ticket | urlencode)) | urlencode) if task_id else '' }}
 
 action:
+  - if:
+      - condition: template
+        value_template: "{{ not panel_path }}"
+    then:
+      - stop: "Invalid Meitheal sidebar path. Copy the complete published or local App path from Home Assistant; ingress session URLs are not supported."
+        error: true
   - device_id: !input notify_device
     domain: mobile_app
     type: notify
@@ -84,15 +104,16 @@ action:
       importance: high
       # Android: notification group
       group: "meitheal"
-      # Android: clickAction opens Meitheal ingress
-      clickAction: "{{ ingress_path }}"
+      # Android: clickAction opens the Meitheal panel in the Companion app
+      clickAction: "{{ task_url if task_id else panel_path }}"
+      # iOS: url opens the same panel path
+      url: "{{ task_url if task_id else panel_path }}"
       # Android/iOS: notification tag for deduplication
       tag: "meitheal_{{ task_id or trigger.event.event_type }}"
       # Actionable notification buttons
       actions: >-
-        {% set dashboard = {'action': 'URI', 'title': '📊 Dashboard', 'uri': ingress_path} %}
+        {% set dashboard = {'action': 'URI', 'title': '📊 Dashboard', 'uri': panel_path} %}
         {% if task_id %}
-          {% set task_url = ingress_path.rstrip('/') ~ '/tasks?open=' ~ (task_id | urlencode) %}
           {{ [
             {'action': 'URI', 'title': '📋 View Task', 'uri': task_url},
             {'action': 'MEITHEAL_COMPLETE_' ~ task_id, 'title': '✅ Complete'},

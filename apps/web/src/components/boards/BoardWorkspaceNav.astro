@@ -36,10 +36,14 @@ const links = boardNavigationLinks(context)
       <span>{label("task", true)}</span>
     </a>
     {available("organizer") && (available("groups") || available("projects")) &&
-      <a data-board-section="planning" href={links.planning} aria-current={active === "planning" ? "page" : undefined}>
+      <a data-board-section="planning" href={links.groups} aria-current={active === "planning" ? "page" : undefined}>
         <Icon name="folder" size={15} sprite />
         <span>{label("group", true)} &amp; {label("project", true)}</span>
       </a>}
+    <a data-board-section="matrix" href={links.planning}>
+      <Icon name="eisenhower" size={15} sprite />
+      <span>{label("planning", false)}</span>
+    </a>
     {available("goals") && <a data-board-section="goals" href={links.progress} aria-current={active === "goals" ? "page" : undefined}>
       <Icon name="target" size={15} sprite />
       <span>{label("goal", true)}</span>
@@ -67,7 +71,7 @@ const links = boardNavigationLinks(context)
     const sync = () => {
       const url = new URL(location.href)
       const path = url.pathname.replace(window.__ingress_path || "", "")
-      const section = path === "/habits" ? "routines" : path === "/progress"
+      const section = (path === "/routines" || path === "/habits") ? "routines" : path === "/progress"
         ? ["goals", "routines", "pillars"].find(value => value === url.hash.slice(1)) ?? "pillars"
         : url.searchParams.get("view") === "groups" ? readBoardPlanningSection(url.searchParams) : "tasks"
       document.querySelectorAll<HTMLAnchorElement>("[data-board-workspace-navigation] [data-board-section]").forEach(link => {

@@ -2,7 +2,6 @@ import { requestNotificationPermission, showTaskNotification } from "@domains/of
 import { isPwaSupported } from "@domains/offline/sw-register"
 import { initTaskDetailLayoutEditor } from "@lib/task-detail-layout-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
 import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
@@ -11,6 +10,8 @@ import { initSettingsTaskNav } from "@lib/settings-task-nav-controller"
 import { initOrganizationLabels } from "@lib/settings-organization-labels"
 import { initSettingsHomeAssistantArea } from "@lib/settings-home-assistant-area"
 import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
+import { initSettingsShoppingCategories } from "@lib/settings-shopping-categories-controller"
+import { initNotificationPrefsSettings } from "@lib/settings-notification-prefs-controller"
 
 function initPwaNotificationTest(): void {
   const button = document.querySelector<HTMLButtonElement>("#pwa-test-notification")
@@ -58,13 +59,14 @@ function bootSettingsPage(): void {
 
   initSettingsController()
   initSettingsShell()
-  initSettingsFeedback()
   initSettingsLabels(pageLifecycle.signal)
   initSettingsLabelCleanup()
   initSettingsTaskNav(pageLifecycle.signal)
   initSettingsWorkspace(pageLifecycle.signal)
   initOrganizationLabels(pageLifecycle.signal)
   initSettingsHomeAssistantArea(pageLifecycle.signal)
+  initSettingsShoppingCategories(pageLifecycle.signal)
+  initNotificationPrefsSettings(pageLifecycle.signal)
   const taskLayout = document.querySelector<HTMLElement>("#settings-task-detail-layout [data-task-layout-editor]")
   if (taskLayout) initTaskDetailLayoutEditor(taskLayout, pageLifecycle.signal)
   initPwaNotificationTest()

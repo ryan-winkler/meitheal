@@ -155,7 +155,10 @@ export async function mergeHATodoItems(context: IntegrationScope, items: HATodoI
     const uid = item.uid!
     const match = matches.get(uid)
     if (match?.taskDeleted || match?.suppressed) continue
-    if (!match && /Added from Meitheal$/i.test(item.description ?? "")) continue
+    if (!match) {
+      const normalizedDesc = (item.description ?? "").replace(/<[^>]+>/g, "\n").trim()
+      if (/(?:^|\s)Added from Meitheal$/i.test(normalizedDesc)) continue
+    }
     const title = sanitizeTodoTitle(item.summary, scopeBoardAccess(context.scope).ticketPrefix)
     const status = haStatusToMeitheal(item.status ?? "needs_action")
     let description = item.description ?? null

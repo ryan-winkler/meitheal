@@ -66,7 +66,7 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
         const row = document.createElement("li")
         row.className = "list-group-item"
         const link = document.createElement("a")
-        link.href = safeIngressHref(`/habits?${query}`)
+        link.href = safeIngressHref(`/routines?${query}`)
         link.textContent = item.name
         const context = document.createElement("p")
         context.className = "text-muted"

@@ -11,7 +11,7 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await page.keyboard.press("?")
   const dialog = page.getByRole("dialog", { name: "Aicearraí méarchláir", exact: true })
   const close = dialog.getByRole("button", { name: "Dún na haicearraí" })
-  const panel = dialog.locator(".shortcut-modal-content")
+  const panel = dialog.locator(".shortcut-modal-body")
   await expect(close).toBeFocused()
   await expect(dialog.getByRole("heading", { name: "I ngach áit" })).toBeVisible()
   await expect(dialog.getByRole("heading", { name: "Ar leathanach na dtascanna" })).toBeVisible()
@@ -24,7 +24,7 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText([
     "Amharc Kanban", "Amharc tábla", "Amharc féilire", "Amharc amlíne",
   ])
-  const bounds = await panel.boundingBox()
+  const bounds = await dialog.locator(".shortcut-modal-content").boundingBox()
   expect(bounds).not.toBeNull()
   await page.mouse.move(bounds!.x + 5, bounds!.y + 5)
   await page.mouse.down()
@@ -36,21 +36,14 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   const timeline = dialog.getByText("Amharc amlíne")
   await expect(timeline).not.toBeInViewport()
   await page.evaluate(() => document.fonts.ready)
-  // Reaching the final pixel can precede native scrolling's completion.
-  const endScrollCompleted = panel.evaluate(element => new Promise<void>(resolve => {
-    element.addEventListener("scrollend", () => resolve(), { once: true })
-  }))
+  await page.keyboard.press("Tab")
+  await expect(panel).toBeFocused()
   await page.keyboard.press("End")
   await expect(timeline).toBeInViewport()
   await expect.poll(() => panel.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(1)
-  await endScrollCompleted
-  const homeScrollCompleted = panel.evaluate(element => new Promise<void>(resolve => {
-    element.addEventListener("scrollend", () => resolve(), { once: true })
-  }))
   await page.keyboard.press("Home")
   await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
   await expect(timeline).not.toBeInViewport()
-  await homeScrollCompleted
   await panel.hover()
   await page.mouse.wheel(0, 2000)
   await expect(timeline).toBeInViewport()

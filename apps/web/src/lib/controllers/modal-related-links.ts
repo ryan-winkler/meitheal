@@ -7,7 +7,6 @@
  */
 
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
-import { byId, domEl, setAttr } from "@lib/dom-helpers"
 
 export interface RelatedLinksDeps {
   getCurrentTaskId: () => string | null
@@ -41,20 +40,24 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
   const opts = signal ? { signal } : undefined
 
   const renderRetryError = (container: HTMLElement, countEl: HTMLElement | null, taskId: string) => {
-    const errDiv = domEl("div", "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent", "Failed to load links. Tap to retry.")
+    const errDiv = document.createElement("div")
+    errDiv.className = "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent"
+    errDiv.textContent = "Failed to load links. Tap to retry."
     errDiv.addEventListener("click", () => loadRelatedLinks(taskId), opts)
     container.replaceChildren(errDiv)
     if (countEl) countEl.textContent = ""
   }
 
   async function loadRelatedLinks(taskId: string) {
-    const container = byId("td-related-links")
-    const countEl = byId("td-link-count")
-    const liveRegion = byId("td-link-live")
-    const emptyState = byId("td-links-empty")
+    const container = document.getElementById("td-related-links")
+    const countEl = document.getElementById("td-link-count")
+    const liveRegion = document.getElementById("td-link-live")
+    const emptyState = document.getElementById("td-links-empty")
     if (!container) return
 
-    const loading = domEl("span", "text-xs text-text-muted italic", "Loading…")
+    const loading = document.createElement("span")
+    loading.className = "text-xs text-text-muted italic"
+    loading.textContent = "Loading…"
     container.replaceChildren(loading)
     if (emptyState) emptyState.style.display = "none"
 
@@ -90,27 +93,29 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
         title: string,
         linkId: string,
       ) {
-        const el = domEl("div", "flex items-center gap-1 text-xs py-0.5 td-link-row")
+        const el = document.createElement("div")
+        el.className = "flex items-center gap-1 text-xs py-0.5 td-link-row"
 
-        const labelSpan = domEl("span", "text-text-muted shrink-0 truncate")
+        const labelSpan = document.createElement("span")
+        labelSpan.className = "text-text-muted shrink-0 truncate"
         labelSpan.style.minWidth = "86px"
         labelSpan.style.maxWidth = "116px"
         labelSpan.textContent = label
 
-        const titleBtn = domEl("button")
+        const titleBtn = document.createElement("button")
         titleBtn.type = "button"
         titleBtn.className = "text-accent cursor-pointer hover:underline td-link-goto truncate border-0 bg-transparent p-0 text-left text-xs"
         titleBtn.dataset.id = linkedTaskId
         titleBtn.title = "Open task"
         titleBtn.textContent = (ticketKey ? ticketKey + " " : "") + String(title || "").slice(0, 40)
 
-        const removeBtn = domEl("button")
+        const removeBtn = document.createElement("button")
         removeBtn.type = "button"
         removeBtn.className = "td-link-remove ml-auto shrink-0 cursor-pointer border-0 bg-transparent px-0.5 text-sm text-danger"
         removeBtn.dataset.linkId = linkId
         removeBtn.title = "Remove link"
         removeBtn.textContent = "×"
-        setAttr(removeBtn, "aria-label", `Remove ${label} link to ${String(title || "").slice(0, 30)}`)
+        removeBtn.setAttribute("aria-label", `Remove ${label} link to ${String(title || "").slice(0, 30)}`)
 
         el.append(labelSpan, titleBtn, removeBtn)
         return el
@@ -167,8 +172,8 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
   // Related link search — debounced
   let linkSearchTimer: ReturnType<typeof setTimeout> | undefined
   let linkSearchAbort: AbortController | null = null
-  const linkSearchInput = byId<HTMLInputElement>("td-link-search")
-  const linkSearchResults = byId("td-link-search-results")
+  const linkSearchInput = document.getElementById("td-link-search") as HTMLInputElement | null
+  const linkSearchResults = document.getElementById("td-link-search-results")
   signal?.addEventListener("abort", () => {
     clearTimeout(linkSearchTimer)
     linkSearchAbort?.abort()
@@ -195,7 +200,9 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
         const currentId = getCurrentTaskId()
         const tasks = (data.tasks ?? []).filter((t: Record<string, unknown>) => t.id !== currentId)
         if (tasks.length === 0) {
-          const noMatch = domEl("div", "px-3 py-2 text-xs text-text-muted italic", "No matches")
+          const noMatch = document.createElement("div")
+          noMatch.className = "px-3 py-2 text-xs text-text-muted italic"
+          noMatch.textContent = "No matches"
           linkSearchResults.replaceChildren(noMatch)
         } else {
           linkSearchResults.replaceChildren()
@@ -210,11 +217,14 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
                     : ""
             const ticketKey = resolvedLinkKey ? `${resolvedLinkKey} ` : ""
 
-            const resultEl = domEl("div", "td-link-result px-3 py-1.5 text-xs cursor-pointer hover:bg-bg-hover flex items-center gap-2")
+            const resultEl = document.createElement("div")
+            resultEl.className = "td-link-result px-3 py-1.5 text-xs cursor-pointer hover:bg-bg-hover flex items-center gap-2"
             resultEl.dataset.id = String(t.id)
-            setAttr(resultEl, "role", "option")
+            resultEl.setAttribute("role", "option")
 
-            const titleSpan = domEl("span", "truncate", ticketKey + String(t.title).slice(0, 50))
+            const titleSpan = document.createElement("span")
+            titleSpan.className = "truncate"
+            titleSpan.textContent = ticketKey + String(t.title).slice(0, 50)
 
             resultEl.appendChild(titleSpan)
             linkSearchResults.appendChild(resultEl)
@@ -222,7 +232,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
           linkSearchResults.querySelectorAll(".td-link-result").forEach((el) => {
             el.addEventListener("click", async () => {
               const targetId = (el as HTMLElement).dataset.id
-              const linkType = (byId("td-link-type-select") as HTMLSelectElement)?.value || "related_to"
+              const linkType = (document.getElementById("td-link-type-select") as HTMLSelectElement)?.value || "related_to"
               const currentId = getCurrentTaskId()
               if (targetId && currentId) {
                 try {
@@ -239,8 +249,8 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
                   if (linkType === "blocks" || linkType === "blocked_by") notifyInactivityTaskChanged()
                   linkSearchInput.value = ""
                   linkSearchResults.style.display = "none"
-                  setAttr(linkSearchInput, "aria-expanded", "false")
-                  const liveRegion = byId("td-link-live")
+                  linkSearchInput.setAttribute("aria-expanded", "false")
+                  const liveRegion = document.getElementById("td-link-live")
                   if (liveRegion) liveRegion.textContent = "Link created"
                   linkSearchInput.focus()
                   loadRelatedLinks(currentId)
@@ -252,7 +262,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
           })
         }
         linkSearchResults.style.display = "block"
-        setAttr(linkSearchInput, "aria-expanded", "true")
+        linkSearchInput?.setAttribute("aria-expanded", "true")
       } catch {
         /* silent */
       }
@@ -264,7 +274,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
       e.preventDefault()
       clearTimeout(linkSearchTimer)
       linkSearchResults.style.display = "none"
-      setAttr(linkSearchInput, "aria-expanded", "false")
+      linkSearchInput.setAttribute("aria-expanded", "false")
       linkSearchInput.value = ""
     }
   }, opts)

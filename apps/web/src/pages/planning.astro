@@ -1,14 +1,15 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
-import { boardContextHref } from "@lib/board-workspace"
+import { boardContextHref, boardNavigationLinks, boardWorkspaceHref } from "@lib/board-workspace"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { currentBoardContext } from "@lib/named-board-request"
+import { readBoardDirectory } from "@lib/board-view"
 
 import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * /planning — Parent page for Planning views
  *
- * Opens Eisenhower by default, with Triage and RICE alongside it.
- * Legacy Spaces bookmarks open the Boards directory.
+ * Opens Eisenhower by default, with Boards, Triage, and RICE alongside it.
  *
  * Uses ParentPageShell for hash-based routing between sub-views.
  *
@@ -18,13 +19,17 @@ import { organizationLabelsFor } from "@lib/organization-labels"
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
 import SectionHubCard from "../components/layout/SectionHubCard.astro"
+import Icon from "../components/ui/Icon.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
 import TriageIntake from "../components/planning/TriageIntake.astro"
 import PlanningRice from "../components/planning/PlanningRice.astro"
+import ScoringTriageModal from "../components/planning/ScoringTriageModal.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import BoardPagePicker from "../components/layout/BoardPagePicker.astro"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
@@ -38,6 +43,12 @@ try {
   await ensureSchema()
   taskRepo = new TaskRepository(getPersistenceClient(), workScope)
 } catch { /* the task list renders its existing unavailable state */ }
+
+const boardUser = await currentBoardContext(Astro).catch(() => null)
+const boardDirectory = boardUser
+  ? await readBoardDirectory(boardUser.actor, Astro.request).catch(() => null)
+  : null
+const accessibleBoards = boardDirectory?.boards ?? []
 
 const label = await organizationLabelsFor(Astro)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
@@ -53,9 +64,10 @@ const { tasks } = await getTasksForView({
 }, workScope)
 
 // Derive Eisenhower quadrant counts
-let q1 = 0, q2 = 0, q3 = 0, q4 = 0
+let q1 = 0, q2 = 0, q3 = 0, q4 = 0, unclassified = 0
 for (const task of tasks) {
   if (task.is_done) continue
+  if (task.urgency === 0 && task.importance === 0) unclassified++
   switch (task.eisenhower_quadrant) {
     case "do":
     case "do-first": q1++; break
@@ -66,32 +78,187 @@ for (const task of tasks) {
   }
 }
 
-
+const boardContext = {
+  boardId: workScope.boardId,
+  area: pagePlacement.area?.id,
+  project: pagePlacement.project?.id,
+}
+const eisenhowerHref = boardContextHref(boardContext, "/eisenhower")
+const boardHref = boardWorkspaceHref(workScope.boardId, {
+  area: boardContext.project ? undefined : boardContext.area,
+  project: boardContext.project,
+  fromArea: boardContext.project ? Astro.url.searchParams.get("from") ?? undefined : undefined,
+}, "kanban")
 ---
 
-<Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}
+  workNavigation={{ scope: workScope, placement: pagePlacement }}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">
+    <div class="planning-context-bar">
+      <BoardPagePicker page="planning" boardId={workScope.boardId} boardName={scopeBoardAccess(workScope).name}
+        boardLabel={label("board", false)} boards={accessibleBoards} area={pagePlacement.area?.name} project={pagePlacement.project?.name} />
+      <div class="planning-context-actions">
+        <a class="planning-context-link" href={boardHref}>
+          <Icon name="layout-kanban" size={14} sprite />
+          <span>Back to {label("board", false)}</span>
+        </a>
+        <button type="button" class="planning-context-link planning-context-btn" data-open-scoring-triage="eisenhower">
+          <Icon name="target" size={14} sprite />
+          <span>Scoring Triage</span>
+        </button>
+        <a class="planning-context-link" href="/settings#scoring-settings">
+          <Icon name="sliders" size={14} sprite />
+          <span>Scoring settings</span>
+        </a>
+      </div>
+    </div>
 
-    <section data-parent-section="spaces" id="planning-section-spaces">
-      <a class="btn btn-primary" href="/boards">Open {label("board", true)}</a>
+    {/* ─── Boards (Spaces) ─── */}
+    <section data-parent-section="spaces" id="planning-section-spaces" hidden>
+      <div class="planning-boards-wrap">
+        <header class="planning-boards-header">
+          <div class="planning-boards-header__copy">
+            <h2 class="planning-boards-title">
+              <Icon name="layout-kanban" size={20} sprite />
+              <span>{label("board", true)}</span>
+              <span class="planning-boards-count">{accessibleBoards.length}</span>
+            </h2>
+            <p class="planning-boards-subtitle">
+              Jump directly to any workspace board, organize areas &amp; projects, or open the full directory to create and configure boards.
+            </p>
+          </div>
+          <div class="planning-boards-header__actions">
+            <a class="btn btn-primary btn-sm" href="/boards">
+              <Icon name="layout-grid" size={15} sprite />
+              <span>Manage {label("board", true)}</span>
+            </a>
+          </div>
+        </header>
+
+        {accessibleBoards.length > 0 ? (
+          <div class="planning-boards-grid">
+            {accessibleBoards.map((board) => {
+              const nav = boardNavigationLinks({ boardId: board.id })
+              const isCurrent = board.id === workScope.boardId
+              const isArchived = board.state === "archived"
+              return (
+                <article class:list={["planning-board-card", { "is-current": isCurrent, "is-archived": isArchived }]}>
+                  <div class="planning-board-card__head">
+                    <span class="planning-board-card__icon" aria-hidden="true">
+                      <Icon name="layout-kanban" size={18} sprite />
+                    </span>
+                    <div class="planning-board-card__titles">
+                      <a class="planning-board-card__name" href={`/boards/${encodeURIComponent(board.id)}`}>
+                        {board.name}
+                      </a>
+                      <div class="planning-board-card__badges">
+                        <code class="planning-board-card__prefix">{board.ticketPrefix}</code>
+                        <span class="planning-board-card__role">{isArchived ? "Archived" : board.role}</span>
+                        {isCurrent && <span class="planning-board-card__active">Current</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <p class="planning-board-card__desc">
+                    {isArchived
+                      ? "Read-only archive of historical tasks."
+                      : board.hidden
+                        ? "Hidden from sidebar navigation. Accessible anytime from Planning or Boards."
+                        : "Active workspace with custom lanes, areas, projects, and planning views."}
+                  </p>
+                  <nav class="planning-board-card__actions" aria-label={`${board.name} quick links`}>
+                    <a class="btn btn-secondary btn-sm" href={`/boards/${encodeURIComponent(board.id)}`}>
+                      <Icon name="layout-kanban" size={14} sprite />
+                      <span>Kanban</span>
+                    </a>
+                    <a class="btn btn-ghost btn-sm" href={nav.groups}>
+                      <Icon name="folder" size={14} sprite />
+                      <span>{label("group", true)}</span>
+                    </a>
+                    <a class="btn btn-ghost btn-sm" href={`/planning?board_id=${encodeURIComponent(board.id)}#eisenhower`}>
+                      <Icon name="eisenhower" size={14} sprite />
+                      <span>Matrix</span>
+                    </a>
+                    {board.role === "owner" && (
+                      <a class="btn btn-ghost btn-sm" href={`/boards/${encodeURIComponent(board.id)}?view=groups#settings`} title={`${board.name} settings`}>
+                        <Icon name="settings" size={14} sprite />
+                        <span>Settings</span>
+                      </a>
+                    )}
+                  </nav>
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div class="planning-boards-empty">
+            <Icon name="layout-kanban" size={28} sprite />
+            <h3>No boards available yet</h3>
+            <p>Open the Boards directory to create your first workspace board.</p>
+            <a class="btn btn-primary btn-sm" href="/boards">
+              <Icon name="plus" size={15} sprite />
+              <span>Open {label("board", true)}</span>
+            </a>
+          </div>
+        )}
+      </div>
     </section>
 
     {/* ─── Eisenhower ─── */}
-    <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
-      <SectionHubCard
-        href={boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/eisenhower")}
-        icon="🎯"
-        title="Eisenhower Matrix"
-        description="Prioritise by urgency × importance — classify tasks into Do First, Schedule, Delegate, or Not Now quadrants."
-        id="planning-eisenhower-link"
-      >
-        <div slot="stats" class="stat-card stat-card--do"><span class="stat-value">{q1}</span><span class="stat-label">🔴 Do First</span></div>
-        <div slot="stats" class="stat-card stat-card--schedule"><span class="stat-value">{q2}</span><span class="stat-label">🔵 Schedule</span></div>
-        <div slot="stats" class="stat-card stat-card--delegate"><span class="stat-value">{q3}</span><span class="stat-label">🟡 Delegate</span></div>
-        <div slot="stats" class="stat-card stat-card--eliminate"><span class="stat-value">{q4}</span><span class="stat-label">⚫ Not Now</span></div>
-      </SectionHubCard>
+    <section data-parent-section="eisenhower" id="planning-section-eisenhower">
+      <div class="planning-hub-wrap">
+        <SectionHubCard
+          href={eisenhowerHref}
+          icon="eisenhower"
+          title="Eisenhower Matrix"
+          description="Prioritise by urgency × importance — classify tasks into Do First, Schedule, Delegate, or Not Now quadrants."
+          id="planning-eisenhower-link"
+        >
+          <div slot="stats" class="stat-card stat-card--do">
+            <span class="stat-value">{q1}</span>
+            <span class="stat-label"><Icon name="flame" size={14} sprite class="planning-q-icon planning-q-icon--do" /> Do First</span>
+          </div>
+          <div slot="stats" class="stat-card stat-card--schedule">
+            <span class="stat-value">{q2}</span>
+            <span class="stat-label"><Icon name="calendar" size={14} sprite class="planning-q-icon planning-q-icon--schedule" /> Schedule</span>
+          </div>
+          <div slot="stats" class="stat-card stat-card--delegate">
+            <span class="stat-value">{q3}</span>
+            <span class="stat-label"><Icon name="users" size={14} sprite class="planning-q-icon planning-q-icon--delegate" /> Delegate</span>
+          </div>
+          <div slot="stats" class="stat-card stat-card--eliminate">
+            <span class="stat-value">{q4}</span>
+            <span class="stat-label"><Icon name="package" size={14} sprite class="planning-q-icon planning-q-icon--eliminate" /> Not Now</span>
+          </div>
+        </SectionHubCard>
+
+        <div class="planning-eisenhower-footer">
+          <p class="planning-eisenhower-meta">
+            {unclassified > 0
+              ? `${unclassified} open ${unclassified === 1 ? "task is" : "tasks are"} unclassified and ready for matrix triage.`
+              : "All active tasks are classified across your four urgency × importance quadrants."}
+          </p>
+          <div class="planning-eisenhower-actions">
+            <a class="btn btn-primary btn-sm" href={eisenhowerHref}>
+              <Icon name="eisenhower" size={15} sprite />
+              <span>Open Eisenhower Matrix</span>
+            </a>
+            <button type="button" class="btn btn-secondary btn-sm" data-open-scoring-triage="eisenhower">
+              <Icon name="target" size={15} sprite />
+              <span>Triage Matrix</span>
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" data-open-scoring-triage="story-points">
+              <Icon name="calculator" size={15} sprite />
+              <span>Story Points</span>
+            </button>
+            <a class="btn btn-outline btn-sm" href="#rice">
+              <Icon name="chart-bar" size={15} sprite />
+              <span>RICE Scoring</span>
+            </a>
+          </div>
+        </div>
+      </div>
     </section>
 
     {/* ─── Triage ─── */}
@@ -105,20 +272,359 @@ for (const task of tasks) {
     </section>
 
   </ParentPageShell>
+  <ScoringTriageModal defaultFramework="eisenhower" />
 </Layout>
 
-
-
 <script>
+  import { bindRiceScoreEditor, refreshRiceScoreEditor } from "@lib/controllers/rice-score-editor"
+  import { createScoringPageRefresh } from "@lib/controllers/scoring-page-refresh"
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { safeIngressHref } from "@lib/ingress-navigation"
+  import type { TriageFrameworkId } from "@lib/scoring-triage"
 
-  pageLifecycle.onPageLoad(signal => {
-    const bridge = () => {
-      if (location.hash === "#spaces") location.replace(safeIngressHref("/boards"))
-    }
-    bridge()
-    window.addEventListener("hashchange", bridge, { signal })
+  pageLifecycle.onPageLoad((signal) => {
+    const root = document.getElementById("planning-shell")
+    if (!root) return
+    const riceEditor = "[data-rice-editor]"
+    const initialEditor = root.querySelector<HTMLFormElement>(riceEditor)
+    if (initialEditor) bindRiceScoreEditor(initialEditor, signal)
+    const refreshScores = createScoringPageRefresh(root, signal, html => {
+      const selectors = [
+        "#planning-section-eisenhower .stat-value", "#planning-section-eisenhower .planning-eisenhower-meta",
+        "#planning-section-rice .rice-kpi-grid", "#planning-section-rice .rice-group", "[data-rice-summary]",
+      ]
+      for (const selector of selectors) {
+        const previous = root.querySelectorAll(selector)
+        const next = html.querySelectorAll(selector)
+        if (previous.length === next.length) previous.forEach((element, index) => element.replaceWith(next[index]!))
+      }
+      const currentEditor = root.querySelector<HTMLFormElement>(riceEditor)
+      if (currentEditor) refreshRiceScoreEditor(currentEditor, html.querySelector<HTMLFormElement>(riceEditor), signal)
+    })
+    document.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-open-scoring-triage]")
+      if (!btn) return
+      const hashFw = window.location.hash === "#rice" ? "rice" : undefined
+      const framework = (btn.dataset.openScoringTriage || hashFw || "eisenhower") as TriageFrameworkId
+      void import("@lib/controllers/scoring-triage-controller").then(({ openScoringTriage }) =>
+        openScoringTriage({
+          framework,
+          onComplete: refreshScores,
+        }),
+      )
+    }, { signal })
   })
-
 </script>
+
+<style is:inline>
+  .planning-context-bar {
+    max-width: 66rem;
+    margin: 0.75rem auto 0;
+    padding: 0 clamp(1rem, 3vw, 2.5rem);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  :root[data-appearance-width="fluid"] .planning-context-bar {
+    max-width: 100%;
+  }
+
+  .planning-context-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm, 6px);
+    transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .planning-context-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .planning-boards-wrap {
+    max-width: 66rem;
+    margin: 0 auto;
+    padding: 1rem clamp(1rem, 3vw, 2.5rem) 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  :root[data-appearance-width="fluid"] .planning-boards-wrap {
+    max-width: 100%;
+  }
+
+  .planning-boards-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .planning-boards-title {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .planning-boards-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .planning-boards-subtitle {
+    margin: 0.35rem 0 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    max-width: 44rem;
+  }
+
+  .planning-boards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 310px), 1fr));
+    gap: 1rem;
+  }
+
+  .planning-board-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.125rem;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .planning-board-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  }
+
+  .planning-board-card.is-current {
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  }
+
+  .planning-board-card__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .planning-board-card__icon {
+    inline-size: 38px;
+    block-size: 38px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm, 8px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-text, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  }
+
+  .planning-board-card__titles {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .planning-board-card__name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .planning-board-card__name:hover {
+    color: var(--accent-text, var(--accent));
+  }
+
+  .planning-board-card__badges {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .planning-board-card__prefix {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 5px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .planning-board-card__role {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    color: var(--text-muted);
+  }
+
+  .planning-board-card__active {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.08rem 0.42rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent-text, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+
+  .planning-board-card__desc {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    flex: 1;
+  }
+
+  .planning-board-card__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .planning-board-card__actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .planning-boards-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.5rem;
+    padding: 2.5rem 1.5rem;
+    border-radius: var(--radius-md, 10px);
+    border: 1px dashed var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+  }
+
+  .planning-boards-empty h3 {
+    margin: 0.25rem 0 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+  }
+
+  .planning-boards-empty p {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .planning-hub-wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 1rem 2rem;
+  }
+
+  :root[data-appearance-width="fluid"] .planning-hub-wrap {
+    max-width: min(100%, 960px);
+  }
+
+  .planning-hub-wrap .parent-section-hub {
+    margin: 1rem auto 0.875rem;
+    max-width: 100%;
+  }
+
+  .planning-q-icon--do { color: var(--danger); }
+  .planning-q-icon--schedule { color: var(--info); }
+  .planning-q-icon--delegate { color: var(--warning); }
+  .planning-q-icon--eliminate { color: var(--text-muted); }
+
+  .planning-eisenhower-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.875rem 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+  }
+
+  .planning-eisenhower-meta {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .planning-eisenhower-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .planning-eisenhower-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .planning-eisenhower-actions .btn:active {
+    transform: scale(0.97);
+  }
+
+  .planning-context-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .planning-context-btn {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .planning-context-link,
+    .planning-board-card,
+    .planning-eisenhower-actions .btn,
+    .planning-eisenhower-actions .btn:active {
+      transition: none;
+      transform: none;
+    }
+  }
+</style>
