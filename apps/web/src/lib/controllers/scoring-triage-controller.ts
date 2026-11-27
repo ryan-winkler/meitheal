@@ -42,12 +42,16 @@ interface CatalogOption {
 let allTasks: TriageTaskRecord[] = []
 let queueContext: TaskApiContext | null = null
 let saveInProgress = false
+let writeInProgress = false
+let closeAfterWrite = false
+let needsRefresh = false
 let queue: TriageTaskRecord[] = []
 let currentIndex = 0
 let savedCount = 0
 let currentFramework: TriageFrameworkId = "eisenhower"
 let currentValues: Record<string, number> = {}
 let onCompleteCb: (() => void) | undefined
+let returnFocus: HTMLElement | undefined
 let wiredModal: HTMLElement | null = null
 let modalAbort: AbortController | null = null
 let openAbort: AbortController | null = null
@@ -460,10 +464,18 @@ async function saveCurrentTask(): Promise<void> {
       interestTag: interestTag || undefined,
     })
 
-    const saved = await saveVersionedTask(task.id, patch, version, context, signal)
+    writeInProgress = true
+    const deadline = AbortSignal.timeout(8_000)
+    const saved = await saveVersionedTask(task.id, patch, version, context, AbortSignal.any([signal, deadline]))
     if (signal.aborted) return
+    writeInProgress = false
     if (!saved.ok) {
-      showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
+      if (deadline.aborted || saved.errorCode === "unconfirmed") {
+        needsRefresh = true
+        showToast("Save unconfirmed. Check the task’s score before trying again.", "warning")
+      } else {
+        showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
+      }
       return
     }
     task.task_version = saved.version
@@ -476,13 +488,15 @@ async function saveCurrentTask(): Promise<void> {
     if (typeof patch.effort_type === "string") task.effort_type = patch.effort_type
     if (typeof patch.framework_payload === "string") task.framework_payload = patch.framework_payload
 
-    if (queue[currentIndex] === task && currentFramework === framework) advanceQueue()
+    if (!closeAfterWrite && queue[currentIndex] === task && currentFramework === framework) advanceQueue()
   } catch {
     if (!signal.aborted) showToast("common.failed_update", "error")
   } finally {
     if (!signal.aborted) {
       saveInProgress = false
-      updatePreviewUI()
+      writeInProgress = false
+      if (closeAfterWrite) closeScoringTriage(false)
+      else updatePreviewUI()
     }
   }
 }
@@ -497,18 +511,34 @@ function advanceQueue(): void {
 }
 
 export function closeScoringTriage(completed = false): void {
+  // Close can stop a metadata read. A submitted write may already have committed.
+  if (writeInProgress) {
+    closeAfterWrite = true
+    return
+  }
+  closeAfterWrite = false
   openAbort?.abort()
   openAbort = null
   const modal = byId("scoring-triage-modal")
+  const active = document.activeElement
   if (modal) modal.hidden = true
-  document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "scoring-triage" } }))
-  if (savedCount > 0) {
-    showToast(completed ? `Triage complete — ${savedCount} task${savedCount === 1 ? "" : "s"} scored` : `Saved ${savedCount} scored task${savedCount === 1 ? "" : "s"}`, "success")
-    const cb = onCompleteCb
-    onCompleteCb = undefined
-    savedCount = 0
-    if (cb) cb()
+  if (returnFocus?.isConnected && (active === document.body || modal?.contains(active))) {
+    returnFocus.focus({ preventScroll: true })
   }
+  returnFocus = undefined
+  const complete = onCompleteCb
+  onCompleteCb = undefined
+  const refresh = needsRefresh
+  needsRefresh = false
+  if (savedCount === 0) {
+    if (refresh) complete?.()
+    return
+  }
+  const count = savedCount
+  savedCount = 0
+  document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "scoring-triage", dataOnly: true } }))
+  showToast(completed ? `Triage complete — ${count} task${count === 1 ? "" : "s"} scored` : `Saved ${count} scored task${count === 1 ? "" : "s"}`, "success")
+  complete?.()
 }
 
 function ensureModalWired(): HTMLElement | null {
@@ -586,8 +616,12 @@ export async function openScoringTriage(options: OpenScoringTriageOptions = {}):
   allTasks = []
   queue = []
   saveInProgress = false
+  writeInProgress = false
+  closeAfterWrite = false
+  needsRefresh = false
   savedCount = 0
   onCompleteCb = options.onComplete
+  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
   currentFramework = options.framework ?? (modal.dataset.defaultFramework as TriageFrameworkId) ?? "eisenhower"
 
   const fwSelect = byId<HTMLSelectElement>("st-framework-select")

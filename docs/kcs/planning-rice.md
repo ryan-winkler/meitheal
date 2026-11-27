@@ -12,9 +12,9 @@ Choose **Edit score** beside a task and enter Reach, Impact, Confidence as a per
 
 Tasks with older saved estimates keep their existing scores. Saving an edit stores the new numeric estimates alongside the original fields. Meitheal rounds finite scores to at most two decimal places. A score beyond the numeric range leaves the task unscored.
 
-If another session changes the task while the editor is open, choose **Reload score** and review the latest estimates before saving. If a request is interrupted, check the latest score before trying again.
+If triage updates the same task, the open editor shows the latest score when you have no draft. Unsaved estimates stay in the editor until you choose **Reload score**. If another session changes the task while the editor is open, choose **Reload score** and review the latest estimates before saving. If a request is interrupted, check the latest score before trying again.
 
-RICE triage saves the same percentage-based estimates used in Planning and the Kanban groups. If the task changed while triage was open, reopen triage to review the current score before saving again.
+RICE triage saves the same percentage-based estimates used in Planning and the Kanban groups. When triage closes after a save, Planning updates its rankings and quadrant counts in place. The Eisenhower matrix also shows newly classified tasks in their updated quadrants. You can stay on the same Board and section or continue to another page immediately. If the task changed while triage was open, reopen triage to review the current score before saving again.
 
 ## Score a ticket with another framework
 

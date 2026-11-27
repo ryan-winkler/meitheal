@@ -109,7 +109,7 @@ const groups = [
       <span class="rice-kpi-value rice-kpi-value--accent">{averageScore}</span>
     </div>
   </div>
-  <p class="sr-only">{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: averageScore })}</p>
+  <p class="sr-only" data-rice-summary>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: averageScore })}</p>
 
   {saved && (
     <div class="rice-status-banner rice-status-banner--success" role="status">

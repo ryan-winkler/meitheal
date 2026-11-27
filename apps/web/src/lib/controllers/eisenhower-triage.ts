@@ -22,11 +22,12 @@ export function quadrantPreview(urgency: number, importance: number): string {
 }
 
 /** Open the unified Tabler Scoring Triage modal pre-selected to Eisenhower */
-export async function startTriage(): Promise<void> {
+export async function startTriage(signal: AbortSignal, onComplete: () => void): Promise<void> {
   const { openScoringTriage } = await import("@lib/controllers/scoring-triage-controller")
+  if (signal.aborted) return
   await openScoringTriage({
     framework: "eisenhower",
-    onComplete: () => window.location.reload(),
+    onComplete,
   })
 }
 
