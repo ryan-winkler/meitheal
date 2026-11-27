@@ -116,6 +116,9 @@ function createMatrixRefresh(page: HTMLElement, signal: AbortSignal) {
   let mutationVersion = 0
   let refreshVersion = 0
   let refreshQueued = false
+  let matrixCurrent = true
+  let refreshing = false
+  let reviewRequested = false
   const read = createScoringPageRefresh(page, signal, html => {
     if (writes > 0 || mutationVersion !== refreshVersion) {
       refresh()
@@ -124,7 +127,7 @@ function createMatrixRefresh(page: HTMLElement, signal: AbortSignal) {
     const grid = page.querySelector<HTMLElement>(".eisenhower__grid")
     const freshGrid = html.querySelector<HTMLElement>("#eisenhower-shell .eisenhower__grid")
     const modal = page.querySelector("#scoring-triage-modal")
-    if (!grid || !freshGrid || !modal) return
+    if (!grid || !freshGrid || !modal) throw new Error("Scoring matrix unavailable")
     const focused = document.activeElement as HTMLElement | null
     for (const input of grid.querySelectorAll<HTMLInputElement>(".quick-capture__input")) {
       const quadrant = input.closest<HTMLElement>("[data-quadrant]")?.id
@@ -146,20 +149,41 @@ function createMatrixRefresh(page: HTMLElement, signal: AbortSignal) {
     } else banner?.remove()
     initEisenhowerPage({ signal, refresh: true })
     updateCounts(page)
+    matrixCurrent = true
+    refreshing = false
     if (focused && document.activeElement === document.body) {
       if (focused.isConnected) focused.focus({ preventScroll: true })
       else if (banner?.contains(focused)) page.querySelector<HTMLElement>(".eisenhower__context-bar [data-action=start-triage]")?.focus({ preventScroll: true })
     }
+    if (reviewRequested) {
+      reviewRequested = false
+      void startReview()
+    }
+  }, () => {
+    refreshing = false
+    reviewRequested = false
   })
   function refresh() {
+    matrixCurrent = false
     refreshQueued = writes > 0
     if (refreshQueued) return
     refreshVersion = mutationVersion
+    refreshing = true
     read()
   }
   return {
     pendingTasks,
-    refresh,
+    openTriage() {
+      reviewRequested = false
+      return startTriage(signal, refresh)
+    },
+    openReview() {
+      if (matrixCurrent) { void startReview(); return }
+      if (reviewRequested) return
+      reviewRequested = true
+      showToast("Updating the matrix before Weekly Review.", "info")
+      if (!refreshing && !refreshQueued) refresh()
+    },
     beginWrite() { writes++; mutationVersion++ },
     finishWrite() {
       writes--
@@ -377,7 +401,7 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal, matrix: Matr
     try {
       switch (action) {
         case "start-triage":
-          await startTriage(matrix.refresh)
+          await matrix.openTriage()
           return // Skip the disable/re-enable flow
         case "close-triage":
           closeTriage()
@@ -389,7 +413,7 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal, matrix: Matr
           await triageSave()
           return
         case "start-review":
-          await startReview()
+          matrix.openReview()
           return
         case "close-review":
           closeReview()

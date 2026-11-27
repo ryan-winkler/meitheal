@@ -352,6 +352,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/
                 .test(resultUrl.pathname.slice(ip.length));
             if ((response.status === 401 || response.status === 403) && ingressResponse && !appResponse && !privateTaskResponse && !participantResponse) {
+              // A background read can report its own failure without replacing the current page.
+              var requestMethod = init.method || (input instanceof Request ? input.method : "GET");
+              var requestHeaders = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
+              if (requestMethod.toUpperCase() === "GET" && requestHeaders.get("X-Meitheal-Session-Recovery") === "manual") return response;
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
               var now = Date.now();
