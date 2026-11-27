@@ -1,4 +1,6 @@
+import { safeIngressHref } from "@lib/ingress-navigation"
 import { formatRiceFormulaBreakdown, frameworkPayloadObject, parseRiceInputs, riceLensScore } from "@lib/rice-lens"
+import { safeFetch } from "@lib/safe-fetch"
 
 const editors = new WeakMap<HTMLFormElement, AbortController>()
 
@@ -111,8 +113,8 @@ export function bindRiceScoreEditor(
       rice: { ...frameworkPayloadObject(payload.rice), ...estimates, confidence_unit: "percent", score, _evaluatedAt: new Date().toISOString() },
     })
     try {
-      const result = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
-        method: "PATCH",
+      const result = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        method: "PATCH", mode: "same-origin", redirect: "error",
         headers: { "content-type": "application/json", "X-Meitheal-Local-Conflict": "1" },
         body: JSON.stringify({ updated_at: version, framework_payload: frameworkPayload }),
         signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
@@ -128,8 +130,11 @@ export function bindRiceScoreEditor(
       if (confirmed?.id !== id || confirmed.framework_payload !== frameworkPayload) throw new Error("Score write unconfirmed")
       if (!active()) return
       form.dataset.riceStale = ""
-      if (location.hash === "#rice") location.replace(saved.href)
-      else {
+      const destination = new URL(saved.href)
+      const planningPath = safeIngressHref("/planning")
+      if (location.hash === "#rice" && destination.origin === location.origin && destination.pathname === planningPath) {
+        location.replace(planningPath + destination.search + "#rice") // nosemgrep: javascript.browser.security.open-redirect.js-open-redirect, javascript.browser.security.open-redirect-from-function.js-open-redirect-from-function
+      } else {
         message.textContent = form.dataset.saved ?? ""
         reload.hidden = false
       }
