@@ -281,36 +281,103 @@ test("a delayed scoring refresh preserves a newer matrix drag", async ({ page, r
 
 test("closing Planning triage after one save refreshes the current RICE ranking", async ({ page, request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+  const areas: string[] = []
   const tasks: { id: string; title: string }[] = []
-  const planning = "/planning?board_id=household&area=#rice"
+  async function createTask(area: string, title: string, framework_payload?: object) {
+    const response = await request.post("/api/tasks", { headers, data: {
+      title, area_id: area, status: "pending", framework_payload,
+    } })
+    expect(response.status(), await response.text()).toBe(201)
+    const task = await response.json() as { id: string; title: string }
+    tasks.push(task)
+    return task
+  }
   try {
-    for (const suffix of ["one", "two"]) {
-      const created = await request.post("/api/tasks", { headers, data: { title: `RICE triage ${suffix} ${randomUUID()}`, status: "pending" } })
-      expect(created.status()).toBe(201)
-      tasks.push(await created.json())
+    for (const name of ["RICE Workshop", "RICE Control Room"]) {
+      const created = await request.post("/api/areas", { headers, data: { name: `${name} ${randomUUID()}` } })
+      expect(created.status(), await created.text()).toBe(201)
+      areas.push((await created.json()).id)
     }
-    await page.goto(planning)
-    const section = await page.locator("#planning-section-rice").elementHandle()
-    await page.getByRole("button", { name: "RICE Triage", exact: true }).click()
+    const [area, otherArea] = areas as [string, string]
+    await createTask(area, "RICE triage one")
+    await createTask(area, "RICE triage two")
+    const control = await createTask(otherArea, "Ranked task in another Area", {
+      rice: { reach: 3, impact: 2, effort: 1, confidence: 100, confidence_unit: "percent" },
+    })
+    const triage = page.getByRole("button", { name: "RICE Triage", exact: true })
+    const modal = page.locator("#scoring-triage-modal")
     const title = page.locator("#st-task-title")
+    const ranked = page.locator('[data-rice-list="ranked"]')
+    await page.goto(`/planning?board_id=household&area=${otherArea}#rice`)
+    await expect(ranked.locator(`[data-rice-task="${control.id}"] [data-rice-score]`)).toHaveText("6")
+    await page.goto(`/planning?board_id=household&area=${area}#rice`)
+    await triage.click()
+    await page.locator("#st-filter-area").selectOption(area)
     await expect(title).toHaveText(/RICE triage (?:one|two)/)
     const selectedTitle = await title.textContent()
     const selected = tasks.find(task => task.title === selectedTitle)
     expect(selected).toBeDefined()
+    await page.locator("#st-close-btn").click()
+
+    const planning = `/planning?board_id=household&area=${area}&score=${selected!.id}#rice`
+    await page.goto(planning)
+    const section = await page.locator("#planning-section-rice").elementHandle()
+    const summary = page.locator("[data-rice-summary]")
+    const editor = page.locator("[data-rice-editor]")
+    const reach = editor.locator("#rice-num-reach")
+    const saveScore = editor.getByRole("button", { name: "Save score" })
+    await expect(summary).toHaveText("0 ranked · 2 need a score · Average —")
+    await expect(saveScore).toBeEnabled()
+    const originalVersion = await editor.getAttribute("data-rice-version")
+    expect(originalVersion).not.toBeNull()
+    await triage.click()
+    await page.locator("#st-filter-area").selectOption(area)
+    await expect(title).toHaveText(selected!.title)
     for (const [field, value] of Object.entries({ reach: "4", impact: "2", effort: "1", confidence: "100" })) {
       await page.locator(`#st-num-${field}`).fill(value)
     }
     await expect(page.locator("#st-preview-badge")).toHaveText("RICE 8")
     await page.locator("#st-save-btn").click()
     await expect(title).not.toHaveText(selected!.title)
-    await expect(page.locator("#scoring-triage-modal")).toBeVisible()
+    await expect(modal).toBeVisible()
     await page.locator("#st-close-btn").click()
-    await expect(page.locator(`[data-rice-list="ranked"] [data-rice-task="${selected!.id}"] [data-rice-score]`)).toHaveText("8")
-    await expect(page.getByRole("button", { name: "RICE Triage", exact: true })).toBeFocused()
+    const score = ranked.locator(`[data-rice-task="${selected!.id}"] [data-rice-score]`)
+    await expect(score).toHaveText("8")
+    await expect(ranked.locator(`[data-rice-task="${control.id}"]`)).toHaveCount(0)
+    await expect(summary).toHaveText("1 ranked · 1 need a score · Average 8")
+    await expect(editor).not.toHaveAttribute("data-rice-version", originalVersion!)
+    await expect(reach).toHaveValue("4")
+    await expect(saveScore).toBeEnabled()
+    await expect(triage).toBeFocused()
     await expect(page).toHaveURL(url => url.pathname + url.search + url.hash === planning)
     expect(await section?.evaluate(element => element.isConnected)).toBe(true)
+
+    await reach.fill("7")
+    await expect(editor.locator("output")).toHaveText("14")
+    await triage.click()
+    await page.locator("#st-filter-area").selectOption(area)
+    await page.locator("#st-unscored-only").uncheck()
+    const lastInQueue = await title.textContent() !== selected!.title
+    if (lastInQueue) await page.locator("#st-skip-btn").click()
+    await expect(title).toHaveText(selected!.title)
+    await page.locator("#st-num-reach").fill("5")
+    await page.locator("#st-save-btn").click()
+    if (lastInQueue) {
+      await expect(modal).toBeHidden()
+    } else {
+      await expect(title).not.toHaveText(selected!.title)
+      await page.locator("#st-close-btn").click()
+    }
+    await expect(score).toHaveText("10")
+    await expect(reach).toHaveValue("7")
+    await expect(saveScore).toBeDisabled()
+    await expect(editor.locator('[data-rice-message][role="status"]')).toContainText("Reload the score")
+    await editor.getByRole("button", { name: "Reload score" }).click()
+    await expect(reach).toHaveValue("5")
+    await expect(saveScore).toBeEnabled()
   } finally {
     for (const task of tasks) await removeFixtureTask(request, `/api/tasks/${task.id}`, headers)
+    for (const area of areas) await request.delete(`/api/areas/${area}`, { headers, data: {} })
   }
 })
 
